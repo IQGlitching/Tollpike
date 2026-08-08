@@ -1629,28 +1629,28 @@
     margin-bottom: 10px; background: var(--surface);
   }
   .pool.out { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.04); }
-  .pl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .pl-nm { font-family: var(--mono); font-size: 14px; color: var(--txt); letter-spacing: .02em; }
-  .pl-hr { margin-left: auto; font-family: var(--mono); font-size: 20px; letter-spacing: -.02em; }
-  .pl-hr em { font-style: normal; font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); margin-left: 5px; }
-  .pl-track { height: 10px; background: #161c27; border-radius: 3px; overflow: hidden; margin-top: 12px; }
-  .pl-track i { display: block; height: 100%; opacity: .72; }
+  .pool-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pool-nm { font-family: var(--mono); font-size: 14px; color: var(--txt); letter-spacing: .02em; }
+  .pool-hr { margin-left: auto; font-family: var(--mono); font-size: 20px; letter-spacing: -.02em; }
+  .pool-hr em { font-style: normal; font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); margin-left: 5px; }
+  .pool-track { height: 10px; background: #161c27; border-radius: 3px; overflow: hidden; margin-top: 12px; }
+  .pool-track i { display: block; height: 100%; opacity: .72; }
   /* The meter fills as quota is drawn, but the headline number is what is
      LEFT. Both ends are labelled so the two never have to be reconciled. */
-  .pl-scale {
+  .pool-scale {
     display: flex; justify-content: space-between; margin-top: 6px;
     font-family: var(--mono); font-size: 8.5px; letter-spacing: .13em; color: var(--txt-4);
   }
   /* Members sit INSIDE their pool, which is the entire argument of the page. */
-  .pl-members { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
-  .pl-members span {
+  .pool-members { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
+  .pool-members span {
     font-family: var(--mono); font-size: 11px; color: var(--route);
     border: 1px solid rgba(167,139,250,.28); border-radius: 4px; padding: 3px 8px;
   }
-  .pl-members em { font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: .12em; color: var(--conn); margin-left: 3px; }
-  .pl-nums { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .07em; color: var(--txt-4); }
-  .pl-nums b { font-weight: 400; font-size: 12.5px; color: var(--txt-2); margin-right: 3px; }
-  .pl-nums .rem b { color: var(--ok); }
+  .pool-members em { font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: .12em; color: var(--conn); margin-left: 3px; }
+  .pool-nums { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .07em; color: var(--txt-4); }
+  .pool-nums b { font-weight: 400; font-size: 12.5px; color: var(--txt-2); margin-right: 3px; }
+  .pool-nums .rem b { color: var(--ok); }
 
   .qp-row {
     display: grid; grid-template-columns: 168px minmax(0,1fr) minmax(0,1fr) auto; gap: 14px; align-items: center;
@@ -1681,7 +1681,7 @@
   .zone.settings3 .setrow::before { display: none; }
   .zone.settings3 .setrow:hover { background: none; }
 
-  .pipe-intro, .try-note, .sub-note {
+  .pipe-intro, .try-note {
     font-size: 12.5px; color: var(--txt-3); line-height: 1.7; max-width: 800px;
   }
   .pipe-intro { margin-bottom: 18px; border-left: 1px solid var(--line-2); padding-left: 13px; }

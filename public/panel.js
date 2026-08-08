@@ -662,16 +662,25 @@ function paintEngine(s) {
   }
 
   const byId = new Map(s.providers.map((p) => [p.id, p]));
-  let firstServable = -1;
-  const rows = routingChain.slice(0, 14).map((c, i) => {
+  const skipOf = (c) => {
     const p = byId.get(c.provider);
-    let skip = null;
-    if (!c.hasKey) skip = "NO KEY";
-    else if (!c.enabled) skip = "OFF";
-    else if (p?.circuit === "OPEN") skip = "OPEN";
-    else if (p && p.budgetCapUsd !== null && p.monthlySpendUsd >= p.budgetCapUsd) skip = "CAPPED";
-    else if (p?.connectionsCoolingDown > 0) skip = "COOLING";
-    if (!skip && firstServable < 0) firstServable = i;
+    if (!c.hasKey) return "NO KEY";
+    if (!c.enabled) return "OFF";
+    if (p?.circuit === "OPEN") return "OPEN";
+    if (p && p.budgetCapUsd !== null && p.monthlySpendUsd >= p.budgetCapUsd) return "CAPPED";
+    if (p?.connectionsCoolingDown > 0) return "COOLING";
+    return null;
+  };
+
+  // Computed over the WHOLE chain, not the visible window. With 46 providers
+  // the first servable hop is routinely past the fold — a local runtime sits
+  // at priority 50+ — and deciding "servable" from the first fourteen rows
+  // reported NO SERVABLE HOP while the gateway was perfectly able to answer.
+  const firstServable = routingChain.findIndex((c) => !skipOf(c));
+
+  const row = (c, i) => {
+    const skip = skipOf(c);
+    const serves = i === firstServable;
     const tag = skip ? `<span class="cr-tag skip">${esc(skip)}</span>`
       : c.freeTier ? '<span class="cr-tag free">FREE</span>'
       : c.billing === "subscription" ? '<span class="cr-tag sub">SUB</span>'
@@ -679,7 +688,7 @@ function paintEngine(s) {
     // A hop skipped for want of a key is one click from the field that fixes
     // it — the chain is where you notice the gap, so it is where the way out
     // of it belongs.
-    return `<div class="cr-item${skip ? " skipped" : ""}${firstServable === i ? " first" : ""}${skip === "NO KEY" ? " fixable" : ""}"
+    return `<div class="cr-item${skip ? " skipped" : ""}${serves ? " first" : ""}${skip === "NO KEY" ? " fixable" : ""}"
         data-prov="${esc(c.provider)}"
         ${skip === "NO KEY" ? `data-addkey="${esc(c.provider)}" title="No credential — click to add one"` : ""}>
       <div class="cr-n">${String(i + 1).padStart(2, "0")}</div>
@@ -687,13 +696,26 @@ function paintEngine(s) {
         <div class="cr-nm">${esc(c.provider)}</div>
         <div class="cr-md">${esc(trunc(c.model, 30))}</div>
       </div>
-      ${firstServable === i ? '<span class="cr-serves">SERVES</span>' : ""}
+      ${serves ? '<span class="cr-serves">SERVES</span>' : ""}
       ${tag}
     </div>`;
-  }).join("");
-  const more = routingChain.length > 14
-    ? `<div class="cr-empty">+ ${routingChain.length - 14} further hop(s) below the fold</div>` : "";
-  list.innerHTML = rows + more;
+  };
+
+  const VISIBLE = 14;
+  let rows = routingChain.slice(0, VISIBLE).map((c, i) => row(c, i)).join("");
+  if (routingChain.length > VISIBLE) {
+    // The hop that actually serves is the answer this panel exists to give,
+    // so it is pulled above the fold rather than left below it.
+    if (firstServable >= VISIBLE) {
+      rows += `<div class="cr-empty">&#8230; ${firstServable - VISIBLE} more skipped</div>`
+        + row(routingChain[firstServable], firstServable);
+      const after = routingChain.length - firstServable - 1;
+      if (after > 0) rows += `<div class="cr-empty">+ ${after} further hop(s) after it</div>`;
+    } else {
+      rows += `<div class="cr-empty">+ ${routingChain.length - VISIBLE} further hop(s) below the fold</div>`;
+    }
+  }
+  list.innerHTML = rows;
   if (hops) hops.textContent = `${routingChain.length} HOP${routingChain.length === 1 ? "" : "S"}`;
   if (meta) {
     meta.textContent = firstServable < 0
@@ -768,8 +790,18 @@ function paintTopology(s) {
   const sig = lanes.map((l) => `${l.p.id}:${l.state}:${l.p.lifetimeStats.requests}:${l.models.map((m) => m.model + "#" + m.req).join(",")}`).join("|")
     + `|${s.totals.totalRequests}|${s.routing?.defaultCombo || ""}|${routingChain?.length || 0}|${W}`;
   if (meta) {
+    // Only lanes that can serve NOW are drawn. When history was made by lanes
+    // that have since lost their credential, "8 lanes · 132 crossings" reads
+    // as a contradiction — every box on screen says idle. Say where it went.
+    const drawnReq = lanes.reduce((n, l) => n + l.p.lifetimeStats.requests, 0);
+    const elsewhere = s.totals.totalRequests - drawnReq;
     meta.textContent = lanes.length
-      ? `${lanes.length} LANE${lanes.length === 1 ? "" : "S"} DRAWN · ${s.totals.totalRequests} CROSSINGS LIFETIME`
+      ? `${lanes.length} LANE${lanes.length === 1 ? "" : "S"} DRAWN · `
+        + (elsewhere > 0 && drawnReq === 0
+            ? `${s.totals.totalRequests} LIFETIME CROSSINGS CAME FROM LANES NOW WITHOUT A KEY`
+            : elsewhere > 0
+              ? `${drawnReq} OF ${s.totals.totalRequests} CROSSINGS · ${elsewhere} FROM LANES NOW WITHOUT A KEY`
+              : `${drawnReq} CROSSINGS LIFETIME`)
       : "NOTHING TO DRAW";
   }
   if (sig === topoSig && host.firstChild) return;
@@ -4926,19 +4958,19 @@ PAGES.quota = (el) =>
       const ink = pool.exhausted ? SCOPE.bad : pool.headroom > 0.5 ? SCOPE.ok : pool.headroom > 0 ? SCOPE.conn : SCOPE.bad;
       const shown = Object.entries(pool.remaining || {}).filter(([, v]) => v !== null);
       return `<div class="pool ${pool.exhausted ? "out" : ""}">
-        <div class="pl-head">
-          <span class="pl-nm">${esc(pool.pool)}</span>
+        <div class="pool-head">
+          <span class="pool-nm">${esc(pool.pool)}</span>
           <span class="badge ${pool.confidence === "known" ? "on" : "warn"}">${esc(pool.confidence)}</span>
           ${pool.exhausted ? '<span class="badge warn">exhausted</span>' : ""}
-          <span class="pl-hr" style="color:${ink}">${esc(Math.round((pool.headroom ?? 0) * 100))}<em>% headroom</em></span>
+          <span class="pool-hr" style="color:${ink}">${esc(Math.round((pool.headroom ?? 0) * 100))}<em>% headroom</em></span>
         </div>
-        <div class="pl-track"><i style="width:${pct.toFixed(1)}%;background:${ink}"></i></div>
-        <div class="pl-scale"><span>${esc(Math.round(pct))}% DRAWN</span><span>${esc(Math.round(100 - pct))}% LEFT</span></div>
-        <div class="pl-members">${(pool.members || []).map((m) =>
+        <div class="pool-track"><i style="width:${pct.toFixed(1)}%;background:${ink}"></i></div>
+        <div class="pool-scale"><span>${esc(Math.round(pct))}% DRAWN</span><span>${esc(Math.round(100 - pct))}% LEFT</span></div>
+        <div class="pool-members">${(pool.members || []).map((m) =>
           `<span data-prov="${esc(m)}">${esc(m)}</span>`).join("")}${
           (pool.members || []).length > 1
             ? `<em>share one counter</em>` : ""}</div>
-        <div class="pl-nums">
+        <div class="pool-nums">
           <span><b>${esc(pool.used.requestsToday)}</b> req today</span>
           <span><b>${esc(fmtTokens(pool.used.tokensToday))}</b> tok today</span>
           ${shown.map(([k, v]) => `<span class="rem"><b>${esc(v)}</b> ${esc(k.replace("requests", "req").replace("tokens", "tok").replace("ThisMinute", "/min").replace("Today", " left today"))}</span>`).join("")}
@@ -5897,11 +5929,21 @@ function railCells(s) {
     case "routing": return [
       ["STRATEGIES", String(s.routing?.strategyCount ?? 0)],
       ["DEFAULT", s.routing?.defaultCombo ? `combo/${esc(trunc(s.routing.defaultCombo, 11))}` : "priority"],
+      // Read from the engine's own chain, not re-derived from priority order.
+      // The old version sorted providers by priority and reported that index,
+      // which disagreed with the walk below it whenever a combo was active —
+      // same lane, different hop number, and under some combos a different
+      // lane entirely. The rail exists to make the pages agree.
       ["FIRST SERVABLE", (() => {
-        const ordered = [...s.providers].sort((a, b) => a.priority - b.priority);
-        const i = ordered.findIndex((p) => p.hasKey && p.enabled && p.circuit !== "OPEN"
-          && !(p.budgetCapUsd !== null && p.monthlySpendUsd >= p.budgetCapUsd));
-        return i < 0 ? "NONE" : `#${String(i + 1).padStart(2, "0")} ${esc(trunc(ordered[i].id, 9))}`;
+        if (routingChain === null) return "—";
+        const byId = new Map(s.providers.map((p) => [p.id, p]));
+        const i = routingChain.findIndex((c) => {
+          const p = byId.get(c.provider);
+          return c.hasKey && c.enabled && p?.circuit !== "OPEN"
+            && !(p && p.budgetCapUsd !== null && p.monthlySpendUsd >= p.budgetCapUsd)
+            && !(p?.connectionsCoolingDown > 0);
+        });
+        return i < 0 ? "NONE" : `#${String(i + 1).padStart(2, "0")} ${esc(trunc(routingChain[i].provider, 9))}`;
       })(), "", true], lanes];
     case "budgets": return [
       ["SPEND MTD", fmtUsd(spend)],
