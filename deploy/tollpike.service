@@ -1,0 +1,23 @@
+[Unit]
+Description=tollpike — personal AI gateway
+After=network.target
+
+[Service]
+Type=simple
+# Adjust these two paths to wherever you extracted the project and which
+# user should own the process (don't run this as root).
+User=tollpike
+WorkingDirectory=/opt/tollpike
+EnvironmentFile=/opt/tollpike/.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+
+# Basic hardening — remove any of these if they conflict with your setup.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tollpike/data
+
+[Install]
+WantedBy=multi-user.target

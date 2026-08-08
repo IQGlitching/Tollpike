@@ -1,0 +1,40 @@
+services:
+  tollpike:
+    build: .
+    image: tollpike:local
+    container_name: tollpike
+    restart: unless-stopped
+    ports:
+      # Published on loopback only. `"${PORT}:20128"` binds 0.0.0.0 on the
+      # host, which puts the control panel API on the LAN — and it is
+      # unauthenticated until a gateway key is set. Override BIND_ADDR
+      # deliberately if you actually want it reachable from elsewhere.
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-20128}:20128"
+    # The PROJECT .env, which after the credential move holds only non-secret
+    # local settings. Real keys now live in ~/.tollpike/.env on the host, which
+    # a container cannot see — so pick one of these for a container deployment:
+    #
+    #   - mount it read-only and point the app at it:
+    #       volumes:     - ~/.tollpike/.env:/run/secrets/tollpike.env:ro
+    #       environment: - TOLLPIKE_ENV_FILE=/run/secrets/tollpike.env
+    #   - or use your orchestrator's secret mechanism and pass the variables in
+    #     directly; a variable already present in the environment beats every
+    #     file, so nothing else needs changing.
+    #
+    # Putting the keys back into this .env would work and would undo the point
+    # of moving them, since the build context and the repo both include it.
+    env_file:
+      - .env
+    volumes:
+      # Persists usage.jsonl + settings.json (provider toggles, budget
+      # caps, gateway key) across container restarts/recreates.
+      - tollpike-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:20128/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  tollpike-data:

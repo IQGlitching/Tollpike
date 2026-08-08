@@ -1,0 +1,1265 @@
+{
+  "_note": "Every entry with adapter 'openai-compatible' is served by ONE shared adapter — adding a provider costs one object here and zero lines of code. 'verified' ships false because these baseURLs are written from documentation, not confirmed live; run `npm run verify` to actually ping each endpoint and find out which are correct. Providers with requiresKey:false are local runtimes that need no credentials. | billing/freeTier/contextWindow added by scripts/patch-provider-metadata.mjs. freeTier.limitsVerified and contextVerified are false everywhere: these are published vendor shapes, not figures checked against a real account. Treat them as indicative, and see HANDOVER §free quota before relying on one to gate spend.",
+  "providers": [
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "category": "frontier",
+      "adapter": "anthropic",
+      "baseURL": "https://api.anthropic.com/v1",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "priority": 1,
+      "costPer1mTokens": {
+        "input": 3,
+        "output": 15
+      },
+      "models": [
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "claude-haiku-4-5-20251001"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "claude-sonnet-4-6": {
+          "input": 3,
+          "output": 15
+        },
+        "claude-opus-4-8": {
+          "input": 5,
+          "output": 25
+        },
+        "claude-haiku-4-5-20251001": {
+          "input": 1,
+          "output": 5
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-catalogue",
+      "billing": "metered",
+      "contextWindow": 200000,
+      "contextVerified": false
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "category": "frontier",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "priority": 2,
+      "costPer1mTokens": {
+        "input": 2.5,
+        "output": 10
+      },
+      "models": [
+        "gpt-4o",
+        "gpt-4o-mini"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "gpt-4o": {
+          "input": 2.5,
+          "output": 10
+        },
+        "gpt-4o-mini": {
+          "input": 0.15,
+          "output": 0.6
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-catalogue",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "category": "frontier",
+      "adapter": "gemini",
+      "baseURL": "https://generativelanguage.googleapis.com/v1beta",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "priority": 3,
+      "costPer1mTokens": {
+        "input": 0.3,
+        "output": 2.5
+      },
+      "models": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "gemini-2.5-flash": {
+          "input": 0.3,
+          "output": 2.5
+        },
+        "gemini-2.5-pro": {
+          "input": 1.25,
+          "output": 10
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-catalogue",
+      "billing": "free-tier",
+      "freeTier": {
+        "pool": "google-ai-studio",
+        "poolConfidence": "known",
+        "requestsPerMinute": 15,
+        "requestsPerDay": 1500,
+        "tokensPerMinute": 1000000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "contextWindow": 1048576,
+      "contextVerified": false
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.deepseek.com/v1",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "priority": 10,
+      "costPer1mTokens": {
+        "input": 0.14,
+        "output": 0.28
+      },
+      "models": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "deepseek-v4-flash": {
+          "input": 0.14,
+          "output": 0.28
+        },
+        "deepseek-v4-pro": {
+          "input": 0.435,
+          "output": 0.87
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-catalogue",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.groq.com/openai/v1",
+      "apiKeyEnv": "GROQ_API_KEY",
+      "priority": 11,
+      "costPer1mTokens": {
+        "input": 0.59,
+        "output": 0.79
+      },
+      "models": [
+        "llama-3.3-70b-versatile"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "groq-free",
+        "poolConfidence": "known",
+        "requestsPerMinute": 30,
+        "requestsPerDay": 14400,
+        "tokensPerMinute": 6000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "modelPricing": {
+        "llama-3.3-70b-versatile": {
+          "input": 0.59,
+          "output": 0.79
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.cerebras.ai/v1",
+      "apiKeyEnv": "CEREBRAS_API_KEY",
+      "priority": 12,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "llama3.3-70b"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "cerebras-free",
+        "poolConfidence": "known",
+        "requestsPerMinute": 30,
+        "requestsPerDay": 14400,
+        "tokensPerMinute": 60000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "together",
+      "name": "Together AI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.together.xyz/v1",
+      "apiKeyEnv": "TOGETHER_API_KEY",
+      "priority": 13,
+      "costPer1mTokens": {
+        "input": 1.04,
+        "output": 1.04
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+      ],
+      "verified": true,
+      "pricingVerified": "2026-08-08",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false,
+      "modelPricing": {
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo": {
+          "input": 1.04,
+          "output": 1.04
+        }
+      },
+      "pricingSource": "openrouter-endpoints"
+    },
+    {
+      "id": "fireworks",
+      "name": "Fireworks AI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.fireworks.ai/inference/v1",
+      "apiKeyEnv": "FIREWORKS_API_KEY",
+      "priority": 14,
+      "costPer1mTokens": {
+        "input": 0.2,
+        "output": 0.2
+      },
+      "models": [
+        "accounts/fireworks/models/llama-v3p3-70b-instruct"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.mistral.ai/v1",
+      "apiKeyEnv": "MISTRAL_API_KEY",
+      "priority": 15,
+      "costPer1mTokens": {
+        "input": 0.5,
+        "output": 1.5
+      },
+      "models": [
+        "mistral-large-latest",
+        "mistral-small-latest"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "mistral-free",
+        "poolConfidence": "assumed",
+        "requestsPerMinute": 60,
+        "requestsPerDay": 500000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": "2026-08-08",
+      "modelPricing": {
+        "mistral-large-latest": {
+          "input": 0.5,
+          "output": 1.5
+        },
+        "mistral-small-latest": {
+          "input": 0.15,
+          "output": 0.6
+        }
+      },
+      "pricingSource": "openrouter-catalogue",
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "category": "aggregator",
+      "adapter": "openai-compatible",
+      "baseURL": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "priority": 16,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "meta-llama/llama-3.3-70b-instruct:free"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "openrouter-free",
+        "poolConfidence": "known",
+        "requestsPerMinute": 20,
+        "requestsPerDay": 50,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "xai",
+      "name": "xAI Grok",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.x.ai/v1",
+      "apiKeyEnv": "XAI_API_KEY",
+      "priority": 17,
+      "costPer1mTokens": {
+        "input": 2,
+        "output": 6
+      },
+      "models": [
+        "grok-4.5"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "grok-4.5": {
+          "input": 2,
+          "output": 6
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-catalogue",
+      "billing": "metered",
+      "contextWindow": 256000,
+      "contextVerified": false
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.perplexity.ai",
+      "apiKeyEnv": "PERPLEXITY_API_KEY",
+      "priority": 18,
+      "costPer1mTokens": {
+        "input": 1,
+        "output": 1
+      },
+      "models": [
+        "sonar",
+        "sonar-pro"
+      ],
+      "verified": false,
+      "pricingVerified": "2026-08-08",
+      "modelPricing": {
+        "sonar-pro": {
+          "input": 3,
+          "output": 15
+        }
+      },
+      "pricingSource": "openrouter-catalogue",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA NIM",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://integrate.api.nvidia.com/v1",
+      "apiKeyEnv": "NVIDIA_API_KEY",
+      "priority": 19,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "meta/llama-3.3-70b-instruct"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "nvidia-nim-free",
+        "poolConfidence": "assumed",
+        "requestsPerMinute": 40,
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "deepinfra",
+      "name": "DeepInfra",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.deepinfra.com/v1/openai",
+      "apiKeyEnv": "DEEPINFRA_API_KEY",
+      "priority": 20,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.32
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "verified": true,
+      "pricingVerified": "2026-08-08",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false,
+      "modelPricing": {
+        "meta-llama/Llama-3.3-70B-Instruct": {
+          "input": 0.1,
+          "output": 0.32
+        }
+      },
+      "pricingSource": "openrouter-endpoints"
+    },
+    {
+      "id": "hyperbolic",
+      "name": "Hyperbolic",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.hyperbolic.xyz/v1",
+      "apiKeyEnv": "HYPERBOLIC_API_KEY",
+      "priority": 21,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.1
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "sambanova",
+      "name": "SambaNova",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.sambanova.ai/v1",
+      "apiKeyEnv": "SAMBANOVA_API_KEY",
+      "priority": 22,
+      "costPer1mTokens": {
+        "input": 0.45,
+        "output": 0.9
+      },
+      "models": [
+        "Meta-Llama-3.3-70B-Instruct"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "sambanova-free",
+        "poolConfidence": "assumed",
+        "requestsPerMinute": 20,
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": "2026-08-08",
+      "billing": "free-tier",
+      "contextWindow": 64000,
+      "contextVerified": false,
+      "modelPricing": {
+        "Meta-Llama-3.3-70B-Instruct": {
+          "input": 0.45,
+          "output": 0.9
+        }
+      },
+      "pricingSource": "openrouter-endpoints"
+    },
+    {
+      "id": "novita",
+      "name": "Novita AI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.novita.ai/v3/openai",
+      "apiKeyEnv": "NOVITA_API_KEY",
+      "priority": 23,
+      "costPer1mTokens": {
+        "input": 0.135,
+        "output": 0.4
+      },
+      "models": [
+        "meta-llama/llama-3.3-70b-instruct"
+      ],
+      "verified": true,
+      "pricingVerified": "2026-08-08",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false,
+      "modelPricing": {
+        "meta-llama/llama-3.3-70b-instruct": {
+          "input": 0.135,
+          "output": 0.4
+        }
+      },
+      "pricingSource": "openrouter-endpoints"
+    },
+    {
+      "id": "nebius",
+      "name": "Nebius AI Studio",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.studio.nebius.ai/v1",
+      "apiKeyEnv": "NEBIUS_API_KEY",
+      "priority": 24,
+      "costPer1mTokens": {
+        "input": 0.13,
+        "output": 0.4
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "verified": true,
+      "freeTier": true,
+      "pricingVerified": "2026-08-08",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false,
+      "pricingSource": "openrouter-endpoints"
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot (Kimi)",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.moonshot.cn/v1",
+      "apiKeyEnv": "MOONSHOT_API_KEY",
+      "priority": 25,
+      "costPer1mTokens": {
+        "input": 0.2,
+        "output": 2
+      },
+      "models": [
+        "moonshot-v1-8k"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 256000,
+      "contextVerified": false
+    },
+    {
+      "id": "zhipu",
+      "name": "Zhipu GLM",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "apiKeyEnv": "ZHIPU_API_KEY",
+      "priority": 26,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.1
+      },
+      "models": [
+        "glm-4-plus"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "freeTier": {
+        "pool": "zhipu-free",
+        "poolConfidence": "assumed",
+        "requestsPerMinute": 20,
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "dashscope",
+      "name": "Alibaba Qwen (DashScope)",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKeyEnv": "DASHSCOPE_API_KEY",
+      "priority": 27,
+      "costPer1mTokens": {
+        "input": 0.4,
+        "output": 1.2
+      },
+      "models": [
+        "qwen-max"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "freeTier": {
+        "pool": "dashscope-free",
+        "poolConfidence": "assumed",
+        "requestsPerMinute": 20,
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "githubmodels",
+      "name": "GitHub Models",
+      "category": "aggregator",
+      "adapter": "openai-compatible",
+      "baseURL": "https://models.inference.ai.azure.com",
+      "apiKeyEnv": "GITHUB_TOKEN",
+      "priority": 28,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "gpt-4o-mini"
+      ],
+      "verified": false,
+      "freeTier": {
+        "pool": "github-models-free",
+        "poolConfidence": "known",
+        "requestsPerMinute": 15,
+        "requestsPerDay": 150,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "category": "aggregator",
+      "adapter": "openai-compatible",
+      "baseURL": "https://router.huggingface.co/v1",
+      "apiKeyEnv": "HF_TOKEN",
+      "priority": 29,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "hf-inference-free",
+        "poolConfidence": "assumed",
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 32000,
+      "contextVerified": false
+    },
+    {
+      "id": "cohere",
+      "name": "Cohere",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.cohere.ai/compatibility/v1",
+      "apiKeyEnv": "COHERE_API_KEY",
+      "priority": 30,
+      "costPer1mTokens": {
+        "input": 2.5,
+        "output": 10
+      },
+      "models": [
+        "command-r-plus"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "cohere-trial",
+        "poolConfidence": "known",
+        "requestsPerMinute": 20,
+        "requestsPerDay": 1000,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": "2026-08-08",
+      "modelPricing": {
+        "command-r-plus": {
+          "input": 2.5,
+          "output": 10
+        }
+      },
+      "pricingSource": "openrouter-catalogue",
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "upstage",
+      "name": "Upstage Solar",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.upstage.ai/v1/solar",
+      "apiKeyEnv": "UPSTAGE_API_KEY",
+      "priority": 31,
+      "costPer1mTokens": {
+        "input": 0.15,
+        "output": 0.15
+      },
+      "models": [
+        "solar-pro"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 32000,
+      "contextVerified": false
+    },
+    {
+      "id": "aimlapi",
+      "name": "AI/ML API",
+      "category": "aggregator",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.aimlapi.com/v1",
+      "apiKeyEnv": "AIMLAPI_KEY",
+      "priority": 32,
+      "costPer1mTokens": {
+        "input": 0.2,
+        "output": 0.2
+      },
+      "models": [
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "featherless",
+      "name": "Featherless AI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.featherless.ai/v1",
+      "apiKeyEnv": "FEATHERLESS_API_KEY",
+      "priority": 33,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.1
+      },
+      "models": [
+        "meta-llama/Meta-Llama-3.1-8B-Instruct"
+      ],
+      "verified": false,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 32000,
+      "contextVerified": false
+    },
+    {
+      "id": "chutes",
+      "name": "Chutes",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://llm.chutes.ai/v1",
+      "apiKeyEnv": "CHUTES_API_KEY",
+      "priority": 35,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V3"
+      ],
+      "verified": true,
+      "freeTier": {
+        "pool": "chutes-free",
+        "poolConfidence": "assumed",
+        "requestsPerDay": 200,
+        "resetsAt": "00:00Z",
+        "limitsVerified": false
+      },
+      "pricingVerified": false,
+      "billing": "free-tier",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "baseten",
+      "name": "Baseten",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://inference.baseten.co/v1",
+      "apiKeyEnv": "BASETEN_API_KEY",
+      "priority": 37,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.1
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V3"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "inferencenet",
+      "name": "Inference.net",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.inference.net/v1",
+      "apiKeyEnv": "INFERENCE_API_KEY",
+      "priority": 38,
+      "costPer1mTokens": {
+        "input": 0.1,
+        "output": 0.1
+      },
+      "models": [
+        "meta-llama/llama-3.3-70b-instruct/fp-8"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:11434/v1",
+      "apiKeyEnv": "OLLAMA_API_KEY",
+      "priority": 50,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "llama3.2:1b"
+      ],
+      "verified": true,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "lmstudio",
+      "name": "LM Studio (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:1234/v1",
+      "apiKeyEnv": "LMSTUDIO_API_KEY",
+      "priority": 51,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "local-model"
+      ],
+      "verified": false,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "vllm",
+      "name": "vLLM (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:8000/v1",
+      "apiKeyEnv": "VLLM_API_KEY",
+      "priority": 52,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "local-model"
+      ],
+      "verified": false,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "llamacpp",
+      "name": "llama.cpp (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:8080/v1",
+      "apiKeyEnv": "LLAMACPP_API_KEY",
+      "priority": 53,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "local-model"
+      ],
+      "verified": false,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "jan",
+      "name": "Jan (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:1337/v1",
+      "apiKeyEnv": "JAN_API_KEY",
+      "priority": 54,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "local-model"
+      ],
+      "verified": false,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "textgenwebui",
+      "name": "text-generation-webui (local)",
+      "category": "local",
+      "adapter": "openai-compatible",
+      "baseURL": "http://localhost:5000/v1",
+      "apiKeyEnv": "TEXTGEN_API_KEY",
+      "priority": 55,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "local-model"
+      ],
+      "verified": false,
+      "requiresKey": false,
+      "local": true,
+      "pricingVerified": "n/a",
+      "billing": "local",
+      "contextWindow": 8192,
+      "contextVerified": false
+    },
+    {
+      "id": "venice",
+      "name": "Venice AI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.venice.ai/api/v1",
+      "apiKeyEnv": "VENICE_API_KEY",
+      "priority": 39,
+      "costPer1mTokens": {
+        "input": 0.45,
+        "output": 3.5
+      },
+      "models": [
+        "qwen3-235b-a22b-thinking-2507",
+        "deepseek-v4-pro"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "qwen3-235b-a22b-thinking-2507": {
+          "input": 0.45,
+          "output": 3.5
+        },
+        "deepseek-v4-pro": {
+          "input": 1.65,
+          "output": 3.301
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-endpoints",
+      "billing": "metered",
+      "contextWindow": 128000,
+      "contextVerified": false
+    },
+    {
+      "id": "atlascloud",
+      "name": "AtlasCloud",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.atlascloud.ai/v1",
+      "apiKeyEnv": "ATLASCLOUD_API_KEY",
+      "priority": 40,
+      "costPer1mTokens": {
+        "input": 0.27,
+        "output": 0.41
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V3.2-Exp"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "deepseek-ai/DeepSeek-V3.2-Exp": {
+          "input": 0.27,
+          "output": 0.41
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-endpoints",
+      "billing": "metered",
+      "contextWindow": 163840,
+      "contextVerified": false
+    },
+    {
+      "id": "friendli",
+      "name": "FriendliAI",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.friendli.ai/serverless/v1",
+      "apiKeyEnv": "FRIENDLI_TOKEN",
+      "priority": 41,
+      "costPer1mTokens": {
+        "input": 0.5,
+        "output": 1.5
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V3.2",
+        "zai-org/GLM-5.2"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "deepseek-ai/DeepSeek-V3.2": {
+          "input": 0.5,
+          "output": 1.5
+        },
+        "zai-org/GLM-5.2": {
+          "input": 1.4,
+          "output": 4.4
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-endpoints",
+      "billing": "metered",
+      "contextWindow": 163840,
+      "contextVerified": false
+    },
+    {
+      "id": "phala",
+      "name": "Phala (RedPill TEE)",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.redpill.ai/v1",
+      "apiKeyEnv": "REDPILL_API_KEY",
+      "priority": 42,
+      "costPer1mTokens": {
+        "input": 1,
+        "output": 1
+      },
+      "models": [
+        "deepseek/deepseek-v3.2",
+        "qwen/qwen3.5-27b"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "deepseek/deepseek-v3.2": {
+          "input": 1,
+          "output": 1
+        },
+        "qwen/qwen3.5-27b": {
+          "input": 0.3,
+          "output": 2.4
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-endpoints",
+      "billing": "metered",
+      "contextWindow": 163840,
+      "contextVerified": false
+    },
+    {
+      "id": "ionet",
+      "name": "io.net Intelligence",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.intelligence.io.solutions/api/v1",
+      "apiKeyEnv": "IONET_API_KEY",
+      "priority": 43,
+      "costPer1mTokens": {
+        "input": 0.16,
+        "output": 0.32
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V4-Flash-0731"
+      ],
+      "verified": true,
+      "modelPricing": {
+        "deepseek-ai/DeepSeek-V4-Flash-0731": {
+          "input": 0.16,
+          "output": 0.32
+        }
+      },
+      "pricingVerified": "2026-08-08",
+      "pricingSource": "openrouter-endpoints",
+      "billing": "metered",
+      "contextWindow": 262100,
+      "contextVerified": false
+    },
+    {
+      "id": "ovhcloud",
+      "name": "OVHcloud AI Endpoints",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+      "apiKeyEnv": "OVH_AI_ENDPOINTS_ACCESS_TOKEN",
+      "priority": 44,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "gpt-oss-120b",
+        "Meta-Llama-3_3-70B-Instruct",
+        "Qwen3-32B"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": null,
+      "contextVerified": false
+    },
+    {
+      "id": "ai21",
+      "name": "AI21 Labs",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.ai21.com/studio/v1",
+      "apiKeyEnv": "AI21_API_KEY",
+      "priority": 45,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "jamba-large-1.7-2025-07",
+        "jamba-mini-2-2026-01"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": null,
+      "contextVerified": false
+    },
+    {
+      "id": "inception",
+      "name": "Inception (Mercury)",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.inceptionlabs.ai/v1",
+      "apiKeyEnv": "INCEPTION_API_KEY",
+      "priority": 46,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "mercury-2"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": null,
+      "contextVerified": false
+    },
+    {
+      "id": "avian",
+      "name": "Avian",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api.avian.io/v1",
+      "apiKeyEnv": "AVIAN_API_KEY",
+      "priority": 47,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "deepseek/deepseek-v3.2",
+        "minimax/minimax-m2.5"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": null,
+      "contextVerified": false
+    },
+    {
+      "id": "modelscope",
+      "name": "ModelScope",
+      "category": "inference",
+      "adapter": "openai-compatible",
+      "baseURL": "https://api-inference.modelscope.cn/v1",
+      "apiKeyEnv": "MODELSCOPE_API_KEY",
+      "priority": 48,
+      "costPer1mTokens": {
+        "input": 0,
+        "output": 0
+      },
+      "models": [
+        "deepseek-ai/DeepSeek-V4-Flash-0731"
+      ],
+      "verified": true,
+      "pricingVerified": false,
+      "billing": "metered",
+      "contextWindow": null,
+      "contextVerified": false
+    }
+  ]
+}

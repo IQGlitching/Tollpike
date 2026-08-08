@@ -1,0 +1,280 @@
+{
+  "_note": [
+    "Where each provider's prices can be checked, and how much that check is worth.",
+    "",
+    "kind: 'first-party' — the provider IS the model vendor, so OpenRouter's",
+    "catalogue reflects that vendor's own published rate and can be diffed",
+    "automatically. Verified against five hand-checked rates on 2026-08-08 with",
+    "an exact match on all five.",
+    "",
+    "kind: 'third-party-host' — the provider RESELLS someone else's open model",
+    "at its own rate. OpenRouter's number is a different host's price and says",
+    "nothing about this one, so these need a human on the vendor's pricing page.",
+    "The tool tracks how stale each check is rather than pretending to verify it.",
+    "",
+    "kind: 'free-tier' — no published per-token rate. Recorded spend will be $0,",
+    "which means a budget cap on these can never trip. Treat with suspicion."
+  ],
+  "tolerancePct": 1,
+  "maxAgeDays": 90,
+  "providers": {
+    "anthropic": {
+      "kind": "first-party",
+      "docs": "https://www.anthropic.com/pricing#api",
+      "models": {
+        "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+        "claude-opus-4-8": "anthropic/claude-opus-4.8",
+        "claude-haiku-4-5-20251001": "anthropic/claude-haiku-4.5"
+      }
+    },
+    "openai": {
+      "kind": "first-party",
+      "docs": "https://developers.openai.com/api/docs/pricing",
+      "models": {
+        "gpt-4o": "openai/gpt-4o",
+        "gpt-4o-mini": "openai/gpt-4o-mini"
+      }
+    },
+    "gemini": {
+      "kind": "first-party",
+      "docs": "https://ai.google.dev/gemini-api/docs/pricing",
+      "models": {
+        "gemini-2.5-flash": "google/gemini-2.5-flash",
+        "gemini-2.5-pro": "google/gemini-2.5-pro"
+      }
+    },
+    "deepseek": {
+      "kind": "first-party",
+      "docs": "https://api-docs.deepseek.com/quick_start/pricing",
+      "models": {
+        "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+        "deepseek-v4-pro": "deepseek/deepseek-v4-pro"
+      }
+    },
+    "xai": {
+      "kind": "first-party",
+      "docs": "https://docs.x.ai/docs/models",
+      "models": {
+        "grok-4.5": "x-ai/grok-4.5"
+      }
+    },
+    "mistral": {
+      "kind": "first-party",
+      "docs": "https://mistral.ai/pricing#api-pricing",
+      "models": {
+        "mistral-large-latest": "mistralai/mistral-large-2512",
+        "mistral-small-latest": "mistralai/mistral-small-2603"
+      }
+    },
+    "cohere": {
+      "kind": "first-party",
+      "docs": "https://cohere.com/pricing",
+      "models": {
+        "command-r-plus": "cohere/command-r-plus-08-2024"
+      }
+    },
+    "perplexity": {
+      "kind": "first-party",
+      "docs": "https://docs.perplexity.ai/getting-started/pricing",
+      "models": {
+        "sonar": "perplexity/sonar",
+        "sonar-pro": "perplexity/sonar-pro"
+      }
+    },
+    "moonshot": {
+      "kind": "first-party",
+      "docs": "https://platform.moonshot.ai/docs/pricing",
+      "models": {}
+    },
+    "zhipu": {
+      "kind": "first-party",
+      "docs": "https://open.bigmodel.cn/pricing",
+      "models": {}
+    },
+    "dashscope": {
+      "kind": "first-party",
+      "docs": "https://help.aliyun.com/zh/model-studio/models",
+      "models": {}
+    },
+    "groq": {
+      "kind": "third-party-host",
+      "docs": "https://groq.com/pricing",
+      "models": {
+        "llama-3.3-70b-versatile": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "Groq"
+    },
+    "cerebras": {
+      "kind": "third-party-host",
+      "docs": "https://www.cerebras.ai/pricing",
+      "models": {},
+      "endpointProvider": "Cerebras"
+    },
+    "together": {
+      "kind": "third-party-host",
+      "docs": "https://www.together.ai/pricing",
+      "models": {
+        "meta-llama/Llama-3.3-70B-Instruct-Turbo": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "Together"
+    },
+    "fireworks": {
+      "kind": "third-party-host",
+      "docs": "https://fireworks.ai/pricing",
+      "models": {},
+      "endpointProvider": "Fireworks"
+    },
+    "deepinfra": {
+      "kind": "third-party-host",
+      "docs": "https://deepinfra.com/pricing",
+      "models": {
+        "meta-llama/Llama-3.3-70B-Instruct": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "DeepInfra"
+    },
+    "hyperbolic": {
+      "kind": "third-party-host",
+      "docs": "https://hyperbolic.xyz/pricing",
+      "models": {}
+    },
+    "sambanova": {
+      "kind": "third-party-host",
+      "docs": "https://cloud.sambanova.ai/pricing",
+      "models": {
+        "Meta-Llama-3.3-70B-Instruct": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "SambaNova"
+    },
+    "novita": {
+      "kind": "third-party-host",
+      "docs": "https://novita.ai/pricing",
+      "models": {
+        "meta-llama/llama-3.3-70b-instruct": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "Novita"
+    },
+    "nebius": {
+      "kind": "third-party-host",
+      "docs": "https://nebius.com/prices-ai-studio",
+      "models": {
+        "meta-llama/Llama-3.3-70B-Instruct": "meta-llama/llama-3.3-70b-instruct"
+      },
+      "endpointProvider": "Nebius"
+    },
+    "upstage": {
+      "kind": "third-party-host",
+      "docs": "https://www.upstage.ai/pricing",
+      "models": {}
+    },
+    "aimlapi": {
+      "kind": "third-party-host",
+      "docs": "https://aimlapi.com/ai-ml-api-pricing",
+      "models": {}
+    },
+    "featherless": {
+      "kind": "third-party-host",
+      "docs": "https://featherless.ai/#pricing",
+      "models": {}
+    },
+    "baseten": {
+      "kind": "third-party-host",
+      "docs": "https://www.baseten.co/pricing/",
+      "models": {},
+      "endpointProvider": "BaseTen"
+    },
+    "inferencenet": {
+      "kind": "third-party-host",
+      "docs": "https://inference.net/pricing",
+      "models": {}
+    },
+    "openrouter": {
+      "kind": "third-party-host",
+      "docs": "https://openrouter.ai/models",
+      "models": {}
+    },
+    "nvidia": {
+      "kind": "free-tier",
+      "docs": "https://build.nvidia.com/",
+      "models": {}
+    },
+    "githubmodels": {
+      "kind": "free-tier",
+      "docs": "https://github.com/marketplace/models",
+      "models": {}
+    },
+    "huggingface": {
+      "kind": "free-tier",
+      "docs": "https://huggingface.co/docs/inference-providers/pricing",
+      "models": {}
+    },
+    "chutes": {
+      "kind": "free-tier",
+      "docs": "https://chutes.ai/pricing",
+      "models": {},
+      "endpointProvider": "Chutes"
+    },
+    "venice": {
+      "kind": "third-party-host",
+      "docs": "https://venice.ai/pricing",
+      "endpointProvider": "Venice",
+      "models": {
+        "qwen3-235b-a22b-thinking-2507": "qwen/qwen3-235b-a22b-thinking-2507",
+        "deepseek-v4-pro": "deepseek/deepseek-v4-pro"
+      }
+    },
+    "atlascloud": {
+      "kind": "third-party-host",
+      "docs": "https://www.atlascloud.ai/pricing",
+      "endpointProvider": "AtlasCloud",
+      "models": {
+        "deepseek-ai/DeepSeek-V3.2-Exp": "deepseek/deepseek-v3.2-exp"
+      }
+    },
+    "friendli": {
+      "kind": "third-party-host",
+      "docs": "https://friendli.ai/pricing",
+      "endpointProvider": "Friendli",
+      "models": {
+        "deepseek-ai/DeepSeek-V3.2": "deepseek/deepseek-v3.2",
+        "zai-org/GLM-5.2": "z-ai/glm-5.2"
+      }
+    },
+    "phala": {
+      "kind": "third-party-host",
+      "docs": "https://red-pill.ai/pricing",
+      "endpointProvider": "Phala",
+      "models": {
+        "deepseek/deepseek-v3.2": "deepseek/deepseek-v3.2",
+        "qwen/qwen3.5-27b": "qwen/qwen3.5-27b"
+      }
+    },
+    "ionet": {
+      "kind": "third-party-host",
+      "docs": "https://docs.io.net/docs/pricing",
+      "endpointProvider": "Io Net",
+      "models": {
+        "deepseek-ai/DeepSeek-V4-Flash-0731": "deepseek/deepseek-v4-flash-0731"
+      }
+    },
+    "ovhcloud": {
+      "kind": "third-party-host",
+      "docs": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/"
+    },
+    "ai21": {
+      "kind": "third-party-host",
+      "docs": "https://www.ai21.com/pricing/"
+    },
+    "inception": {
+      "kind": "third-party-host",
+      "docs": "https://platform.inceptionlabs.ai/"
+    },
+    "avian": {
+      "kind": "third-party-host",
+      "docs": "https://avian.io/pricing"
+    },
+    "modelscope": {
+      "kind": "third-party-host",
+      "docs": "https://modelscope.cn/docs/model-service/API-Inference/intro"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "tollpike",
+  "version": "0.1.0",
+  "description": "Tollpike — one endpoint for every model. Multi-provider routing with cost caps, 3-layer resilience, caching and guardrails.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f tollpike",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:watch": "node --test --watch \"test/*.test.mjs\"",
+    "verify": "node scripts/verify-providers.mjs",
+    "verify-pricing": "node scripts/verify-pricing.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "undici": "^6.28.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
