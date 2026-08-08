@@ -4693,12 +4693,32 @@ function span(className, text) {
   return el;
 }
 
+// The eight self-fetching pages all pass through here. Both states below are
+// on screen often enough to deserve the same grammar as everything else: a
+// loading state that does not shift the layout when it resolves, and a failure
+// that says which page, what went wrong, and what to do about it.
 async function loadPage(el, fetcher, render) {
-  el.innerHTML = '<p class="hint">Loading…</p>';
+  el.innerHTML = `<section class="zone loadstate"><div class="pane">
+      <div class="p-head"><span class="p-t">Loading</span><span class="p-s">ASKING THE GATEWAY</span></div>
+      <div class="skel"><i></i><i></i><i></i></div>
+    </div></section>`;
   try {
     render(el, await fetcher());
   } catch (err) {
-    el.innerHTML = `<div class="alert bad"><b>Could not load this page.</b> ${esc(err.message)}</div>`;
+    // This endpoint does real work — a Qdrant probe, a health poll, a vault
+    // scan — so a failure here is usually a subsystem being down rather than
+    // the gateway itself, and the difference is worth stating.
+    el.innerHTML = `<section class="zone loadstate"><div class="pane">
+      <div class="p-head"><span class="p-t">Could not load this page</span><span class="p-s">NOTHING SHOWN RATHER THAN A GUESS</span></div>
+      <div class="empty-note">
+        <b>${esc(err.message)}</b>
+        This page fetches its own data instead of reading the dashboard's state, because the endpoint
+        behind it does real work. A failure here usually means that subsystem is unreachable rather
+        than the gateway being down &mdash; the rest of the console will still be live.
+      </div>
+      <div class="row"><button class="sm" data-retry="1">Try again</button></div>
+    </div></section>`;
+    el.querySelector("[data-retry]")?.addEventListener("click", () => loadPage(el, fetcher, render));
   }
 }
 

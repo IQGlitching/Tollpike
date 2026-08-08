@@ -2103,42 +2103,83 @@
   .ach.done .ach-h .badge { margin-left: auto; }
 
   /* ---------- Lock screen ---------- */
+  /* A loading state that holds the shape of what is coming, so the page does
+     not jump when it resolves. Three bars, not a spinner: a spinner says
+     "something is happening", this says "a panel is about to be here". */
+  .zone.loadstate { grid-template-columns: minmax(0,1fr); border-bottom: none; }
+  .zone.loadstate > .pane { padding-bottom: 42px; }
+  .skel { display: flex; flex-direction: column; gap: 10px; max-width: 720px; }
+  .skel i {
+    display: block; height: 13px; border-radius: 3px; background: var(--surface-2);
+    animation: skelpulse 1.5s var(--ease) infinite;
+  }
+  .skel i:nth-child(2) { width: 82%; animation-delay: .12s; }
+  .skel i:nth-child(3) { width: 54%; animation-delay: .24s; }
+  @keyframes skelpulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+
+  /* ---------- Lock screen ----------
+     The first thing an operator ever sees, and the one screen that has no
+     state to draw from — so it earns its keep by saying what the key opens
+     and how to recover it, both of which were previously a 9px footnote. */
   .lockwrap {
     position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
-    background: rgba(8,10,16,.93); backdrop-filter: blur(8px);
+    background: rgba(8,10,16,.94); backdrop-filter: blur(8px); padding: 20px;
   }
   .lockwrap[hidden] { display: none; }
   .lockbox {
-    width: min(420px, calc(100vw - 32px));
+    width: min(520px, calc(100vw - 32px));
     background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r-lg);
-    padding: 26px 26px 22px; position: relative; overflow: hidden;
+    padding: 24px 26px 22px; position: relative; overflow: hidden;
     box-shadow: 0 30px 80px rgba(0,0,0,.6);
   }
   .lockbox::before {
     content: ''; position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(70% 90% at 20% 0%, rgba(167,139,250,.10), transparent 70%);
+    background: radial-gradient(70% 90% at 20% 0%, rgba(167,139,250,.08), transparent 70%);
   }
+  .lockbox > * { position: relative; }
+
+  .lock-top { display: flex; align-items: center; gap: 11px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
   .lock-mark {
-    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+    width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 30px;
     background: var(--surface-3); border: 1px solid rgba(167,139,250,.45); color: var(--route);
     font-family: var(--mono); font-size: 14px; font-weight: 700;
   }
-  .lock-h {
-    font-family: var(--mono); font-size: 10px; letter-spacing: .2em; color: var(--route);
-    margin-top: 16px;
+  .lock-h { font-family: var(--mono); font-size: 14px; letter-spacing: .05em; color: var(--txt); }
+  .lock-sub { font-family: var(--mono); font-size: 9px; letter-spacing: .17em; color: var(--txt-4); margin-top: 4px; }
+  .lock-badge {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; color: var(--conn);
+    border: 1px solid rgba(253,203,110,.35); border-radius: 5px; padding: 5px 9px;
   }
-  .lock-t { font-size: 16px; font-weight: 600; margin-top: 9px; letter-spacing: .01em; }
-  .lock-s { font-size: 12px; color: var(--txt-2); margin-top: 9px; line-height: 1.6; }
-  .lock-row { display: flex; gap: 7px; margin-top: 18px; }
-  .lock-row input { flex: 1; font-family: var(--mono); font-size: 12px; }
+
+  .lock-t { font-size: 19px; font-weight: 600; margin-top: 20px; letter-spacing: -.005em; }
+  .lock-s { font-size: 12.5px; color: var(--txt-3); margin-top: 10px; line-height: 1.7; }
+  .lock-s .mono { color: var(--txt-2); font-size: 11.5px; }
+  .lock-row { display: flex; gap: 8px; margin-top: 18px; }
+  .lock-row input { flex: 1; font-family: var(--mono); font-size: 13px; padding: 9px 11px; }
   .lock-err {
-    font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; margin-top: 11px;
-    color: var(--bad); min-height: 13px;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; margin-top: 11px;
+    color: var(--bad); min-height: 14px; line-height: 1.5;
   }
+
+  .lock-what { margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .lw-h { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; color: var(--txt-4); }
+  .lw-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px;
+    margin-top: 11px; background: var(--line); border: 1px solid var(--line);
+    border-radius: var(--r); overflow: hidden;
+  }
+  .lw-grid > div { background: var(--bg-deep); padding: 10px 12px 11px; }
+  .lw-grid b { display: block; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--route); }
+  .lw-grid span { display: block; font-size: 11px; color: var(--txt-4); margin-top: 5px; line-height: 1.5; }
+  .lw-grid > div.off b { color: var(--txt-3); }
+
   .lock-foot {
-    font-family: var(--mono); font-size: 9px; letter-spacing: .06em; color: var(--txt-4);
-    margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); line-height: 1.7;
+    font-size: 11.5px; color: var(--txt-4); line-height: 1.75;
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
   }
+  .lock-foot b { color: var(--txt-2); font-weight: 500; }
+  .lock-foot .mono { color: var(--txt-3); font-size: 11px; }
 
   /* ---------- Responsive ----------
      The zones collapse in the order they can afford to. The core is the last
@@ -2261,18 +2302,46 @@
 </style>
 </head>
 <body>
-<div class="lockwrap" id="lockWrap" hidden>
+<div class="lockwrap gridpaper" id="lockWrap" hidden>
   <div class="lockbox">
-    <div class="lock-mark">T</div>
-    <div class="lock-h">TOLLPIKE &#183; GATEWAY LOCKED</div>
+    <div class="lock-top">
+      <div class="lock-mark">T</div>
+      <div>
+        <div class="lock-h">TOLLPIKE</div>
+        <div class="lock-sub">ROUTING CONTROL CENTER</div>
+      </div>
+      <div class="lock-badge"><span class="dot warn beat"></span>LOCKED</div>
+    </div>
+
     <div class="lock-t">This gateway needs a key</div>
-    <div class="lock-s">Every <span class="mono">/v1</span> and <span class="mono">/api</span> request needs the gateway key. It is stored in this browser only, and never leaves it except as a bearer token to this gateway.</div>
+    <div class="lock-s">The key is held in this browser only. It never leaves it except as a
+      <span class="mono">Bearer</span> token to this gateway, and it is compared in constant time.</div>
+
     <div class="lock-row">
       <input type="password" id="lockInput" autocomplete="off" spellcheck="false" placeholder="gateway key" />
       <button class="primary nowrap" id="lockBtn">Unlock</button>
     </div>
     <div class="lock-err" id="lockErr"></div>
-    <div class="lock-foot">Lost it? Stop the gateway and clear <span class="mono">gatewayApiKey</span> in <span class="mono">data/settings.json</span> to unlock, then set a new one on the Access page.</div>
+
+    <!-- What the key is actually standing in front of. Someone typing into this
+         box is entitled to know what it opens, and the same four surfaces are
+         spelled out on the Access page once they are through. -->
+    <div class="lock-what">
+      <div class="lw-h">WHAT IT OPENS</div>
+      <div class="lw-grid">
+        <div><b>/v1</b><span>completions &#183; spends money</span></div>
+        <div><b>/mcp &#183; /a2a</b><span>the agent surface</span></div>
+        <div><b>/api</b><span>this control plane</span></div>
+        <div class="off"><b>/health</b><span>open &#183; liveness only</span></div>
+      </div>
+    </div>
+
+    <div class="lock-foot">
+      <b>Lost it?</b> Stop the gateway, clear <span class="mono">gatewayApiKey</span> in
+      <span class="mono">data/settings.json</span>, restart, then set a new one on the
+      <span class="mono">Access</span> page. Nothing else is lost &mdash; the key is the only thing that file
+      holds which cannot be recovered from the gateway itself.
+    </div>
   </div>
 </div>
 <div class="app">
