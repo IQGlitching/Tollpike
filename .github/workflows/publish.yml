@@ -38,8 +38,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Printed before the suite so a runner that dies mid-test still leaves
+      # enough behind to tell why. Two dispatched runs reported this step as
+      # "cancelled" a second or two in, which is neither a failing assertion
+      # nor a timeout, and the logs are not readable without admin.
+      - name: Environment
+        run: |
+          node --version && npm --version
+          echo "cores: $(nproc)"
+          free -m || true
+          df -h / | tail -1
+
       - name: Run the test suite
-        run: npm test
+        # --test-concurrency=2 rather than the default one process per core.
+        # Several of these files spawn a full gateway or an MCP server of their
+        # own, so the default fans out to a few dozen node processes at once,
+        # each loading express, 46 provider entries and SQLite. That is the one
+        # difference between this runner and a developer machine that fits the
+        # symptom: killed early, no assertion, no timeout.
+        run: node --test --test-concurrency=2 "test/*.test.mjs"
         timeout-minutes: 5
 
       # Proves the tarball carries no credentials or local state before anything
