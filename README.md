@@ -5,14 +5,14 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**36 providers** (6 local runtimes) · **498 tests** · **19 routing
+**46 providers** (6 local runtimes) · **498 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
 **104 MCP tools across 31 scopes** over stdio/HTTP/SSE · **A2A** JSON-RPC
 with 6 skills · response caching · security guardrails
 
-Point any OpenAI-compatible tool at one local endpoint and reach 36
+Point any OpenAI-compatible tool at one local endpoint and reach 46
 providers behind it, with hard spend limits, failure isolation, response
 caching and optional guardrails. Or plug it into an MCP client, an A2A
 network or a cloud coding agent, and it becomes a tool the agent operates.

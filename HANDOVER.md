@@ -15,7 +15,7 @@ you find any `patchbay` string, it's a leftover.
 ## 1. What this is
 
 A self-hosted AI gateway. One OpenAI-compatible endpoint at
-`127.0.0.1:20128/v1` fans out to 36 providers with tiered fallback, hard
+`127.0.0.1:20128/v1` fans out to 46 providers with tiered fallback, hard
 spend caps, free-quota accounting, stacked compression, persistent memory,
 response caching, and optional guardrails, and exposes the whole gateway
 as tools an agent can drive over MCP and A2A.
@@ -34,7 +34,7 @@ unchecked is labelled unchecked. A change that makes an output look more
 confident than its inputs justify is the wrong change here even when the
 number itself is unchanged.
 
-~11,300 lines of source, ~3,600 lines of tests, no build step, no framework
+~12,200 lines of source, ~5,200 lines of tests, no build step, no framework
 beyond Express. Two runtime dependencies beyond Express and dotenv: `undici`
 (ProxyAgent/Agent) and the MCP SDK. Zero known advisories.
 
@@ -63,7 +63,7 @@ npm install
 cp .env.example .env      # add at least one provider key
 npm start                 # http://127.0.0.1:20128 · panel at /panel
 
-npm test                  # 350 tests, node:test, no test framework dep
+npm test                  # 498 tests, node:test, no test framework dep
 npm run test:watch
 npm run verify            # probes every configured provider baseURL for real
 npm run verify-pricing    # diffs config prices vs upstream; exit 1 on drift

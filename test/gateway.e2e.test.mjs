@@ -365,7 +365,18 @@ describe("gateway: spend reporting", () => {
 
   test("state reports spend confidence and pricing trust", async () => {
     const r = await api("/api/panel/state");
-    assert.ok(Number.isFinite(r.json.confidence.reportedPct));
+    const conf = r.json.confidence;
+    // null is a legitimate reading and means "nothing measured yet". It used
+    // to fall back to 100, so a fresh install with no requests at all claimed
+    // every figure was provider-backed. This assertion passed only because
+    // earlier tests in this file happen to generate usage first.
+    assert.ok(
+      conf.reportedPct === null || Number.isFinite(conf.reportedPct),
+      "confidence is a number or an explicit no-reading"
+    );
+    if (conf.reportedRequests + conf.estimatedRequests === 0) {
+      assert.equal(conf.reportedPct, null, "no measurements must not report a percentage");
+    }
     const t = r.json.pricingTrust;
     assert.equal(t.verified + t.unverified, t.total, "every remote lane is classified");
     assert.ok(Array.isArray(t.unenforceableIds));

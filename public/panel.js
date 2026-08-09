@@ -1126,7 +1126,7 @@ function paintInstruments(s) {
   const capPct = cap ? Math.min(999, (spend / cap) * 100) : null;
   const spendInk = capPct === null ? SCOPE.dim : capPct >= 100 ? SCOPE.bad : capPct >= 80 ? SCOPE.conn : SCOPE.ok;
 
-  const conf = s.confidence || { reportedPct: 100, estimatedRequests: 0 };
+  const conf = s.confidence || { reportedPct: null, estimatedRequests: 0 };
   const trust = s.pricingTrust || { verified: 0, total: 0, unenforceable: 0 };
 
   const active = s.providers.filter((p) => p.hasKey && p.enabled);
@@ -1175,9 +1175,13 @@ function paintInstruments(s) {
 
     <div class="icell">
       <div class="ik">FIGURES BACKED BY PROVIDER</div>
-      <div class="iv ${conf.reportedPct >= 95 ? "ok" : conf.reportedPct >= 60 ? "warn" : "bad"}">${esc(conf.reportedPct)}<span class="u">%</span></div>
+      <div class="iv ${conf.reportedPct === null ? "" : conf.reportedPct >= 95 ? "ok" : conf.reportedPct >= 60 ? "warn" : "bad"}">${
+        conf.reportedPct === null ? "&mdash;" : `${esc(conf.reportedPct)}<span class="u">%</span>`
+      }</div>
       <div class="segbar">${segs}</div>
-      <div class="is"><em>${esc(conf.estimatedRequests || 0)}</em> REQUEST(S) ESTIMATED LOCALLY${conf.estimatedRequests ? " &#183; SHOWN WITH ~" : ""}</div>
+      <div class="is">${conf.reportedPct === null
+        ? "NOTHING MEASURED YET"
+        : `<em>${esc(conf.estimatedRequests || 0)}</em> REQUEST(S) ESTIMATED LOCALLY${conf.estimatedRequests ? " &#183; SHOWN WITH ~" : ""}`}</div>
     </div>
 
     <div class="icell">
@@ -5980,7 +5984,7 @@ function railCells(s) {
       ["MONTH SPEND", fmtUsd(spend)],
       ["PRICE TABLE", `${trust.verified ?? 0}<small> / ${trust.total ?? 0}</small>`,
         trust.activeUnverified?.length ? "bad" : "ok"],
-      ["BACKED", `${s.confidence?.reportedPct ?? 100}%`, (s.confidence?.reportedPct ?? 100) >= 95 ? "ok" : "warn", true]];
+      ["BACKED", s.confidence?.reportedPct == null ? "—" : `${s.confidence.reportedPct}%`, s.confidence?.reportedPct == null ? "" : s.confidence.reportedPct >= 95 ? "ok" : "warn", true]];
     case "resilience": return [
       ["BREAKERS", open ? `${open} OPEN` : "CLOSED", open ? "bad" : "ok"],
       ["COOLING KEYS", String(cool), cool ? "warn" : ""],

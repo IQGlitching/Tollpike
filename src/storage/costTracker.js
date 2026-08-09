@@ -207,12 +207,17 @@ export function getUsageSummary() {
       // Share of SPEND (not request count) backed by the provider's own
       // accounting. Request count would flatter the number, since the
       // cheapest calls are the ones most likely to be measured.
+      // null, not 100, when nothing has been measured yet. A fresh install has
+      // no figures at all, and answering "100% of them are provider-backed"
+      // is the exact failure this project treats as the serious one: an output
+      // that looks more confident than its inputs justify. Callers render null
+      // as the no-reading glyph.
       reportedPct:
         agg.totalCostUsd > 0
           ? Math.round((agg.reportedCostUsd / agg.totalCostUsd) * 100)
           : agg.totalRequests > 0
             ? Math.round((agg.reportedRequests / agg.totalRequests) * 100)
-            : 100
+            : null
     }
   };
 }

@@ -1488,7 +1488,19 @@ services.installShutdownHooks();
 
 app.listen(PORT, BIND_HOST, () => {
   console.log(`tollpike listening on http://${BIND_HOST}:${PORT}`);
-  console.log(`  providers configured: ${providers.length}, available (key set): ${availableProviders().length}`);
+  // "available (key set)" counted the local runtimes, which are available
+  // precisely because they need no key: the registry hands them a placeholder
+  // connection so the connection layer works uniformly. A fresh install with
+  // no credentials at all therefore reported "available (key set): 6", which
+  // sends the operator looking for six keys they never configured. Split the
+  // two, and say nothing about keys when no lane has one.
+  const avail = availableProviders();
+  const keyed = avail.filter((p) => p.requiresKey !== false).length;
+  const keyless = avail.length - keyed;
+  console.log(
+    `  providers configured: ${providers.length}, available: ${avail.length}` +
+      (avail.length ? ` (${keyed} with a key, ${keyless} keyless local)` : "")
+  );
   console.log(`  API base:      http://${BIND_HOST}:${PORT}/v1`);
   console.log(`  control panel: http://${BIND_HOST}:${PORT}/panel`);
   console.log("  inbound formats: OpenAI chat · OpenAI responses · Anthropic messages · Ollama");
