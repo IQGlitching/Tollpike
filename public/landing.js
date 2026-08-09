@@ -123,6 +123,29 @@ tickCounter($('#liveReq'), 141204, 1, 3, 620, v => Math.round(v).toLocaleString(
 tickCounter($('#obsCross'), 4218930, 1, 3, 560, v => Math.round(v).toLocaleString('en-US'));
 tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+/* -------------------------------------------------- REQUEST JOURNEY (thread)
+   One request travels the whole page. Each inter-section conduit is tagged
+   with the routing stage the request is entering, so scrolling reads as the
+   request advancing APPLICATION -> ROUTER -> ... -> RESPONSE -> TELEMETRY,
+   not as moving between unrelated blocks. Reuses the existing .conduit pulse;
+   adds only a label. Order follows the sections top to bottom. */
+(() => {
+  const STAGES = [
+    'REQUEST · <b>IN</b>', 'ONE · <b>ENDPOINT</b>', '<b>&#8594;</b> ROUTER',
+    'ROUTE · <b>SELECTED</b>', 'PROVIDER · <b>BOUND</b>', 'COST · <b>METERED</b>',
+    'LATENCY · <b>OBSERVED</b>', 'TRAFFIC · <b>LIVE</b>', 'FAILOVER · <b>READY</b>',
+    'RESPONSE · <b>OUT</b>', 'HEADERS · <b>X-TOLLPIKE-*</b>', 'TELEMETRY · <b>LOGGED</b>',
+    '<b>CONTROL</b> CENTER', '<b>GET STARTED</b>'
+  ];
+  $$('.conduit').forEach((c, i) => {
+    if (!STAGES[i]) return;
+    const tag = document.createElement('span');
+    tag.className = 'conduit-tag';
+    tag.innerHTML = STAGES[i];
+    c.appendChild(tag);
+  });
+})();
+
 /* ------------------------------------------------------------------ HERO */
 (() => {
   const svg = $('#heroSvg'); if (!svg) return;
@@ -728,18 +751,28 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     requestAnimationFrame(frame);
   })();
 
-  /* ghost labels drift slower than the content in front of them */
+  /* ghost labels are the distant atmosphere layer: they drift slower than the
+     content in front on scroll, and now also lean with the cursor so the
+     background has real depth. Scroll sets the base offset; the rAF loop adds
+     the (smoothed) mouse term, so the two never fight. */
   const ghosts = $$('.ghostlabel');
   function layoutGhosts() {
     for (const g of ghosts) {
       const r = g.parentElement.getBoundingClientRect();
-      if (r.bottom < -200 || r.top > innerHeight + 200) continue;
-      const c = r.top + r.height / 2 - innerHeight / 2;
-      g.style.transform = `translate3d(0, ${Math.round(c * .12)}px, 0)`;
+      if (r.bottom < -200 || r.top > innerHeight + 200) { g.dataset.vis = '0'; continue; }
+      g.dataset.vis = '1';
+      g.dataset.by = String(Math.round((r.top + r.height / 2 - innerHeight / 2) * .12));
     }
   }
   addEventListener('scroll', layoutGhosts, { passive: true });
   layoutGhosts();
+  anims.push(() => {
+    for (const g of ghosts) {
+      if (g.dataset.vis === '0') continue;
+      const by = +(g.dataset.by || 0);
+      g.style.transform = `translate3d(${(smx * 5).toFixed(1)}px, ${(by + smy * 3).toFixed(1)}px, 0)`;
+    }
+  });
 
   if (!SPATIAL && !TSPATIAL) return;
 

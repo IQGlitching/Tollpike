@@ -185,22 +185,46 @@ h2.display { font-size: clamp(30px, 3.4vw, 48px); }
 
 /* ---------- section scaffolding: full-bleed bands, hairline to hairline ---------- */
 section.band { border-bottom: 1px solid var(--line); position: relative; }
-.band-in { max-width: var(--measure); margin: 0 auto; padding: 96px 26px; }
-.band-in.tight { padding: 72px 26px; }
-@media (max-width: 720px) { .band-in, .band-in.tight { padding: 60px 18px; } }
+/* Fluid vertical rhythm. Was a flat 96px top and bottom, which on a laptop
+   left large dark gaps between scenes; this scales the breathing room to the
+   viewport so sections sit closer on short screens without losing the
+   cinematic space on tall ones. */
+.band-in { max-width: var(--measure); margin: 0 auto; padding: clamp(52px, 7vh, 92px) 26px; }
+.band-in.tight { padding: clamp(40px, 5.5vh, 72px) 26px; }
+@media (max-width: 720px) { .band-in, .band-in.tight { padding: clamp(40px, 7vh, 58px) 18px; } }
 
-/* the conduit: a request travelling from one section into the next */
+/* The conduit: the request travelling from one scene into the next, and the
+   thread that makes the page one system rather than stacked blocks. The line
+   and its pulse are pseudo-elements; JS tags each one with the routing stage
+   the request is entering (see landing.js "request journey"), so the gap
+   between sections reads as progress, not emptiness. */
 .conduit {
-  position: absolute; left: 50%; bottom: -37px; width: 1px; height: 74px;
-  background: var(--line-2); z-index: 5; overflow: hidden; pointer-events: none;
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: -47px;
+  width: 160px; height: 94px; z-index: 5; pointer-events: none;
+}
+.conduit::before {
+  content: ''; position: absolute; left: 50%; top: 0; width: 1px; height: 94px;
+  transform: translateX(-50%);
+  background: linear-gradient(to bottom, transparent, var(--line-2) 22%, var(--line-2) 78%, transparent);
 }
 .conduit::after {
-  content: ''; position: absolute; left: -1.5px; top: -14px; width: 4px; height: 14px;
-  border-radius: 3px; background: linear-gradient(to bottom, transparent, var(--route));
-  animation: conduit 3.2s linear infinite;
+  content: ''; position: absolute; left: 50%; top: -6px; width: 4px; height: 15px;
+  margin-left: -2px; border-radius: 3px;
+  background: linear-gradient(to bottom, transparent, var(--route));
+  box-shadow: 0 0 7px rgba(167,139,250,.7); animation: conduit 3.2s linear infinite;
 }
-@keyframes conduit { to { transform: translateY(102px); } }
+@keyframes conduit { 0% { opacity: 0; transform: translateY(-6px); } 12% { opacity: 1; } 88% { opacity: 1; } to { opacity: 0; transform: translateY(96px); } }
+/* the stage label: a small pill sitting on the route line at the boundary */
+.conduit-tag {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  white-space: nowrap; font-family: var(--mono); font-size: 8px; line-height: 1;
+  letter-spacing: .16em; color: var(--txt-4); text-transform: uppercase;
+  background: var(--bg); padding: 4px 9px; border: 1px solid var(--line);
+  border-radius: 100px;
+}
+.conduit-tag b { color: var(--route); font-weight: 500; }
 @media (prefers-reduced-motion: reduce) { .conduit::after { animation: none; opacity: 0; } }
+@media (max-width: 560px) { .conduit-tag { font-size: 7px; padding: 3px 7px; } }
 
 /* scroll reveal */
 .rv { opacity: 0; transform: translateY(14px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
@@ -692,7 +716,7 @@ text { font-family: var(--mono); }
 
 /* ---------- final cta ---------- */
 .final { text-align: center; position: relative; overflow: hidden; }
-.final .band-in { padding-top: 130px; padding-bottom: 130px; position: relative; }
+.final .band-in { padding-top: clamp(72px, 11vh, 130px); padding-bottom: clamp(72px, 11vh, 130px); position: relative; }
 .final .cta-row { display: flex; justify-content: center; gap: 12px; margin-top: 40px; flex-wrap: wrap; }
 .final-bg { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
 
@@ -711,6 +735,14 @@ footer { background: var(--bg-deep); }
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase;
 }
 .foot-bottom .status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+/* creator signature: understated, in the technical register, not a badge */
+.foot-credit {
+  margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line);
+  font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--txt-4); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.foot-credit .sig { color: var(--txt-3); }
+.foot-credit .sep { color: var(--line-3); }
 
 /* ============================================================================
    SPATIAL EXPERIENCE LAYER
@@ -2078,6 +2110,11 @@ export OPENAI_API_KEY=unused</code>
     <div class="foot-bottom">
       <span>tollpike · v0.1.0</span>
       <span class="status"><span class="dot ok beat"></span>SYSTEM STATUS · OPERATIONAL</span>
+    </div>
+    <div class="foot-credit">
+      <span class="sig">Designed &amp; engineered by Faisal Alani</span>
+      <span class="sep">·</span>
+      <span>Tollpike · 2026</span>
     </div>
   </div>
 </footer>
