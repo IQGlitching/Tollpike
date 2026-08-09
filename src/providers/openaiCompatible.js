@@ -1,5 +1,6 @@
 import { normalizedResponse, promptTextOf } from "./normalize.js";
 import { proxyDispatcher } from "../routing/proxy.js";
+import { pickSampling } from "../routing/sampling.js";
 import { requestJson, openStream, ProviderError, UpstreamTimeoutError } from "./http.js";
 
 // Re-exported so existing importers (and tests) keep working now that the
@@ -26,7 +27,8 @@ export async function callOpenAICompatible(provider, request, apiKey) {
       temperature: request.temperature,
       max_tokens: request.max_tokens,
       tools: request.tools,
-      tool_choice: request.tool_choice
+      tool_choice: request.tool_choice,
+      ...pickSampling(request)
     })
   });
 
@@ -69,6 +71,11 @@ export async function streamOpenAICompatible(provider, request, apiKey) {
       max_tokens: request.max_tokens,
       tools: request.tools,
       tool_choice: request.tool_choice,
+      // Standard OpenAI chat fields, and only the ones the caller actually
+      // sent, so a request that uses none of them produces the same body as
+      // before. That matters here: the note below is about not adding fields
+      // nobody asked for.
+      ...pickSampling(request),
       stream: true
       // Deliberately NOT sending `stream_options: {include_usage: true}`.
       // It would give exact streamed spend, but strict providers reject

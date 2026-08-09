@@ -15,7 +15,20 @@ export function fromOllamaRequest(body = {}) {
     temperature: body.options?.temperature,
     // Ollama calls it num_predict; there is no separate max_tokens.
     max_tokens: body.options?.num_predict,
-    tools: body.tools
+    tools: body.tools,
+    // Ollama nests sampling under options, and its `format: "json"` is the
+    // same request as OpenAI's response_format json_object.
+    top_p: body.options?.top_p,
+    seed: body.options?.seed,
+    stop: body.options?.stop,
+    // Ollama's format is "json" for plain JSON mode, or a JSON schema object
+    // in newer versions.
+    response_format:
+      body.format === "json"
+        ? { type: "json_object" }
+        : body.format && typeof body.format === "object"
+          ? { type: "json_schema", json_schema: { name: "response", schema: body.format } }
+          : undefined
   };
 }
 

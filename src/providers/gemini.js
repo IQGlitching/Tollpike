@@ -2,11 +2,37 @@ import { normalizedResponse, promptTextOf } from "./normalize.js";
 import { requestJson, openStream, readWithStallTimeout } from "./http.js";
 import { toGeminiTools, toGeminiToolConfig, toGeminiContents, fromGeminiParts } from "./geminiTranslate.js";
 import { proxyDispatcher } from "../routing/proxy.js";
+import { wantsJson } from "../routing/sampling.js";
 
 // Gemini takes the API key as a query parameter rather than a header, so
 // the model name has to be path-encoded — an unencoded name could otherwise
 // inject extra query parameters into the URL alongside the key.
 const encodeModel = (model) => encodeURIComponent(String(model));
+
+// Gemini spells the sampling parameters differently and nests them under
+// generationConfig. Anything the caller did not send stays absent, so a plain
+// request produces the same body it did before.
+function generationConfig(request) {
+  const cfg = {
+    temperature: request.temperature,
+    maxOutputTokens: request.max_tokens
+  };
+  if (request.top_p !== undefined) cfg.topP = request.top_p;
+  if (request.seed !== undefined) cfg.seed = request.seed;
+  if (request.frequency_penalty !== undefined) cfg.frequencyPenalty = request.frequency_penalty;
+  if (request.presence_penalty !== undefined) cfg.presencePenalty = request.presence_penalty;
+  if (request.stop !== undefined) {
+    cfg.stopSequences = Array.isArray(request.stop) ? request.stop : [request.stop];
+  }
+  if (wantsJson(request)) {
+    cfg.responseMimeType = "application/json";
+    // json_schema carries the schema under json_schema.schema; Gemini takes it
+    // directly. Without it, responseMimeType alone still guarantees JSON.
+    const schema = request.response_format?.json_schema?.schema;
+    if (schema) cfg.responseSchema = schema;
+  }
+  return cfg;
+}
 
 export async function callGemini(provider, request, apiKey) {
   const systemMsg = request.messages.find((m) => m.role === "system");
@@ -23,10 +49,7 @@ export async function callGemini(provider, request, apiKey) {
       systemInstruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
       tools: toGeminiTools(request.tools),
       toolConfig: toGeminiToolConfig(request.tool_choice),
-      generationConfig: {
-        temperature: request.temperature,
-        maxOutputTokens: request.max_tokens
-      }
+      generationConfig: generationConfig(request)
     })
   });
 
@@ -71,10 +94,7 @@ export async function* streamGemini(provider, request, apiKey) {
       systemInstruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
       tools: toGeminiTools(request.tools),
       toolConfig: toGeminiToolConfig(request.tool_choice),
-      generationConfig: {
-        temperature: request.temperature,
-        maxOutputTokens: request.max_tokens
-      }
+      generationConfig: generationConfig(request)
     })
   });
 

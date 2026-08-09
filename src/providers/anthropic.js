@@ -3,6 +3,21 @@ import { requestJson, openStream, readWithStallTimeout } from "./http.js";
 import { toAnthropicMessages, toAnthropicTools, toAnthropicToolChoice, fromAnthropicContent } from "./anthropicTranslate.js";
 import { proxyDispatcher } from "../routing/proxy.js";
 
+// The two sampling parameters the Messages API actually has. The rest of the
+// list this gateway carries has no equivalent here: Anthropic has no
+// response_format, seed, logit_bias or frequency/presence penalties, and the
+// way to get JSON out of Claude is a tool with the schema you want. Mapping
+// them onto something approximate would be emulating a capability rather than
+// reporting it, so they are left off and documented as unsupported.
+function anthropicSampling(request) {
+  const out = {};
+  if (request.top_p !== undefined) out.top_p = request.top_p;
+  if (request.stop !== undefined) {
+    out.stop_sequences = Array.isArray(request.stop) ? request.stop : [request.stop];
+  }
+  return out;
+}
+
 export async function callAnthropic(provider, request, apiKey) {
   const systemMsg = request.messages.find((m) => m.role === "system");
 
@@ -21,7 +36,8 @@ export async function callAnthropic(provider, request, apiKey) {
       tools: toAnthropicTools(request.tools),
       tool_choice: toAnthropicToolChoice(request.tool_choice),
       max_tokens: request.max_tokens || 1024,
-      temperature: request.temperature
+      temperature: request.temperature,
+      ...anthropicSampling(request)
     })
   });
 
@@ -69,6 +85,7 @@ export async function* streamAnthropic(provider, request, apiKey) {
       tool_choice: toAnthropicToolChoice(request.tool_choice),
       max_tokens: request.max_tokens || 1024,
       temperature: request.temperature,
+      ...anthropicSampling(request),
       stream: true
     })
   });

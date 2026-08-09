@@ -104,7 +104,12 @@ export function fromAnthropicRequest(body = {}) {
     temperature: body.temperature,
     max_tokens: body.max_tokens,
     tools: fromAnthropicTools(body.tools),
-    tool_choice: fromAnthropicToolChoice(body.tool_choice)
+    tool_choice: fromAnthropicToolChoice(body.tool_choice),
+    // Anthropic's names for two parameters the gateway carries. Dropping them
+    // here would silently ignore a caller's stop sequences even when the
+    // provider we route to supports them.
+    top_p: body.top_p,
+    stop: body.stop_sequences
   };
 }
 

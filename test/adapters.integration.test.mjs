@@ -208,3 +208,100 @@ describe("gemini adapter", () => {
     assert.equal(chunks[2].choices[0].finish_reason, "tool_calls");
   });
 });
+
+// A caller can send response_format, stop, top_p and friends. They used to be
+// dropped twice over (prepare() built an allowlist payload, then each adapter
+// built another), so the request came back 200 with an answer that ignored
+// them. These assert the parameters reach the wire.
+describe("sampling parameters reach the provider", () => {
+  let ctx;
+  let seen;
+  before(async () => {
+    ctx = await startServer((req, res) => {
+      let body = ""; req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        seen = JSON.parse(body);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(
+          req.url.includes("generateContent")
+            ? { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] }
+            : req.url.includes("/messages")
+              ? { content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } }
+              : { id: "c", choices: [{ message: { role: "assistant", content: "ok" } }] }
+        ));
+      });
+    });
+  });
+  after(() => close(ctx.server));
+
+  const request = {
+    resolvedModel: "m",
+    messages: [{ role: "user", content: "hi" }],
+    top_p: 0.3,
+    stop: ["END"],
+    seed: 7,
+    frequency_penalty: 0.5,
+    presence_penalty: 0.25,
+    response_format: { type: "json_object" }
+  };
+
+  test("openai-compatible forwards them unchanged", async () => {
+    await callOpenAICompatible({ id: "t", baseURL: `http://localhost:${ctx.port}/v1` }, request, "k");
+    assert.equal(seen.top_p, 0.3);
+    assert.deepEqual(seen.stop, ["END"]);
+    assert.equal(seen.seed, 7);
+    assert.equal(seen.frequency_penalty, 0.5);
+    assert.equal(seen.presence_penalty, 0.25);
+    assert.deepEqual(seen.response_format, { type: "json_object" });
+  });
+
+  test("openai-compatible forwards them while streaming too", async () => {
+    await streamOpenAICompatible({ id: "t", baseURL: `http://localhost:${ctx.port}/v1` }, request, "k")
+      .catch(() => {});
+    assert.deepEqual(seen.stop, ["END"]);
+    assert.deepEqual(seen.response_format, { type: "json_object" });
+    assert.equal(seen.stream, true);
+  });
+
+  test("a request that sends none of them produces the body it always did", async () => {
+    await callOpenAICompatible(
+      { id: "t", baseURL: `http://localhost:${ctx.port}/v1` },
+      { resolvedModel: "m", messages: [{ role: "user", content: "hi" }] },
+      "k"
+    );
+    // Strict providers reject unknown fields, so an untouched request must not
+    // grow keys just because the gateway now knows about them.
+    assert.deepEqual(Object.keys(seen).sort(), ["messages", "model"]);
+  });
+
+  test("gemini maps them onto generationConfig", async () => {
+    await callGemini({ id: "g", baseURL: `http://localhost:${ctx.port}/v1` }, request, "k");
+    const cfg = seen.generationConfig;
+    assert.equal(cfg.topP, 0.3);
+    assert.deepEqual(cfg.stopSequences, ["END"]);
+    assert.equal(cfg.seed, 7);
+    assert.equal(cfg.frequencyPenalty, 0.5);
+    assert.equal(cfg.presencePenalty, 0.25);
+    assert.equal(cfg.responseMimeType, "application/json");
+  });
+
+  test("anthropic maps the two it has and invents nothing for the rest", async () => {
+    await callAnthropic({ id: "a", baseURL: `http://localhost:${ctx.port}` }, request, "k");
+    assert.equal(seen.top_p, 0.3);
+    assert.deepEqual(seen.stop_sequences, ["END"]);
+    // No response_format, seed or penalties exist in the Messages API. An
+    // approximation would be emulating a capability rather than reporting it.
+    for (const absent of ["response_format", "seed", "frequency_penalty", "presence_penalty"]) {
+      assert.equal(seen[absent], undefined, `${absent} must not be invented for Anthropic`);
+    }
+  });
+
+  test("a bare string stop becomes the array both native APIs require", async () => {
+    await callGemini({ id: "g", baseURL: `http://localhost:${ctx.port}/v1` },
+      { resolvedModel: "m", messages: [], stop: "END" }, "k");
+    assert.deepEqual(seen.generationConfig.stopSequences, ["END"]);
+    await callAnthropic({ id: "a", baseURL: `http://localhost:${ctx.port}` },
+      { resolvedModel: "m", messages: [], stop: "END" }, "k");
+    assert.deepEqual(seen.stop_sequences, ["END"]);
+  });
+});

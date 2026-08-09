@@ -64,8 +64,27 @@ export function fromResponsesRequest(body = {}) {
             function: { name: t.name, description: t.description, parameters: t.parameters }
           }))
       : undefined,
-    tool_choice: body.tool_choice
+    tool_choice: body.tool_choice,
+    top_p: body.top_p,
+    // Responses spells JSON mode as text.format rather than response_format.
+    // Dropping it here would put this dialect back where the other three were:
+    // accepting the request and answering with prose.
+    response_format: responseFormatOf(body.text?.format)
   };
+}
+
+// text.format carries the schema flat; chat nests it under json_schema.
+function responseFormatOf(format) {
+  if (!format || typeof format !== "object") return undefined;
+  if (format.type === "json_object") return { type: "json_object" };
+  if (format.type === "json_schema") {
+    return {
+      type: "json_schema",
+      json_schema: { name: format.name, schema: format.schema, strict: format.strict }
+    };
+  }
+  // `text` is the default, and anything else is not something we can honour.
+  return undefined;
 }
 
 export function toResponsesResponse(response, requestedModel) {

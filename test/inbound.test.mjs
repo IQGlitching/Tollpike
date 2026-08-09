@@ -183,3 +183,68 @@ describe("inbound: path-token aliases", () => {
     assert.equal(rewritePathToken("/vscode/tpk%5Fabc/chat/completions").token, "tpk_abc");
   });
 });
+
+// Each dialect spells the sampling parameters its own way. They were all being
+// dropped in translation, so a caller asking any of these three surfaces for
+// JSON got prose back with a 200. The chat dialect passes them through by name.
+describe("inbound: every dialect carries its sampling parameters", () => {
+  const sampling = (r) => ({
+    top_p: r.top_p, stop: r.stop, seed: r.seed, response_format: r.response_format
+  });
+
+  test("Anthropic: stop_sequences and top_p", () => {
+    const r = fromAnthropicRequest({ model: "m", messages: [], top_p: 0.9, stop_sequences: ["END"] });
+    assert.equal(r.top_p, 0.9);
+    assert.deepEqual(r.stop, ["END"]);
+  });
+
+  test("Ollama: options.* and format", () => {
+    const r = fromOllamaRequest({
+      model: "m", messages: [], format: "json",
+      options: { top_p: 0.2, seed: 5, stop: ["X"] }
+    });
+    assert.equal(r.top_p, 0.2);
+    assert.equal(r.seed, 5);
+    assert.deepEqual(r.stop, ["X"]);
+    assert.deepEqual(r.response_format, { type: "json_object" });
+  });
+
+  test("Ollama: a schema object is JSON mode too", () => {
+    const r = fromOllamaRequest({ model: "m", messages: [], format: { type: "object" } });
+    assert.equal(r.response_format.type, "json_schema");
+    assert.deepEqual(r.response_format.json_schema.schema, { type: "object" });
+  });
+
+  test("Responses: text.format is this dialect's response_format", () => {
+    const obj = fromResponsesRequest({ model: "m", input: "hi", top_p: 0.4, text: { format: { type: "json_object" } } });
+    assert.equal(obj.top_p, 0.4);
+    assert.deepEqual(obj.response_format, { type: "json_object" });
+
+    const schema = fromResponsesRequest({
+      model: "m", input: "hi",
+      text: { format: { type: "json_schema", name: "S", schema: { a: 1 }, strict: true } }
+    });
+    // Responses carries the schema flat; chat nests it under json_schema.
+    assert.deepEqual(schema.response_format.json_schema, { name: "S", schema: { a: 1 }, strict: true });
+  });
+
+  test("text format and no format both mean 'not JSON mode'", () => {
+    for (const text of [{ format: { type: "text" } }, undefined]) {
+      assert.equal(fromResponsesRequest({ model: "m", input: "hi", text }).response_format, undefined);
+    }
+  });
+
+  test("a request that sets none of them produces none of them", () => {
+    // Anything invented here would change the cache key for a plain request.
+    for (const r of [
+      fromAnthropicRequest({ model: "m", messages: [] }),
+      fromOllamaRequest({ model: "m", messages: [] }),
+      fromResponsesRequest({ model: "m", input: "hi" })
+    ]) {
+      assert.deepEqual(
+        Object.entries(sampling(r)).filter(([, v]) => v !== undefined),
+        []
+      );
+    }
+  });
+});
