@@ -58,6 +58,41 @@ const agentCache = new Map();
 // no business reaching ProxyAgent at all.
 const ALLOWED_PROXY_PROTOCOLS = new Set(["http:", "https:", "socks:", "socks4:", "socks5:", "socks5h:"]);
 
+/**
+ * A proxy URL with its password masked, for anything a caller can read.
+ *
+ * `http://user:pass@proxy:8080` is the ordinary way to configure an
+ * authenticated egress proxy, and it is exactly how HTTPS_PROXY is usually
+ * set, so these strings routinely carry a live credential. Every other secret
+ * in this gateway is reported as a boolean or an id and never echoed: the
+ * gateway key comes back as `locked`, provider credentials as `hasKey`, and
+ * resilience tracks connection ids specifically so key material cannot appear
+ * in a snapshot. Proxy URLs were the exception, returned verbatim by
+ * proxyStatus, proxyPlan and the MCP proxy tools, and rendered into the panel.
+ *
+ * The host, port, scheme and username all survive, because those are what
+ * makes the reading useful when egress goes somewhere unexpected. Only the
+ * password goes. An unparseable value is replaced outright rather than echoed,
+ * since we cannot tell what is inside it.
+ */
+export function redactProxyUrl(url) {
+  if (typeof url !== "string" || url === "") return url;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "***";
+  }
+  if (!parsed.username && !parsed.password) return url;
+  const user = parsed.username;
+  parsed.username = "";
+  parsed.password = "";
+  return parsed.toString().replace(/^([a-z0-9+.-]+:\/\/)/i, `$1${user ? `${user}:` : ""}***@`);
+}
+
+const redactMap = (map = {}) =>
+  Object.fromEntries(Object.entries(map).map(([k, v]) => [k, redactProxyUrl(v)]));
+
 export function validateProxyUrl(url) {
   if (url === null || url === undefined || url === "") return { ok: true, value: null };
   if (typeof url !== "string") return { ok: false, error: "proxy url must be a string" };
@@ -131,7 +166,7 @@ export function proxyDispatcher(providerId) {
 
   if (!ProxyAgentCtor) {
     throw new Error(
-      `Proxy configured (${proxyUrl}) but undici's ProxyAgent is unavailable` +
+      `Proxy configured (${redactProxyUrl(proxyUrl)}) but undici's ProxyAgent is unavailable` +
         (proxyLoadError ? `: ${proxyLoadError}` : "") +
         ". Refusing to send this request directly, since that would bypass the proxy you configured."
     );
@@ -163,10 +198,13 @@ export function proxyStatus() {
   return {
     available: Boolean(ProxyAgentCtor),
     loadError: proxyLoadError,
-    configured: proxies,
-    categories: proxyCategories,
-    envFallback:
-      process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY || null,
+    // Masked, not raw. See redactProxyUrl: these strings carry a live
+    // credential whenever the egress proxy needs authentication.
+    configured: redactMap(proxies),
+    categories: redactMap(proxyCategories),
+    envFallback: redactProxyUrl(
+      process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY || null
+    ),
     levels: ["provider", "category", "global", "env"],
     tls: tlsStatus(tlsProfile),
     // Explicit and permanent. It is the one thing about a gateway's egress
@@ -180,7 +218,7 @@ export function proxyStatus() {
 export function proxyPlan(providers) {
   return providers.map((p) => {
     const { url, level } = resolveProxy(p.id);
-    return { provider: p.id, category: p.category, level, proxy: url };
+    return { provider: p.id, category: p.category, level, proxy: redactProxyUrl(url) };
   });
 }
 

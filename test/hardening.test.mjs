@@ -12,7 +12,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-hardening-"));
 process.env.TOLLPIKE_DATA_DIR = tmp;
 
 const { redactPii, applyGuardrails, isScannedRole } = await import("../src/security/guardrails.js");
-const { validateProxyUrl } = await import("../src/routing/proxy.js");
+const { validateProxyUrl, redactProxyUrl } = await import("../src/routing/proxy.js");
 const { isAllowedHost, hostnameOf } = await import("../src/middleware/hostGuard.js");
 const { validateBudgetCap } = await import("../src/storage/settings.js");
 const { normalizedResponse } = await import("../src/providers/normalize.js");
@@ -81,6 +81,60 @@ describe("proxy: URL validation", () => {
   test("null and empty clear the proxy rather than erroring", () => {
     assert.deepEqual(validateProxyUrl(null), { ok: true, value: null });
     assert.deepEqual(validateProxyUrl(""), { ok: true, value: null });
+  });
+});
+
+// An authenticated egress proxy is configured as http://user:pass@host, and
+// HTTPS_PROXY is normally set that way, so these strings hold a live
+// credential. Every readable surface returned them verbatim: the panel state,
+// /api/panel/proxy, the proxy plan and the MCP proxy tools, which the panel
+// then rendered into the page.
+describe("proxy: credentials never reach a readable surface", () => {
+  test("the password is masked and everything useful survives", () => {
+    assert.equal(
+      redactProxyUrl("http://corpuser:SECRET@proxy.corp:8080"),
+      "http://corpuser:***@proxy.corp:8080/"
+    );
+    assert.equal(redactProxyUrl("socks5://u:SECRET@sock:1080"), "socks5://u:***@sock:1080");
+    assert.equal(redactProxyUrl("http://:SECRET@h:1/"), "http://***@h:1/");
+  });
+
+  test("a proxy with no credentials is left exactly as configured", () => {
+    for (const url of ["http://plain:8080/", "socks5://sock:1080"]) {
+      assert.equal(redactProxyUrl(url), url);
+    }
+  });
+
+  test("null and empty pass through, unparseable values are not echoed", () => {
+    assert.equal(redactProxyUrl(null), null);
+    assert.equal(redactProxyUrl(""), "");
+    // We cannot tell what is inside a value we could not parse, so none of it
+    // is returned rather than guessing which part was the secret.
+    assert.equal(redactProxyUrl("not a url :pass@"), "***");
+  });
+
+  test("status, plan and env fallback are all masked", async () => {
+    const { updateSettings } = await import("../src/storage/settings.js");
+    const { proxyStatus, proxyPlan, resolveProxyUrl } = await import("../src/routing/proxy.js");
+    const before = process.env.HTTPS_PROXY;
+    process.env.HTTPS_PROXY = "http://envuser:ENVSECRET@env:8080";
+    updateSettings({
+      proxies: { "*": "http://g:GLOBALSECRET@gw:3128", anthropic: "socks5://a:LANESECRET@s:1080" },
+      proxyCategories: { frontier: "http://c:CATSECRET@cat:8080" }
+    });
+    try {
+      const providers = [{ id: "anthropic", category: "frontier" }, { id: "openai", category: "frontier" }];
+      const readable = JSON.stringify([proxyStatus(), proxyPlan(providers)]);
+      for (const secret of ["GLOBALSECRET", "LANESECRET", "CATSECRET", "ENVSECRET"]) {
+        assert.equal(readable.includes(secret), false, `${secret} leaked to a readable surface`);
+      }
+      // Masking is for readers only. The dispatcher still has to authenticate.
+      assert.equal(resolveProxyUrl("anthropic"), "socks5://a:LANESECRET@s:1080");
+    } finally {
+      if (before === undefined) delete process.env.HTTPS_PROXY;
+      else process.env.HTTPS_PROXY = before;
+      updateSettings({ proxies: {}, proxyCategories: {} });
+    }
   });
 });
 

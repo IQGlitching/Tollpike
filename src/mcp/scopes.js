@@ -37,7 +37,7 @@ import {
   MAX_TIERS
 } from "../routing/strategies.js";
 import * as resilience from "../routing/resilience.js";
-import { proxyStatus, proxyPlan, validateProxyUrl, clearAgentCache, resolveProxy } from "../routing/proxy.js";
+import { proxyStatus, proxyPlan, validateProxyUrl, clearAgentCache, resolveProxy, redactProxyUrl } from "../routing/proxy.js";
 import { TLS_PROFILE_IDS, validateTlsProfile, tlsStatus } from "../routing/tls.js";
 import {
   getUsageSummary,
@@ -978,7 +978,9 @@ export const SCOPES = {
         schema: OBJECT({ id: STR("Provider id") }, ["id"]),
         handler: ({ id }) => {
           requireProvider(id);
-          return { provider: id, ...resolveProxy(id) };
+          const { url, level } = resolveProxy(id);
+          // resolveProxy returns the dispatch URL, credentials and all.
+          return { provider: id, level, url: redactProxyUrl(url) };
         }
       },
       set: {
