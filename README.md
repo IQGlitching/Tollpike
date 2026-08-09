@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **563 tests** · **19 routing
+**46 providers** (6 local runtimes) · **568 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -299,7 +299,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 563 tests
+npm test                 # 568 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -375,13 +375,18 @@ section of the control panel. The network posture is on by default.
   earlier version of this project: a plain `!==` returns as soon as it hits
   a differing character, leaking how many leading characters matched via
   response timing.)
-- **Rate limiting.** Token bucket per client, keyed on an HMAC of the
-  gateway key (under a per-process random key) or on source IP. It runs
-  *after* authentication. The other order let an unauthenticated caller
-  name someone else's bucket and drain it. Mounted on `/v1` only, so the
-  request that disables it can never be rate-limited itself. The failure
-  mode this actually protects against on a personal gateway is a runaway
-  agent loop burning paid quota in seconds.
+- **Rate limiting.** Token bucket per client. It runs *after* authentication
+  and buckets on `req.callerId`, which auth has already reduced to an HMAC of
+  the validated key under a per-process random key, falling back to source IP
+  when no gateway key is set. Both halves of that matter: the other order let
+  an unauthenticated caller name someone else's bucket and drain it, and
+  deriving identity from the header here instead of from the authenticated
+  caller meant any token-shaped string minted a fresh bucket, so with no
+  gateway key set a client could rotate the header and never be limited at
+  all. Mounted on `/v1`, `/mcp`, `/a2a` and `/api/chat`, and deliberately not
+  on the `/api/panel` control plane, so the request that disables it can never
+  be rate-limited itself. The failure mode this actually protects against on a
+  personal gateway is a runaway agent loop burning paid quota in seconds.
 - **PII redaction.** Strips emails, Luhn-valid card numbers, IBANs, common
   API-key shapes, JWTs and private-key blocks before anything is sent
   upstream, in plain string content and in multimodal content parts.

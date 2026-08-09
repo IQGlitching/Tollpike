@@ -1,4 +1,4 @@
-import { test, describe, before, after } from "node:test";
+import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -402,5 +402,89 @@ describe("identity handling", () => {
       "two callers must not share a cache entry once per-user auth exists"
     );
     assert.equal(cacheKey(req, "caller-a"), cacheKey(req, "caller-a"));
+  });
+});
+
+// The limiter's stated rule has always been "the gateway API key when auth is
+// on, otherwise the source IP". It did not implement it: identify() read the
+// Authorization header directly, so a bucket was minted for any token-shaped
+// string whether or not anything had validated it. With no gateway key set,
+// which is the default, varying that header per request meant a fresh bucket
+// at full capacity every time.
+describe("rate limiter: identity is the authenticated caller", () => {
+  let rl;
+  let auth;
+  let settings;
+
+  before(async () => {
+    rl = await import("../src/middleware/rateLimit.js");
+    auth = await import("../src/middleware/auth.js");
+    settings = await import("../src/storage/settings.js");
+  });
+
+  // The real mounted order: requireGatewayKey, then rateLimit.
+  const send = (headers, ip = "203.0.113.9") => {
+    const req = { headers, ip, socket: {} };
+    let passed = false;
+    let status = 200;
+    const res = { set() {}, status(c) { status = c; return { json() {} }; }, json() {} };
+    auth.requireGatewayKey(req, res, () => {
+      rl.rateLimit(req, res, () => { passed = true; });
+    });
+    return { passed, status };
+  };
+
+  const allowedOutOf = (n, headerFor, ip) => {
+    rl.reset();
+    let allowed = 0;
+    for (let i = 0; i < n; i++) if (send(headerFor(i), ip).passed) allowed++;
+    return allowed;
+  };
+
+  beforeEach(() => {
+    settings.updateSettings({ gatewayApiKey: null });
+    rl.configure({ enabled: true, capacity: 5, refillPerMinute: 1 });
+    rl.reset();
+  });
+
+  after(() => {
+    rl.configure({ enabled: false });
+    rl.reset();
+    settings.updateSettings({ gatewayApiKey: null });
+  });
+
+  test("with auth off, rotating the token header does not mint new buckets", () => {
+    assert.equal(allowedOutOf(40, (i) => ({ authorization: `Bearer rotating-${i}` })), 5);
+    assert.equal(rl.stats().trackedClients, 1, "one client is one bucket, whatever it claims to be");
+  });
+
+  test("the same holds for x-api-key, which Anthropic clients send", () => {
+    assert.equal(allowedOutOf(40, (i) => ({ "x-api-key": `rotating-${i}` })), 5);
+    assert.equal(rl.stats().trackedClients, 1);
+  });
+
+  test("with auth off, separate IPs still get separate buckets", () => {
+    // Collapsing everyone into one bucket would let a single client starve
+    // the rest, which is the opposite failure.
+    rl.reset();
+    let allowed = 0;
+    for (let i = 0; i < 10; i++) if (send({}, `198.51.100.${i}`).passed) allowed++;
+    assert.equal(allowed, 10);
+    assert.equal(rl.stats().trackedClients, 10);
+  });
+
+  test("with auth on, the validated key is the bucket", () => {
+    settings.updateSettings({ gatewayApiKey: "the-real-key" });
+    assert.equal(allowedOutOf(40, () => ({ authorization: "Bearer the-real-key" })), 5);
+    assert.equal(rl.stats().trackedClients, 1);
+  });
+
+  test("with auth on, a rejected request never reaches the limiter", () => {
+    settings.updateSettings({ gatewayApiKey: "the-real-key" });
+    rl.reset();
+    const r = send({ authorization: "Bearer wrong-key" });
+    assert.equal(r.status, 401);
+    assert.equal(r.passed, false);
+    assert.equal(rl.stats().trackedClients, 0, "a 401 must not cost a bucket");
   });
 });

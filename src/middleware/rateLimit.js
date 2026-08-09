@@ -7,8 +7,6 @@
 // In-memory only: a restart resets the buckets, which is fine for a
 // single-process personal gateway and avoids a storage dependency.
 
-import { fingerprint } from "../security/crypto.js";
-
 const buckets = new Map(); // identity -> { tokens, lastRefill }
 
 // Buckets are only ever added on a request, and a process that ran for a
@@ -44,17 +42,21 @@ export function getConfig() {
 }
 
 function identify(req) {
-  const header = req.headers.authorization ||
-    (typeof req.headers["x-api-key"] === "string" ? `Bearer ${req.headers["x-api-key"]}` : "");
-  if (header.startsWith("Bearer ")) {
-    // Keyed by an HMAC of the token, not by a prefix of it. The prefix form
-    // met the letter of "don't store key material" but let anyone *derive*
-    // another client's bucket id: generated keys all begin `tpk_`, leaving
-    // only a few characters to guess, so an unauthenticated caller could
-    // deliberately collide with the operator's bucket and drain it. The
-    // HMAC key is random per process, so identities can't be precomputed.
-    return "key:" + fingerprint(header.slice(7));
-  }
+  // req.callerId, not the raw header. requireGatewayKey runs ahead of this
+  // middleware on every surface it is mounted on, and it has already either
+  // rejected the request or reduced the validated token to a per-process HMAC.
+  //
+  // Deriving identity from the header here instead meant a bucket was minted
+  // for any token-shaped string, validated or not. With no gateway key set,
+  // which is the default, that is a complete bypass: vary the Authorization
+  // header per request and every request is a brand new bucket at full
+  // capacity. Measured at 40 of 40 allowed against a capacity of 5. It also
+  // let one client fill the bucket table and evict everyone else's counters.
+  //
+  // The header is nobody's identity until auth has checked it, which is what
+  // this file's own header comment has always said: the key when auth is on,
+  // the source IP otherwise.
+  if (req.callerId && req.callerId !== "anonymous") return "key:" + req.callerId;
   return "ip:" + (req.ip || req.socket?.remoteAddress || "unknown");
 }
 

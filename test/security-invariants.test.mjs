@@ -76,12 +76,34 @@ describe("security invariants: secrets never enter logs or state", () => {
   // recoverable from the token by anyone who doesn't already have it. An
   // HMAC under a per-process random key satisfies both that and the
   // original no-key-material requirement.
-  test("rate limiter derives bucket identity via HMAC, never a raw token substring", () => {
+  // CHANGED again, deliberately — read this before "fixing" it back.
+  //
+  // This used to assert that rateLimit.js called fingerprint() itself. That
+  // kept key material out of the Map and made the bucket id underivable, both
+  // of which still matter. What it missed is that the limiter was deriving an
+  // identity from the Authorization header *before anyone had validated it*.
+  // With no gateway key set, which is the default, that is a total bypass:
+  // vary the header per request and every request mints a fresh bucket at full
+  // capacity. Measured at 40 of 40 allowed against a capacity of 5.
+  //
+  // The property that actually matters is: bucket identity comes from the
+  // authenticated caller, not from anything a caller can invent. req.callerId
+  // is set by requireGatewayKey, which runs first and has already applied the
+  // HMAC, so the original requirement is still met, one layer up.
+  test("rate limiter buckets on the authenticated caller, not a raw header", () => {
     const rl = src("middleware/rateLimit.js");
-    assert.ok(rl.includes("fingerprint("), "bucket identity must come from fingerprint()");
+    assert.ok(rl.includes("req.callerId"), "identity must come from the authenticated caller");
+    assert.ok(
+      !/req\.headers\.authorization|req\.headers\["x-api-key"\]/.test(rl),
+      "reading the token header here means bucketing on an unvalidated value"
+    );
     assert.ok(
       !/slice\(\s*7\s*,\s*15\s*\)/.test(rl),
       "a raw prefix of the token is guessable and must not be the bucket id"
+    );
+    assert.ok(
+      src("middleware/auth.js").includes("fingerprint(token)"),
+      "callerId must be the keyed HMAC, not the token"
     );
     assert.ok(
       src("security/crypto.js").includes("createHmac"),
