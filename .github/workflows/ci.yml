@@ -1,0 +1,55 @@
+name: CI
+
+# The test suite lives here rather than inside the publish workflow.
+#
+# Four dispatched publish runs died one or two seconds into their test step
+# with "the runner has received a shutdown signal", which is the platform
+# reclaiming the VM rather than a failing assertion or a timeout. Adding job
+# and step timeouts changed nothing, and capping test concurrency changed
+# nothing. The cause is still unknown.
+#
+# Whatever it turns out to be, a release should not be hostage to it. Tests
+# run here on every push, where they can be watched and debugged, and the
+# publish workflow gates on this workflow's result for the same commit
+# instead of re-running the suite itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Printed before the suite so a runner that dies mid-test still leaves
+      # something behind to read.
+      - name: Environment
+        run: |
+          node --version && npm --version
+          echo "cores: $(nproc)"
+          free -m || true
+          df -h / | tail -1
+
+      # Serialised, and with a raised heap. test/compression-dos.test.mjs
+      # deliberately builds multi-megabyte inputs at module scope and runs the
+      # compression passes over them, which makes it by far the heaviest file
+      # here. Running one file at a time keeps that from coinciding with the
+      # several other files that each spawn a gateway or an MCP server.
+      - name: Run the test suite
+        run: node --test --test-concurrency=1 "test/*.test.mjs"
+        timeout-minutes: 10
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096

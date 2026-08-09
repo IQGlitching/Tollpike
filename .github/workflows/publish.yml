@@ -18,12 +18,12 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # The suite takes about 20s. A hung child process in a spawn-based test
-    # would otherwise sit on the runner until the six hour default, and the
-    # run reads as "cancelled" with nothing saying why.
+    # Nothing here is slow now that the suite lives in ci.yml. A bound means a
+    # stuck step fails as a timeout rather than sitting on the runner.
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read # to read ci.yml's conclusion for this commit
       id-token: write # required for npm provenance attestation
 
     steps:
@@ -38,26 +38,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Printed before the suite so a runner that dies mid-test still leaves
-      # enough behind to tell why. Two dispatched runs reported this step as
-      # "cancelled" a second or two in, which is neither a failing assertion
-      # nor a timeout, and the logs are not readable without admin.
-      - name: Environment
+      # The suite runs in ci.yml, not here. Four attempts to run it in this
+      # job died a second or two in with "the runner has received a shutdown
+      # signal", which is the platform reclaiming the VM, and neither timeouts
+      # nor a concurrency cap made any difference. Rather than re-run the
+      # thing that keeps taking the runner down, this gates on the result CI
+      # already recorded for this exact commit. Same guarantee, and a red
+      # suite still blocks the release.
+      - name: Require a green CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          node --version && npm --version
-          echo "cores: $(nproc)"
-          free -m || true
-          df -h / | tail -1
-
-      - name: Run the test suite
-        # --test-concurrency=2 rather than the default one process per core.
-        # Several of these files spawn a full gateway or an MCP server of their
-        # own, so the default fans out to a few dozen node processes at once,
-        # each loading express, 46 provider entries and SQLite. That is the one
-        # difference between this runner and a developer machine that fits the
-        # symptom: killed early, no assertion, no timeout.
-        run: node --test --test-concurrency=2 "test/*.test.mjs"
-        timeout-minutes: 5
+          conclusion=$(gh run list --workflow=ci.yml --commit="$GITHUB_SHA" \
+            --json conclusion --jq '.[0].conclusion // "missing"')
+          echo "CI for $GITHUB_SHA: $conclusion"
+          if [ "$conclusion" != "success" ]; then
+            echo "Refusing to publish: CI for this commit is '$conclusion', not 'success'."
+            echo "Run the CI workflow on this commit and let it pass first."
+            exit 1
+          fi
 
       # Proves the tarball carries no credentials or local state before anything
       # reaches the registry. A published secret cannot be recalled.
