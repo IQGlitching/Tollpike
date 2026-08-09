@@ -80,21 +80,28 @@ jobs:
           npm --version
           echo "cores: $(nproc)"
           free -m
-      # These each start a gateway, an MCP server, mock upstreams or the
-      # embedded-service supervisor. Serialised so only one such process tree
-      # is alive at a time. The full-gateway e2e file is run last and on its
-      # own line so that if the runner dies here, the step output shows how far
-      # the others got before it.
-      - name: Run the spawn-heavy test files
-        run: >
-          node --test --test-concurrency=1
-          test/env-loading.test.mjs
-          test/adapters.integration.test.mjs
-          test/resilience-http.test.mjs
-          test/protocols.test.mjs
-          test/hardening.test.mjs
-          test/subsystems.test.mjs
-          test/gateway.e2e.test.mjs
-        timeout-minutes: 10
-        env:
-          NODE_OPTIONS: --max-old-space-size=4096
+      # One step per file, deliberately. The previous single step ran all
+      # seven together and died with "cancelled", the platform killing the VM,
+      # with no way to tell which file did it. As separate steps, a runner
+      # death marks the finished files "success" and the culprit "cancelled",
+      # so the next run names the offender for free.
+      #
+      # No NODE_OPTIONS heap bump here. That flag belongs on the pure job,
+      # whose compression-DoS inputs need it; on this job it is actively
+      # harmful, since each spawned `node src/server.js` inherits it and a
+      # 4GB ceiling times a runner plus a child gateway is an OOM on a ~7GB
+      # runner, which is exactly what a "cancelled" with no assertion is.
+      - name: env-loading
+        run: node --test test/env-loading.test.mjs
+      - name: adapters.integration
+        run: node --test test/adapters.integration.test.mjs
+      - name: resilience-http
+        run: node --test test/resilience-http.test.mjs
+      - name: protocols
+        run: node --test test/protocols.test.mjs
+      - name: hardening
+        run: node --test test/hardening.test.mjs
+      - name: subsystems
+        run: node --test test/subsystems.test.mjs
+      - name: gateway.e2e
+        run: node --test test/gateway.e2e.test.mjs
