@@ -1,17 +1,19 @@
 name: CI
 
-# The test suite lives here rather than inside the publish workflow.
+# Two test jobs, not one.
 #
-# Four dispatched publish runs died one or two seconds into their test step
-# with "the runner has received a shutdown signal", which is the platform
-# reclaiming the VM rather than a failing assertion or a timeout. Adding job
-# and step timeouts changed nothing, and capping test concurrency changed
-# nothing. The cause is still unknown.
+# The whole suite in a single job kept taking the runner down: it would die a
+# second or two in with "the runner has received a shutdown signal", the
+# platform reclaiming the VM rather than any assertion or timeout. Serialising
+# with --test-concurrency=1 moved the death from ~2s to ~35s but did not stop
+# it, so the cause is cumulative load across the run, not one bad test.
 #
-# Whatever it turns out to be, a release should not be hostage to it. Tests
-# run here on every push, where they can be watched and debugged, and the
-# publish workflow gates on this workflow's result for the same commit
-# instead of re-running the suite itself.
+# So the files are split by what they cost. Seven of them spawn real child
+# processes or bind real sockets (a full gateway, an MCP server, mock upstream
+# servers, the embedded-service supervisor); the other seventeen are pure and
+# include the multi-megabyte compression-DoS inputs. Each group is a fraction
+# of the peak, and the two run on separate VMs. A red result in either fails
+# the workflow, which is what publish.yml gates on.
 
 on:
   push:
@@ -20,36 +22,69 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  test-unit:
+    name: Unit and integration (no spawned processes)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
-
-      # Printed before the suite so a runner that dies mid-test still leaves
-      # something behind to read.
       - name: Environment
-        run: |
-          node --version && npm --version
-          echo "cores: $(nproc)"
-          free -m || true
-          df -h / | tail -1
+        run: node --version && npm --version && echo "cores: $(nproc)" && free -m
+      - name: Run the pure test files
+        run: >
+          node --test --test-concurrency=1
+          test/cache.test.mjs
+          test/compression-dos.test.mjs
+          test/compression-layers.test.mjs
+          test/compression.test.mjs
+          test/credential-endpoint-auth.test.mjs
+          test/credential-store.test.mjs
+          test/crypto.test.mjs
+          test/csrf-hardening.test.mjs
+          test/guardrails.test.mjs
+          test/inbound.test.mjs
+          test/memory.test.mjs
+          test/quota.test.mjs
+          test/request-shape.test.mjs
+          test/resilience.test.mjs
+          test/security-invariants.test.mjs
+          test/strategies.test.mjs
+          test/translate.test.mjs
+        timeout-minutes: 10
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
-      # Serialised, and with a raised heap. test/compression-dos.test.mjs
-      # deliberately builds multi-megabyte inputs at module scope and runs the
-      # compression passes over them, which makes it by far the heaviest file
-      # here. Running one file at a time keeps that from coinciding with the
-      # several other files that each spawn a gateway or an MCP server.
-      - name: Run the test suite
-        run: node --test --test-concurrency=1 "test/*.test.mjs"
+  test-process:
+    name: Process-spawning tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Environment
+        run: node --version && npm --version && echo "cores: $(nproc)" && free -m
+      # These each start a gateway, an MCP server, mock upstreams or the
+      # embedded-service supervisor. Serialised so only one such process tree
+      # is alive at a time.
+      - name: Run the spawn-heavy test files
+        run: >
+          node --test --test-concurrency=1
+          test/adapters.integration.test.mjs
+          test/env-loading.test.mjs
+          test/gateway.e2e.test.mjs
+          test/hardening.test.mjs
+          test/protocols.test.mjs
+          test/resilience-http.test.mjs
+          test/subsystems.test.mjs
         timeout-minutes: 10
         env:
           NODE_OPTIONS: --max-old-space-size=4096

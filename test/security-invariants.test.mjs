@@ -479,4 +479,17 @@ describe("invariants: the test suite never writes to a real data directory", () 
       );
     }
   });
+
+  test("every test file is listed in the CI workflow", () => {
+    // CI names the test files explicitly, split across two jobs by cost. A new
+    // file that nobody adds to that list would simply never run in CI, and a
+    // green check would then mean less than it says. This fails the moment the
+    // directory and the workflow disagree.
+    const ciPath = path.join(testDir, "..", ".github", "workflows", "ci.yml");
+    const ci = fs.readFileSync(ciPath, "utf-8");
+    const listed = new Set(ci.match(/test\/[A-Za-z0-9.-]+\.test\.mjs/g) || []);
+    const missing = files.map((f) => `test/${f}`).filter((f) => !listed.has(f));
+    assert.deepEqual(missing, [],
+      `these test files are not run by any CI job: ${missing.join(", ")}`);
+  });
 });
