@@ -14,6 +14,7 @@
 // stray console.log becomes a malformed JSON-RPC frame and the client drops the
 // connection with no useful error. Every log here goes to stderr.
 
+import { pathToFileURL } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -210,7 +211,16 @@ export function mcpStatus() {
 }
 
 // Standalone stdio mode for a Claude Desktop / Claude Code config entry.
-if (import.meta.url === `file://${process.argv[1]}`) {
+//
+// pathToFileURL, not `file://${process.argv[1]}`. argv[1] is a filesystem
+// path and import.meta.url is a URL, and the two only look interchangeable on
+// a POSIX path made entirely of unreserved characters. On Windows argv[1] is
+// `C:\dir\server.js`, which concatenates to `file://C:\dir\server.js` and
+// never equals `file:///C:/dir/server.js`, so this branch never ran and the
+// documented stdio transport exited silently with status 0. A POSIX path
+// containing a space breaks it the same way, since only the URL side is
+// percent-encoded. Same bug the CLI hit for the same reason.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   startMcpServer().catch((err) => {
     console.error(`[mcp] failed to start: ${err.message}`);
     process.exit(1);

@@ -363,3 +363,123 @@ describe("A2A JSON-RPC", () => {
     }
   });
 });
+
+// The stdio transport is the one every Claude Desktop / Claude Code config
+// entry uses. Its bootstrap guard compared import.meta.url against
+// `file://${process.argv[1]}`, concatenating a filesystem path into a URL.
+// That only holds on a POSIX path of unreserved characters: on Windows
+// argv[1] is `C:\dir\server.js` and never matches `file:///C:/dir/server.js`,
+// so the process exited 0 with no output and the transport was simply dead.
+// A POSIX path with a space breaks it identically, since only the URL side is
+// percent-encoded.
+describe("MCP stdio transport actually starts", () => {
+  const entry = path.join(import.meta.dirname, "..", "src", "mcp", "server.js");
+
+  test("the main-module guard resolves through pathToFileURL", () => {
+    const source = fs.readFileSync(entry, "utf-8");
+    assert.ok(
+      source.includes("pathToFileURL(process.argv[1]).href"),
+      "the guard must convert the path to a URL rather than concatenating one"
+    );
+    // Code lines only. The comment above the guard quotes the broken pattern
+    // to explain it, which is exactly the sort of match that makes a
+    // source-text assertion fail against correct code.
+    const codeLines = source
+      .split("\n")
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l));
+    assert.ok(
+      !codeLines.some((l) => l.includes("`file://${process.argv[1]}`")),
+      "a hand-built file:// URL never matches import.meta.url on Windows"
+    );
+  });
+
+  test("it answers initialize and lists tools over stdio", async () => {
+    const { spawn } = await import("node:child_process");
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-stdio-"));
+    const proc = spawn(process.execPath, [entry], {
+      env: { ...process.env, TOLLPIKE_DATA_DIR: dataDir, TOLLPIKE_ENV_FILE: "/nonexistent" },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    let out = "";
+    proc.stdout.on("data", (c) => { out += c; });
+    const send = (o) => proc.stdin.write(JSON.stringify(o) + "\n");
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    try {
+      send({
+        jsonrpc: "2.0", id: 1, method: "initialize",
+        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "1" } }
+      });
+      await settle(1500);
+      send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
+      await settle(2000);
+
+      const lines = out.split("\n").filter((l) => l.trim());
+      assert.ok(lines.length > 0, "the stdio transport wrote nothing at all");
+
+      const frames = lines.map((l) => {
+        // stdout IS the protocol here, so anything unparseable is a bug in
+        // itself, not just a failed assertion.
+        try { return JSON.parse(l); } catch { throw new Error(`non-JSON on stdout: ${l.slice(0, 120)}`); }
+      });
+      for (const f of frames) assert.equal(f.jsonrpc, "2.0");
+
+      assert.equal(frames.find((f) => f.id === 1)?.result?.serverInfo?.name, "tollpike");
+      assert.ok((frames.find((f) => f.id === 2)?.result?.tools || []).length > 0, "tools/list returned nothing");
+    } finally {
+      proc.kill();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// An installed copy has no src/mcp/server.js to point a client at, so the
+// stdio transport has to be reachable through the CLI. This path cannot rely
+// on that module's main-module guard either: argv[1] is the bin script, so the
+// guard is false and the starter has to be called explicitly.
+describe("MCP stdio is reachable from an install", () => {
+  test("`tollpike mcp` serves the tool registry over stdio", async () => {
+    const { spawn } = await import("node:child_process");
+    const bin = path.join(import.meta.dirname, "..", "bin", "tollpike.mjs");
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-cli-mcp-"));
+    const proc = spawn(process.execPath, [bin, "mcp"], {
+      env: { ...process.env, TOLLPIKE_DATA_DIR: dataDir, TOLLPIKE_ENV_FILE: "/nonexistent" },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    let out = "";
+    proc.stdout.on("data", (c) => { out += c; });
+    const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    try {
+      proc.stdin.write(JSON.stringify({
+        jsonrpc: "2.0", id: 1, method: "initialize",
+        params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "1" } }
+      }) + "\n");
+      await settle(1500);
+      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }) + "\n");
+      await settle(2000);
+
+      const lines = out.split("\n").filter((l) => l.trim());
+      assert.ok(lines.length > 0, "`tollpike mcp` produced no JSON-RPC output");
+
+      const frames = lines.map((l) => {
+        // The gateway's boot banner going to stdout instead of stderr would
+        // land here as a malformed frame, which is the failure this catches.
+        try { return JSON.parse(l); } catch { throw new Error(`non-JSON on stdout: ${l.slice(0, 120)}`); }
+      });
+      assert.equal(frames.find((f) => f.id === 1)?.result?.serverInfo?.name, "tollpike");
+      assert.ok((frames.find((f) => f.id === 2)?.result?.tools || []).length > 0);
+    } finally {
+      proc.kill();
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  test("the CLI advertises the command it supports", () => {
+    const cli = fs.readFileSync(path.join(import.meta.dirname, "..", "bin", "tollpike.mjs"), "utf-8");
+    assert.ok(cli.includes("tollpike mcp"), "help text must list the mcp command");
+    assert.ok(cli.includes("startMcpServer"), "the CLI must call the starter, not rely on the main-module guard");
+  });
+});

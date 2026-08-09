@@ -27,6 +27,8 @@ Routing infrastructure for AI. One endpoint, every provider behind it.
 
 USAGE
   tollpike [start]        start the gateway and the control panel
+  tollpike mcp            serve the 104 MCP tools over stdio, for an MCP
+                          client that spawns a subprocess
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
   tollpike --help         this text
@@ -73,11 +75,28 @@ api base      http://${host}:${port}/v1`);
   process.exit(0);
 }
 
-if (cmd !== "start") {
-  console.error(`tollpike: unknown command "${cmd}". Try \`tollpike --help\`.`);
-  process.exit(1);
+// The MCP stdio transport, reachable from an install. The README documented
+// it as `node src/mcp/server.js`, which is a path only a source checkout has:
+// anyone who followed `npx tollpike` or `npm install -g tollpike` had no way
+// to point a client at it.
+//
+// startMcpServer() is called rather than relying on that module's
+// main-module guard, which compares against process.argv[1] and so is false
+// whenever the module is imported by this file instead of run directly.
+//
+// Nothing may be written to stdout from here on: on this path stdout is the
+// JSON-RPC stream itself.
+if (cmd === "mcp") {
+  const { startMcpServer } = await import(
+    pathToFileURL(path.join(root, "src", "mcp", "server.js")).href
+  );
+  await startMcpServer();
+} else {
+  if (cmd !== "start") {
+    console.error(`tollpike: unknown command "${cmd}". Try \`tollpike --help\`.`);
+    process.exit(1);
+  }
+  // pathToFileURL, not a bare path: on Windows an absolute path like
+  // C:\...\server.js is not a valid ESM specifier and the loader rejects it.
+  await import(pathToFileURL(path.join(root, "src", "server.js")).href);
 }
-
-// pathToFileURL, not a bare path: on Windows an absolute path like
-// C:\...\server.js is not a valid ESM specifier and the loader rejects it.
-await import(pathToFileURL(path.join(root, "src", "server.js")).href);
