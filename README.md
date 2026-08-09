@@ -1172,8 +1172,9 @@ clothes.
    in-memory, so the file only costs startup time, but it still grows forever
 9. More free providers. The quota machinery scales to any number of lanes;
    reaching a much larger pool is config work, and every added `baseURL` must
-   be checked against first-party vendor documentation first (see the
-   provenance note in HANDOVER before pasting in a bulk provider list).
+   be checked against first-party vendor documentation first. A bulk
+   provider list pasted from a third-party aggregator is a supply-chain
+   decision, not a config change.
 
 ## Accuracy of spend figures
 

@@ -19,7 +19,6 @@
     "Dockerfile",
     "docker-compose.yml",
     "README.md",
-    "HANDOVER.md",
     "LICENSE"
   ],
   "scripts": {
