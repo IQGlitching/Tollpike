@@ -22,13 +22,17 @@ if (TSPATIAL) document.documentElement.classList.add('spatial-t');
 const S = { routeP: (SPATIAL || TSPATIAL) ? 0 : 1, setResPhase: null };
 
 /* This page ships to two places. The gateway serves it at /panel/landing.html,
-   where /panel is a real running control panel. The public site serves it where
-   there is no gateway at all, so those links have to go somewhere that exists:
-   the install instructions. One file, correct in both contexts. */
+   where /panel is a real running control panel and "Sign in" is meaningful.
+   The public site has no gateway at all, so:
+     - "Sign in" has nothing to sign into and is removed rather than sent
+       somewhere confusing (it used to bounce to GitHub, which made no sense);
+     - the "control center" links point at the on-page install section, so a
+       visitor stays on the page and sees how to bring their own up.
+   One file, correct in both contexts. */
 if (!location.pathname.startsWith('/panel')) {
   for (const a of $$('a[href="/panel"]')) {
-    a.href = 'https://github.com/IQGlitching/Tollpike#install';
-    a.rel = 'noopener';
+    if (a.hasAttribute('data-signin')) { a.remove(); continue; }
+    a.href = '#start';
   }
 }
 

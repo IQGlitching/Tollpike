@@ -735,14 +735,32 @@ footer { background: var(--bg-deep); }
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase;
 }
 .foot-bottom .status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
-/* creator signature: understated, in the technical register, not a badge */
-.foot-credit {
-  margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line);
-  font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
-  color: var(--txt-4); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+/* creator signature: the last node in the request's journey. Present and
+   legible, tied to the routing language by the node on the divider, without
+   turning into a portfolio badge. */
+.signature {
+  margin-top: 48px; padding-top: 42px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; gap: 11px;
+  text-align: center; position: relative;
 }
-.foot-credit .sig { color: var(--txt-3); }
-.foot-credit .sep { color: var(--line-3); }
+.signature .sig-route {
+  position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--route); box-shadow: 0 0 12px rgba(167,139,250,.8);
+}
+.signature .sig-kicker {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .34em;
+  color: var(--txt-4); text-transform: uppercase;
+}
+.signature .sig-name {
+  font-family: var(--sans); font-weight: 600; line-height: 1;
+  font-size: clamp(24px, 4.4vw, 40px); letter-spacing: -.015em;
+  color: var(--txt); text-shadow: 0 0 30px rgba(167,139,250,.16);
+}
+.signature .sig-sub {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .2em;
+  color: var(--txt-4); text-transform: uppercase;
+}
 
 /* ============================================================================
    SPATIAL EXPERIENCE LAYER
@@ -925,7 +943,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
     </nav>
     <div class="nav-right">
       <a class="ghost" href="https://github.com/IQGlitching/Tollpike" rel="noopener">GitHub</a>
-      <a class="ghost" href="/panel">Sign in</a>
+      <a class="ghost" href="/panel" data-signin>Sign in</a>
       <a class="btn primary sm" href="#start">Get started</a>
     </div>
   </div>
@@ -2111,10 +2129,11 @@ export OPENAI_API_KEY=unused</code>
       <span>tollpike · v0.1.0</span>
       <span class="status"><span class="dot ok beat"></span>SYSTEM STATUS · OPERATIONAL</span>
     </div>
-    <div class="foot-credit">
-      <span class="sig">Built by Faisal Alani</span>
-      <span class="sep">·</span>
-      <span>Tollpike · 2026</span>
+    <div class="signature">
+      <span class="sig-route" aria-hidden="true"></span>
+      <span class="sig-kicker">Built by</span>
+      <span class="sig-name">Faisal Alani</span>
+      <span class="sig-sub">Tollpike · 2026</span>
     </div>
   </div>
 </footer>
