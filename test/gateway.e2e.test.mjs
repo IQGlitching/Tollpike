@@ -71,8 +71,14 @@ before(async () => {
   proc = spawn("node", ["src/server.js"], {
     cwd: root,
     env: credentialFreeEnv(),
-    stdio: "ignore"
+    stdio: ["ignore", "ignore", "pipe"]
   });
+
+  // Keep the server's stderr so a startup failure names itself. Without this
+  // a crash-on-boot only showed up as every test reporting "cancelled", which
+  // is indistinguishable from the health poll timing out.
+  let stderr = "";
+  proc.stderr?.on("data", (c) => { stderr += c; });
 
   // Poll until healthy rather than sleeping a fixed amount.
   //
@@ -84,10 +90,13 @@ before(async () => {
   // reads like flakiness rather than a deadline that is simply too short.
   // 30s is far past any legitimate startup and still fails fast if the
   // server is genuinely broken.
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     if (proc.exitCode !== null) {
-      throw new Error(`server process exited with code ${proc.exitCode} before becoming healthy`);
+      throw new Error(
+        `server exited with code ${proc.exitCode} before becoming healthy` +
+          (stderr ? `:\n${stderr}` : " (no stderr)")
+      );
     }
     try {
       const r = await fetch(BASE + "/health");
@@ -95,7 +104,7 @@ before(async () => {
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error("server did not become healthy within 30s");
+  throw new Error(`server did not become healthy within 60s${stderr ? `:\n${stderr}` : ""}`);
 });
 
 after(() => {

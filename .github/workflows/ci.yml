@@ -82,17 +82,19 @@ jobs:
           free -m
       # These each start a gateway, an MCP server, mock upstreams or the
       # embedded-service supervisor. Serialised so only one such process tree
-      # is alive at a time.
+      # is alive at a time. The full-gateway e2e file is run last and on its
+      # own line so that if the runner dies here, the step output shows how far
+      # the others got before it.
       - name: Run the spawn-heavy test files
         run: >
           node --test --test-concurrency=1
-          test/adapters.integration.test.mjs
           test/env-loading.test.mjs
-          test/gateway.e2e.test.mjs
-          test/hardening.test.mjs
-          test/protocols.test.mjs
+          test/adapters.integration.test.mjs
           test/resilience-http.test.mjs
+          test/protocols.test.mjs
+          test/hardening.test.mjs
           test/subsystems.test.mjs
+          test/gateway.e2e.test.mjs
         timeout-minutes: 10
         env:
           NODE_OPTIONS: --max-old-space-size=4096
