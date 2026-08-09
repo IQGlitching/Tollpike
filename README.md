@@ -143,10 +143,17 @@ response headers tell you what actually happened:
 ```
 X-Tollpike-Provider: groq
 X-Tollpike-Attempts: 1
+X-Tollpike-Candidates: 41
 X-Tollpike-Routing-Tier: 1
 X-Tollpike-Routing-Strategy: priority
 X-Tollpike-Cache: MISS
 ```
+
+`Attempts` counts calls actually made upstream. `Candidates` counts the whole
+fallback walk, most of which is usually lanes skipped without being contacted
+at all, for want of a key or because a cap or breaker ruled them out. A
+request answered by the first reachable lane reports 1 attempt across 41
+candidates, not 41 attempts.
 
 ## Point your existing tools at it
 

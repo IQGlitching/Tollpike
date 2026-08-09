@@ -370,7 +370,15 @@ app.post("/v1/chat/completions", async (req, res) => {
 
     res.set("X-Tollpike-Request-Id", requestId);
     res.set("X-Tollpike-Provider", response.provider);
-    res.set("X-Tollpike-Attempts", String(attempts.length));
+    // Two different facts, reported as two different numbers. `attempts[]`
+    // records the whole fallback walk, and most of it is usually lanes that
+    // were skipped without being contacted at all: no key, capped, breaker
+    // open. Reporting that total as "attempts" told a caller that a request
+    // answered by the first reachable lane had taken 41 tries, which reads as
+    // a slow, expensive, retry-storming gateway and is simply untrue.
+    const contacted = attempts.filter((a) => !a.skipped);
+    res.set("X-Tollpike-Attempts", String(contacted.length));
+    res.set("X-Tollpike-Candidates", String(attempts.length));
     res.set("X-Tollpike-Cache", key ? "MISS" : "BYPASS");
     if (guard.findings.pii.length) res.set("X-Tollpike-PII-Redacted", guard.findings.pii.join(","));
     if (guard.findings.injection.length) res.set("X-Tollpike-Injection-Flags", guard.findings.injection.join(","));

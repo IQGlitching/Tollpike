@@ -2644,7 +2644,12 @@ async function runTrial() {
     // The trial walks the same rows the page has been describing, one hop at
     // a time — the animation IS the fallback chain, not a progress bar.
     const attempts = result.attempts || [];
-    for (const attempt of attempts) {
+    // A skipped lane was never contacted: no key, capped, breaker open. It did
+    // not try and it did not fail, so it neither animates as an attempt nor
+    // counts as one. Painting those red said the gateway had burned through 40
+    // providers to answer a request it served on the first reachable one.
+    const contacted = attempts.filter((a) => !a.skipped);
+    for (const attempt of contacted) {
       const node = [...document.querySelectorAll(".walk-row")].find((n) => n.dataset.providerId === attempt.provider);
       if (!node) continue;
       node.scrollIntoView({ block: "nearest" });
@@ -2653,13 +2658,14 @@ async function runTrial() {
       node.classList.remove("trying");
       node.classList.add(attempt.ok ? "okhit" : "failed");
     }
-    const failed = attempts.filter((a) => !a.ok).length;
+    const failed = contacted.filter((a) => !a.ok).length;
+    const passedOver = attempts.length - contacted.length;
     lastTrial = {
       provider: result.response.provider,
       answer: result.response.choices?.[0]?.message?.content ?? "",
       meta: failed
-        ? `${attempts.length} HOPS TRIED · ${failed} FELL THROUGH`
-        : `ANSWERED ON HOP ${attempts.length || 1}`
+        ? `${contacted.length} LANE(S) CALLED · ${failed} FELL THROUGH`
+        : `ANSWERED ON THE FIRST LANE CALLED${passedOver ? ` · ${passedOver} SKIPPED BEFORE IT` : ""}`
     };
     paintTrial();
   } catch (err) {

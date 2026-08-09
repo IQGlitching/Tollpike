@@ -177,9 +177,22 @@ describe("gateway: routing modes", () => {
       } else {
         // A lane answered. The response body stays OpenAI-shaped, so the
         // walk is reported in headers rather than injected into it.
-        assert.ok(Number(r.headers.get("x-tollpike-attempts")) >= 1, "attempt count is reported");
+        const tried = Number(r.headers.get("x-tollpike-attempts"));
+        const candidates = Number(r.headers.get("x-tollpike-candidates"));
+        assert.ok(tried >= 1, "attempt count is reported");
         assert.ok(r.headers.get("x-tollpike-provider"), "the answering lane is named");
         assert.ok(r.json.choices?.[0]?.message, "a real completion came back");
+
+        // Attempts means calls actually made upstream, not lanes considered.
+        // These were the same number once, so a request answered by the first
+        // reachable lane advertised 41 attempts: it counted every no-key lane
+        // it skipped without contacting. That reads as a retry-storming
+        // gateway and is untrue, so the walk gets its own header.
+        assert.ok(candidates >= tried, "the walk is at least as long as the calls made");
+        assert.ok(
+          tried <= 6,
+          `answered lane should report calls made, not candidates enumerated (got ${tried})`
+        );
       }
     });
   }
