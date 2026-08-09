@@ -1,7 +1,8 @@
 {
   "name": "tollpike",
   "version": "0.1.0",
-  "description": "Routing infrastructure for AI. One OpenAI-compatible endpoint across 36 providers, with cost caps, 3-layer resilience, caching and guardrails.",
+  "description": "Routing infrastructure for AI. One OpenAI-compatible endpoint across 46 providers, with cost caps, 3-layer resilience, caching and guardrails.",
+  "author": "IQGlitching",
   "type": "module",
   "main": "src/server.js",
   "bin": {
