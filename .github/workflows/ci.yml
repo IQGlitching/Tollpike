@@ -1,19 +1,19 @@
 name: CI
 
-# Two test jobs, not one.
+# Three jobs: one for the deterministic suite, one that discovers the
+# integration file list, and a matrix that runs each integration file on its
+# own fresh VM.
 #
-# The whole suite in a single job kept taking the runner down: it would die a
-# second or two in with "the runner has received a shutdown signal", the
-# platform reclaiming the VM rather than any assertion or timeout. Serialising
-# with --test-concurrency=1 moved the death from ~2s to ~35s but did not stop
-# it, so the cause is cumulative load across the run, not one bad test.
+# History: the seven process-spawning files repeatedly took a single runner
+# down at 27-40s with "the runner has received a shutdown signal" (platform
+# reclaim, not an assertion or a timeout). Timeouts, --test-concurrency=1,
+# dropping the heap flag and one-step-per-file all failed to stop it. Running
+# each file on its own VM is both the diagnosis and the likely fix: if the
+# death was cumulative load, every leg now survives; if one file kills its own
+# VM, the matrix names it exactly instead of hiding it behind a blob.
 #
-# So the files are split by what they cost. Seven of them spawn real child
-# processes or bind real sockets (a full gateway, an MCP server, mock upstream
-# servers, the embedded-service supervisor); the other seventeen are pure and
-# include the multi-megabyte compression-DoS inputs. Each group is a fraction
-# of the peak, and the two run on separate VMs. A red result in either fails
-# the workflow, which is what publish.yml gates on.
+# fail-fast: false so one leg dying does not cancel the rest — the point is to
+# see all seven outcomes at once.
 
 on:
   push:
@@ -23,7 +23,7 @@ on:
 
 jobs:
   test-unit:
-    name: Unit and integration (no spawned processes)
+    name: Unit (deterministic, gates releases)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -33,24 +33,38 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Environment
-        run: |
-          node --version
-          npm --version
-          echo "cores: $(nproc)"
-          free -m
-      # Same list publish.yml gates on. Both call the package.json script, so
-      # the file list has one source of truth.
-      - name: Run the pure test files
+      # Same script publish.yml gates on, so the release path is exercised here
+      # on every push. The file list lives in package.json.
+      - name: Run the deterministic test files
         run: npm run test:unit
         timeout-minutes: 10
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-  test-process:
-    name: Process-spawning tests
+  discover-integration:
+    name: Discover integration files
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      files: ${{ steps.list.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+      # The matrix reads its file list from package.json's test:integration
+      # script, so there is no second copy of the list to drift. The
+      # security-invariants suite already asserts every test file is in
+      # test:unit or test:integration.
+      - id: list
+        run: node -e 'process.stdout.write("files=" + JSON.stringify(require("./package.json").scripts["test:integration"].match(/test\/[A-Za-z0-9.-]+\.test\.mjs/g)))' >> "$GITHUB_OUTPUT"
+
+  test-integration:
+    name: "integration: ${{ matrix.file }}"
+    needs: discover-integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.discover-integration.outputs.files) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,31 +75,7 @@ jobs:
       - name: Environment
         run: |
           node --version
-          npm --version
           echo "cores: $(nproc)"
           free -m
-      # One step per file, deliberately. The previous single step ran all
-      # seven together and died with "cancelled", the platform killing the VM,
-      # with no way to tell which file did it. As separate steps, a runner
-      # death marks the finished files "success" and the culprit "cancelled",
-      # so the next run names the offender for free.
-      #
-      # No NODE_OPTIONS heap bump here. That flag belongs on the pure job,
-      # whose compression-DoS inputs need it; on this job it is actively
-      # harmful, since each spawned `node src/server.js` inherits it and a
-      # 4GB ceiling times a runner plus a child gateway is an OOM on a ~7GB
-      # runner, which is exactly what a "cancelled" with no assertion is.
-      - name: env-loading
-        run: node --test test/env-loading.test.mjs
-      - name: adapters.integration
-        run: node --test test/adapters.integration.test.mjs
-      - name: resilience-http
-        run: node --test test/resilience-http.test.mjs
-      - name: protocols
-        run: node --test test/protocols.test.mjs
-      - name: hardening
-        run: node --test test/hardening.test.mjs
-      - name: subsystems
-        run: node --test test/subsystems.test.mjs
-      - name: gateway.e2e
-        run: node --test test/gateway.e2e.test.mjs
+      - name: Run one integration file
+        run: node --test "${{ matrix.file }}"
