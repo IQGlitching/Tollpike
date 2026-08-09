@@ -54,13 +54,28 @@ const MAX_HOURLY_BUCKETS = 24 * 60; // ~60 days
 // — the check is only as good as its accounting window.
 const reserved = new Map(); // `${providerId}::${YYYY-MM}` -> usd
 
+// The month a spend figure belongs to. UTC, because that is what the ledger
+// already records: every row's `ts` is an ISO string from toISOString(), and
+// monthKeyOf slices YYYY-MM straight off it.
+//
+// currentMonthKey() used local time, and the two disagreed for the length of
+// the UTC offset at every month boundary. On a UTC+2 machine, at 00:30 local
+// on the 1st, the cap checked the new month's bucket while every request's
+// spend was still being filed into the previous month's. So for those hours
+// the cap read a bucket nothing was filling: the monthly budget, which is the
+// whole point of this module, silently stopped being enforced once a month,
+// and the new month's ledger under-reported by the same amount. Invisible to
+// CI, which runs in UTC where the two happen to agree.
+export function monthKeyOfDate(date = new Date()) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function monthKeyOf(iso) {
   return typeof iso === "string" ? iso.slice(0, 7) : currentMonthKey();
 }
 
 function currentMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return monthKeyOfDate();
 }
 
 function providerBucket(providerId) {

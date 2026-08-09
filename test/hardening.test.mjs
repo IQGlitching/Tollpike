@@ -173,6 +173,39 @@ describe("cost accounting", () => {
     assert.equal(costTracker.getMonthlySpend("groq"), 1, "spend still totals correctly");
   });
 
+  test("the cap and the ledger agree on which month it is", () => {
+    // The ledger records `ts` as an ISO string and buckets spend by slicing
+    // YYYY-MM off it, which is UTC. The cap used to derive the current month
+    // from local time, so for the length of the UTC offset at every month
+    // boundary the two pointed at different buckets: the cap checked the new
+    // month while spend was still being filed into the old one, and the
+    // monthly budget quietly stopped being enforced for those hours.
+    //
+    // Fixed instants rather than "now", because the bug only appears inside a
+    // window a few hours wide, and only off UTC. A test using the current
+    // time passes almost always, including in CI, which runs in UTC where the
+    // two agree by coincidence.
+    const cases = [
+      ["2026-08-31T22:30:00.000Z", "2026-08"], // 00:30 on the 1st at UTC+2
+      ["2026-09-01T01:00:00.000Z", "2026-09"],
+      ["2026-12-31T23:59:59.000Z", "2026-12"], // year boundary
+      ["2027-01-01T00:00:01.000Z", "2027-01"],
+      ["2026-01-31T13:00:00.000Z", "2026-01"]  // midday, no offset can move it
+    ];
+    for (const [iso, expected] of cases) {
+      assert.equal(
+        costTracker.monthKeyOfDate(new Date(iso)),
+        expected,
+        `${iso} must bucket as ${expected} whatever the machine timezone is`
+      );
+      assert.equal(
+        costTracker.monthKeyOfDate(new Date(iso)),
+        iso.slice(0, 7),
+        `${iso}: the cap's month must match the month the ledger files it under`
+      );
+    }
+  });
+
   test("a reservation holds against the cap and is released exactly once", () => {
     // The window this closes: concurrent requests each read the cap as "not
     // yet reached" and collectively blow past it. The streaming path took no
