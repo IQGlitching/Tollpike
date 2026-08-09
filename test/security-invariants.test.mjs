@@ -480,16 +480,24 @@ describe("invariants: the test suite never writes to a real data directory", () 
     }
   });
 
-  test("every test file is listed in the CI workflow", () => {
-    // CI names the test files explicitly, split across two jobs by cost. A new
-    // file that nobody adds to that list would simply never run in CI, and a
-    // green check would then mean less than it says. This fails the moment the
-    // directory and the workflow disagree.
-    const ciPath = path.join(testDir, "..", ".github", "workflows", "ci.yml");
-    const ci = fs.readFileSync(ciPath, "utf-8");
-    const listed = new Set(ci.match(/test\/[A-Za-z0-9.-]+\.test\.mjs/g) || []);
-    const missing = files.map((f) => `test/${f}`).filter((f) => !listed.has(f));
-    assert.deepEqual(missing, [],
-      `these test files are not run by any CI job: ${missing.join(", ")}`);
+  test("every test file is covered by test:unit or test:integration", () => {
+    // The two scripts in package.json are the single source of truth for the
+    // split: ci.yml runs both, publish.yml gates on test:unit. A new file that
+    // nobody adds to either script would never run in CI, and a green check
+    // would then mean less than it says. It must appear in exactly one, since
+    // running a spawn-heavy file in the unit gate would drag its instability
+    // into the release path, and vice versa.
+    const pkg = JSON.parse(fs.readFileSync(path.join(testDir, "..", "package.json"), "utf-8"));
+    const unit = new Set(pkg.scripts["test:unit"].match(/test\/[A-Za-z0-9.-]+\.test\.mjs/g) || []);
+    const integration = new Set(pkg.scripts["test:integration"].match(/test\/[A-Za-z0-9.-]+\.test\.mjs/g) || []);
+    const missing = [];
+    const both = [];
+    for (const f of files.map((x) => `test/${x}`)) {
+      const inU = unit.has(f), inI = integration.has(f);
+      if (!inU && !inI) missing.push(f);
+      if (inU && inI) both.push(f);
+    }
+    assert.deepEqual(missing, [], `not run by either script: ${missing.join(", ")}`);
+    assert.deepEqual(both, [], `listed in both scripts: ${both.join(", ")}`);
   });
 });

@@ -39,26 +39,10 @@ jobs:
           npm --version
           echo "cores: $(nproc)"
           free -m
+      # Same list publish.yml gates on. Both call the package.json script, so
+      # the file list has one source of truth.
       - name: Run the pure test files
-        run: >
-          node --test --test-concurrency=1
-          test/cache.test.mjs
-          test/compression-dos.test.mjs
-          test/compression-layers.test.mjs
-          test/compression.test.mjs
-          test/credential-endpoint-auth.test.mjs
-          test/credential-store.test.mjs
-          test/crypto.test.mjs
-          test/csrf-hardening.test.mjs
-          test/guardrails.test.mjs
-          test/inbound.test.mjs
-          test/memory.test.mjs
-          test/quota.test.mjs
-          test/request-shape.test.mjs
-          test/resilience.test.mjs
-          test/security-invariants.test.mjs
-          test/strategies.test.mjs
-          test/translate.test.mjs
+        run: npm run test:unit
         timeout-minutes: 10
         env:
           NODE_OPTIONS: --max-old-space-size=4096
