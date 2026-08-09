@@ -238,3 +238,47 @@ describe("security invariants: every routing surface applies the guardrails", ()
     );
   });
 });
+
+describe("invariants: every non-streaming dialect shares one cache", () => {
+  // The cache was wired into /v1/chat/completions only, so /v1/messages,
+  // /v1/responses and /api/chat each paid full price for a question another
+  // dialect had already answered. Nothing was incorrect (a miss is always
+  // safe) but "cross-provider response caching" was narrower in practice than
+  // it reads. The key is built from the normalised internal payload, so the
+  // four dialects genuinely share entries rather than keeping four private
+  // caches.
+  const server = src("server.js");
+
+  test("each dialect converter is reachable from a cache hit", () => {
+    // Plain substring rather than a regex. The claim is exactly "this
+    // converter is applied to a cached entry", and building that as a regex
+    // inside a template literal only adds escaping to get wrong, which is
+    // how the first version of this test managed to fail against correct code.
+    for (const conv of ["toAnthropicResponse", "toResponsesResponse", "toOllamaResponse"]) {
+      assert.ok(
+        server.includes(conv + "(cached.hit"),
+        conv + " must be able to serve a cached entry"
+      );
+    }
+  });
+
+  test("every dialect that can cache also stores what it routed", () => {
+    // Call sites only. The bare name also matches the function definition.
+    const lookups = (server.match(/const cached = cacheFor\(req, body/g) || []).length;
+    const stores = (server.match(/cache\.set\(/g) || []).length;
+    assert.equal(lookups, 3, "the three non-chat dialects each perform a lookup");
+    // Three dialect stores plus the original chat/completions store.
+    assert.ok(stores >= 4, `expected at least 4 cache.set call sites, found ${stores}`);
+  });
+
+  test("the cache key is built from the routed payload, not the wire format", () => {
+    // Keying on the inbound body would give four private caches that never
+    // share, which is the thing this is meant to avoid.
+    assert.match(server, /cacheFor\(req, body, prepared\.payload\)/,
+      "dialects must key on the normalised payload");
+    const cacheSrc = src("storage/responseCache.js");
+    for (const field of ["model", "messages", "tools", "tool_choice", "max_tokens", "caller"]) {
+      assert.ok(cacheSrc.includes(field), `${field} belongs in the key`);
+    }
+  });
+});

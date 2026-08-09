@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **505 tests** · **19 routing
+**46 providers** (6 local runtimes) · **508 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -291,7 +291,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 505 tests
+npm test                 # 508 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -799,8 +799,14 @@ variant), following the pattern in `anthropic.js` / `gemini.js`.
   (`temperature` unset or 0) are cached at all, since `temperature > 0`
   means the caller explicitly wants variation. The cache key excludes the
   provider, so an answer from any backend is reusable, which is exactly
-  what makes caching valuable in a *multi-provider* gateway. Responses
-  carry `X-Tollpike-Cache: HIT|MISS|BYPASS`.
+  what makes caching valuable in a *multi-provider* gateway. It excludes
+  the inbound dialect for the same reason: the key is built from the
+  normalised internal request, so a question asked through
+  `/v1/chat/completions` and the same question asked through
+  `/v1/messages`, `/v1/responses` or `/api/chat` share one entry rather
+  than paying four times. Streaming is never served from cache, since
+  there is no complete response to store at the point it is delivered.
+  Responses carry `X-Tollpike-Cache: HIT|MISS|BYPASS`.
 - Retry-with-backoff on the *same* provider before falling through to the
   next one: transient failures (429/5xx/timeout) get up to 2 retries with
   exponential backoff plus jitter. A rate-limited provider is usually

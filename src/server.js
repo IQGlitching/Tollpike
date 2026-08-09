@@ -289,6 +289,25 @@ async function prepare(payload, { sessionId = "default" } = {}) {
   };
 }
 
+/**
+ * Cache lookup for a routed request, shared by every non-streaming dialect.
+ *
+ * The key is built from the normalised internal payload, never from the
+ * inbound wire format, so the four dialects share one cache rather than four
+ * private ones: the same question asked in Anthropic's shape and in OpenAI's
+ * shape is the same question. What gets stored is likewise the internal
+ * OpenAI-shaped response, and each route converts it on the way out, so an
+ * entry populated through one dialect is readable through all of them.
+ *
+ * Only non-streaming callers get here. A stream is delivered frame by frame
+ * and there is no complete response to store at the point it is served.
+ */
+function cacheFor(req, body, payload) {
+  const enabled = body.cache !== false && isCacheable(payload);
+  const key = enabled ? cacheKey(payload, req.callerId) : null;
+  return { key, hit: key ? cache.get(key) : null };
+}
+
 app.post("/v1/chat/completions", async (req, res) => {
   const requestId = randomUUID();
   const body = req.body || {};
@@ -483,9 +502,18 @@ app.post("/v1/messages", async (req, res) => {
     return;
   }
 
+  const cached = cacheFor(req, body, prepared.payload);
+  if (cached.hit) {
+    res.set("X-Tollpike-Provider", cached.hit.provider);
+    res.set("X-Tollpike-Cache", "HIT");
+    return res.json(toAnthropicResponse(cached.hit, body.model));
+  }
+
   try {
     const { response } = await routeChatCompletion(prepared.payload);
+    if (cached.key) cache.set(cached.key, response);
     res.set("X-Tollpike-Provider", response.provider);
+    res.set("X-Tollpike-Cache", cached.key ? "MISS" : "BYPASS");
     ingestTurn(req, inbound.messages, response);
     res.json(toAnthropicResponse(response, body.model));
   } catch (err) {
@@ -527,9 +555,18 @@ app.post("/v1/responses", async (req, res) => {
     return;
   }
 
+  const cached = cacheFor(req, body, prepared.payload);
+  if (cached.hit) {
+    res.set("X-Tollpike-Provider", cached.hit.provider);
+    res.set("X-Tollpike-Cache", "HIT");
+    return res.json(toResponsesResponse(cached.hit, body.model));
+  }
+
   try {
     const { response } = await routeChatCompletion(prepared.payload);
+    if (cached.key) cache.set(cached.key, response);
     res.set("X-Tollpike-Provider", response.provider);
+    res.set("X-Tollpike-Cache", cached.key ? "MISS" : "BYPASS");
     ingestTurn(req, inbound.messages, response);
     res.json(toResponsesResponse(response, body.model));
   } catch (err) {
@@ -577,9 +614,18 @@ app.post("/api/chat", async (req, res) => {
     return;
   }
 
+  const cached = cacheFor(req, body, prepared.payload);
+  if (cached.hit) {
+    res.set("X-Tollpike-Provider", cached.hit.provider);
+    res.set("X-Tollpike-Cache", "HIT");
+    return res.json(toOllamaResponse(cached.hit, body.model));
+  }
+
   try {
     const { response } = await routeChatCompletion(prepared.payload);
+    if (cached.key) cache.set(cached.key, response);
     res.set("X-Tollpike-Provider", response.provider);
+    res.set("X-Tollpike-Cache", cached.key ? "MISS" : "BYPASS");
     ingestTurn(req, inbound.messages, response);
     res.json(toOllamaResponse(response, body.model));
   } catch (err) {
