@@ -318,10 +318,25 @@ export async function* routeChatCompletionStream(request) {
     const connection = pickConnection(provider);
     const streamAdapter = STREAM_ADAPTERS[provider.adapter];
     const startedAt = Date.now();
+
+    // Same reservation the buffered path takes, and for the same reason. It
+    // was missing here, so the monthly cap only ever saw committed spend for
+    // streams: N concurrent streams each read the cap as "not yet reached"
+    // and collectively overshot it. Streaming is the common case for a chat
+    // client, so the cap was weakest exactly where it is leaned on hardest.
+    const release = reserveSpend(
+      provider.id,
+      estimateRequestCost(request, priceFor(provider, model))
+    );
+
     let upstream;
     try {
       upstream = await streamAdapter(provider, { ...request, resolvedModel: model }, connection.key);
     } catch (err) {
+      // Nothing opened, so nothing will be billed for this candidate. Release
+      // before moving on, or every failed candidate leaves its estimate held
+      // against the cap for the rest of the month.
+      release();
       const layer = resilience.classifyAndRecord(provider.id, connection.id, model, err);
       recordFreeUsage(provider.id, { tokens: 0 }); // the attempt reached the vendor
       attempts.push({
@@ -407,7 +422,13 @@ export async function* routeChatCompletionStream(request) {
         }
       }
     } finally {
+      // Order matters and mirrors the buffered path: commit the real figure
+      // first, then drop the estimate holding its place. Releasing first
+      // would open a window where neither the estimate nor the actual cost
+      // is counted against the cap. This finally also runs when the consumer
+      // abandons the stream early, because closing a generator invokes it.
       commitUsage();
+      release();
     }
 
     return; // stream complete, committed provider succeeded

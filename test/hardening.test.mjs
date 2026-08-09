@@ -173,6 +173,40 @@ describe("cost accounting", () => {
     assert.equal(costTracker.getMonthlySpend("groq"), 1, "spend still totals correctly");
   });
 
+  test("a reservation holds against the cap and is released exactly once", () => {
+    // The window this closes: concurrent requests each read the cap as "not
+    // yet reached" and collectively blow past it. The streaming path took no
+    // reservation at all, so for streams the cap only ever saw committed
+    // spend, which is the weakest place for it to be weak since streaming is
+    // the normal mode for a chat client.
+    const before = costTracker.getMonthlySpend("resv-demo");
+
+    const releaseA = costTracker.reserveSpend("resv-demo", 2);
+    const releaseB = costTracker.reserveSpend("resv-demo", 3);
+    assert.equal(
+      costTracker.getMonthlySpend("resv-demo"),
+      before + 5,
+      "in-flight estimates are visible to the cap, not just committed spend"
+    );
+
+    releaseA();
+    releaseA(); // double release must not credit the month twice
+    assert.equal(costTracker.getMonthlySpend("resv-demo"), before + 3, "release is idempotent");
+
+    releaseB();
+    assert.equal(costTracker.getMonthlySpend("resv-demo"), before, "nothing is left held");
+  });
+
+  test("a reservation that cannot be estimated is a no-op, never NaN", () => {
+    const before = costTracker.getMonthlySpend("resv-zero");
+    for (const bad of [0, -1, NaN, undefined, null]) {
+      const release = costTracker.reserveSpend("resv-zero", bad);
+      assert.equal(typeof release, "function", `reserveSpend(${bad}) still returns a releaser`);
+      release();
+    }
+    assert.equal(costTracker.getMonthlySpend("resv-zero"), before);
+  });
+
   test("missing usage records as zero cost, never NaN", () => {
     const entry = costTracker.recordUsage({
       providerId: "demo",
