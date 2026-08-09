@@ -189,3 +189,52 @@ describe("security invariants: stored credentials", () => {
       "panel state must distinguish 'a secret exists' from 'the key is encrypted'");
   });
 });
+
+describe("security invariants: every routing surface applies the guardrails", () => {
+  // The rate limiter is mounted on /mcp and /a2a for a stated reason:
+  // completions_chat and the smart-routing skill both route real requests, so
+  // exempting them "would leave a way around the only control that stops a
+  // runaway agent loop". Exactly the same argument applies to PII redaction
+  // and injection scanning, and those two surfaces were exempt from both:
+  // they called routeChatCompletion directly, bypassing prepare(). An
+  // operator who switched redaction on got it on the surface a human types
+  // into and not on the one an agent drives, which is the less supervised of
+  // the two.
+  //
+  // Structural, not behavioural, because the failure mode is someone adding a
+  // sixth call site later. A behavioural test only covers the paths it knows.
+  for (const rel of ["mcp/scopes.js", "a2a/skills.js"]) {
+    test(`${rel} guards every request it routes`, () => {
+      const code = src(rel);
+      const routes = (code.match(/routeChatCompletion\(/g) || []).length;
+      if (routes === 0) return; // nothing routed here, nothing to guard
+
+      assert.ok(
+        code.includes('from "../security/policy.js"'),
+        `${rel} routes requests but does not import the guardrail policy`
+      );
+      const guards = (code.match(/guardRouted\(/g) || []).length;
+      assert.ok(
+        guards >= routes,
+        `${rel} routes ${routes} request(s) but only guards ${guards}`
+      );
+      assert.ok(
+        code.includes("guard.blocked"),
+        `${rel} must honour a blocked verdict rather than routing anyway`
+      );
+    });
+  }
+
+  test("the guardrail policy is resolved in exactly one place", () => {
+    // Two surfaces resolving `settings.redactPii` independently is how they
+    // drift apart, which is how one of them ended up resolving it never.
+    const policy = src("security/policy.js");
+    assert.ok(policy.includes("redactPii") && policy.includes("injectionMode"),
+      "policy.js is the single place stored settings become a guardrail decision");
+    assert.ok(src("security/guardrails.js").trim().length > 0);
+    assert.ok(
+      !/^import /m.test(src("security/guardrails.js")),
+      "guardrails.js stays a pure transform with no imports, so it remains trivially testable"
+    );
+  });
+});

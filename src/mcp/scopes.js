@@ -58,6 +58,7 @@ import {
 import { gamificationSnapshot, achievements, streak, savings } from "../storage/gamification.js";
 import * as cache from "../storage/responseCache.js";
 import { applyGuardrails, detectInjection, redactPii } from "../security/guardrails.js";
+import { guardRouted, blockedMessage } from "../security/policy.js";
 import { generateApiKey, isEncryptionAvailable } from "../security/crypto.js";
 import * as rateLimiter from "../middleware/rateLimit.js";
 import { compressMessagesWithStats, CAVEMAN_LEVELS, CAVEMAN_SCOPES } from "../compression/compress.js";
@@ -215,9 +216,11 @@ export const SCOPES = {
           const model = provider.models[0];
           if (!model) throw new Error(`Provider "${id}" lists no models`);
           try {
+            const guard = guardRouted([{ role: "user", content: message }]);
+            if (guard.blocked) throw new Error(blockedMessage(guard.findings.injection));
             const { response, attempts } = await routeChatCompletion({
               model: `${id}/${model}`,
-              messages: [{ role: "user", content: message }],
+              messages: guard.messages,
               max_tokens: 32
             });
             return {
@@ -474,7 +477,11 @@ export const SCOPES = {
         ),
         mutates: true,
         handler: async ({ model = "auto", messages, max_tokens, temperature }) => {
-          const { response, attempts } = await routeChatCompletion({ model, messages, max_tokens, temperature });
+          // Agent-supplied content is routed content. It gets the same PII
+          // redaction and injection policy the HTTP dialects get.
+          const guard = guardRouted(messages);
+          if (guard.blocked) throw new Error(blockedMessage(guard.findings.injection));
+          const { response, attempts } = await routeChatCompletion({ model, messages: guard.messages, max_tokens, temperature });
           return {
             content: response.choices?.[0]?.message?.content ?? "",
             provider: response.provider,

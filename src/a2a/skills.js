@@ -13,6 +13,7 @@
 // wasted call, while refusing costs the interaction.
 
 import { routeChatCompletion, buildCandidates } from "../routing/router.js";
+import { guardRouted, blockedMessage } from "../security/policy.js";
 import { providers, billingOf, isPricingVerified, priceFor } from "../providers/registry.js";
 import { getUsageSummary, getLedger, getMonthlySpend } from "../storage/costTracker.js";
 import { quotaSnapshot } from "../storage/quotaTracker.js";
@@ -39,9 +40,13 @@ export const SKILLS = {
       required: ["prompt"]
     },
     async run({ prompt, model = "auto", maxTokens }) {
+      // A peer agent supplying a prompt is caller-supplied content like any
+      // other, so the operator configured guardrails apply here too.
+      const guard = guardRouted([{ role: "user", content: prompt }]);
+      if (guard.blocked) throw new Error(blockedMessage(guard.findings.injection));
       const { response, attempts } = await routeChatCompletion({
         model,
-        messages: [{ role: "user", content: prompt }],
+        messages: guard.messages,
         max_tokens: maxTokens
       });
       const winner = attempts.find((a) => a.ok);
