@@ -34,7 +34,11 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Environment
-        run: node --version && npm --version && echo "cores: $(nproc)" && free -m
+        run: |
+          node --version
+          npm --version
+          echo "cores: $(nproc)"
+          free -m
       - name: Run the pure test files
         run: >
           node --test --test-concurrency=1
@@ -71,7 +75,11 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Environment
-        run: node --version && npm --version && echo "cores: $(nproc)" && free -m
+        run: |
+          node --version
+          npm --version
+          echo "cores: $(nproc)"
+          free -m
       # These each start a gateway, an MCP server, mock upstreams or the
       # embedded-service supervisor. Serialised so only one such process tree
       # is alive at a time.
