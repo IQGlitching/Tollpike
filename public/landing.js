@@ -150,6 +150,29 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   });
 })();
 
+/* -------------------------------------------------- SIGNATURE (types itself)
+   The creator credit is a command being entered: it types out when it scrolls
+   into view, with a blinking caret. Reduced motion gets the finished line at
+   once. The full text lives in aria-label, so screen readers never depend on
+   the animation. */
+(() => {
+  const el = $('.sig-type');
+  if (!el) return;
+  const text = el.getAttribute('data-text') || '';
+  if (RM) { el.textContent = text; return; }
+  let started = false;
+  const type = () => {
+    let i = 0;
+    (function step() {
+      el.textContent = text.slice(0, i);
+      if (i++ <= text.length) setTimeout(step, 58);
+    })();
+  };
+  new IntersectionObserver((es, o) => es.forEach(e => {
+    if (e.isIntersecting && !started) { started = true; type(); o.disconnect(); }
+  }), { threshold: .35 }).observe(el);
+})();
+
 /* ------------------------------------------------------------------ HERO */
 (() => {
   const svg = $('#heroSvg'); if (!svg) return;
