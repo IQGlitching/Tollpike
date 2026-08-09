@@ -36,22 +36,59 @@ const MODEL_NOT_FOUND_LOCKOUT_MS = 30 * 60_000;
 
 function providerState(providerId) {
   if (!providers.has(providerId)) {
-    providers.set(providerId, { status: "CLOSED", failures: 0, openedAt: 0 });
+    providers.set(providerId, { status: "CLOSED", failures: 0, openedAt: 0, probeStartedAt: 0 });
   }
   return providers.get(providerId);
 }
 
+/**
+ * Would this provider serve a request right now? Read-only.
+ *
+ * Anything that lists or reports on providers wants this one. The gate below
+ * moves breaker state, and listing the fleet should not advance a breaker.
+ */
+export function canServe(providerId) {
+  const s = providerState(providerId);
+  if (s.status === "CLOSED" || s.status === "HALF_OPEN") return true;
+  return Date.now() - s.openedAt > PROVIDER_COOLDOWN_MS;
+}
+
+/**
+ * The routing gate: claims the right to send one request to this provider.
+ *
+ * HALF_OPEN used to return true unconditionally, so the "allow one probe"
+ * this comment has always promised was only true when requests arrived one at
+ * a time with the answer to each landing before the next was checked. Under
+ * any concurrency the whole in-flight burst passed the gate together and every
+ * one of them waited out the full timeout against a provider already known to
+ * be down, which is the pile-up the breaker exists to prevent. Measured at 50
+ * of 50 before this changed.
+ *
+ * Exactly one probe is admitted per cooldown window. The window doubles as the
+ * safety valve: a probe that never reports back (a dropped request records
+ * neither success nor failure) would otherwise bench the provider forever, so
+ * once the window passes without a verdict the next caller may probe again.
+ */
 export function isProviderAvailable(providerId) {
   const s = providerState(providerId);
   if (s.status === "CLOSED") return true;
+
   if (s.status === "OPEN") {
     if (Date.now() - s.openedAt > PROVIDER_COOLDOWN_MS) {
       s.status = "HALF_OPEN";
-      return true; // allow one probe
+      s.probeStartedAt = Date.now();
+      return true;
     }
     return false;
   }
-  return true; // HALF_OPEN
+
+  // HALF_OPEN: a probe is already out. Wait for its verdict, or take over if
+  // it never arrived.
+  if (Date.now() - s.probeStartedAt > PROVIDER_COOLDOWN_MS) {
+    s.probeStartedAt = Date.now();
+    return true;
+  }
+  return false;
 }
 
 export function recordProviderFailure(providerId) {

@@ -1,4 +1,4 @@
-import { test, describe, beforeEach } from "node:test";
+import { test, describe, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import * as r from "../src/routing/resilience.js";
 
@@ -121,6 +121,151 @@ describe("resilience: a caller's bad request is not a provider's fault", () => {
       r.reset();
       for (let i = 0; i < 3; i++) r.classifyAndRecord("p", "p#0", "m", { status });
       assert.equal(r.isProviderAvailable("p"), false, `${status} must still trip the breaker`);
+    }
+  });
+});
+
+// "allow one probe" was a comment, not a behaviour: HALF_OPEN returned true to
+// everyone, so it only held when requests arrived one at a time and each
+// verdict landed before the next check. A concurrent burst all passed together
+// and every one of them waited out the full timeout against a dead provider.
+describe("resilience: half-open admits exactly one probe", () => {
+  const P = "probe-test";
+  const COOLDOWN_MS = 30_000;
+  let realNow;
+
+  beforeEach(() => {
+    r.reset();
+    realNow = Date.now;
+  });
+
+  const at = (offsetMs) => { Date.now = () => realNow() + offsetMs; };
+  const restore = () => { Date.now = realNow; };
+
+  const trip = () => {
+    for (let i = 0; i < 3; i++) r.recordProviderFailure(P);
+  };
+
+  test("a burst arriving together yields one probe, not one each", () => {
+    trip();
+    assert.equal(r.isProviderAvailable(P), false, "the breaker must be open first");
+    at(COOLDOWN_MS + 1_000);
+    // None of these has recorded a verdict yet, which is what concurrency means.
+    const allowed = Array.from({ length: 50 }, () => r.isProviderAvailable(P)).filter(Boolean).length;
+    assert.equal(allowed, 1);
+    restore();
+  });
+
+  test("listing providers does not consume the probe or move the breaker", () => {
+    trip();
+    at(COOLDOWN_MS + 1_000);
+    for (let i = 0; i < 10; i++) r.canServe(P);
+    // If canServe had claimed the slot, this would be 0.
+    assert.equal(r.isProviderAvailable(P), true);
+    restore();
+  });
+
+  test("canServe reports the truth without changing it", () => {
+    trip();
+    assert.equal(r.canServe(P), false, "open and inside the cooldown");
+    at(COOLDOWN_MS + 1_000);
+    assert.equal(r.canServe(P), true, "cooldown elapsed, a probe is due");
+    restore();
+  });
+
+  test("a probe that never reports back does not bench the lane forever", () => {
+    trip();
+    at(COOLDOWN_MS + 1_000);
+    assert.equal(r.isProviderAvailable(P), true, "probe goes out");
+    assert.equal(r.isProviderAvailable(P), false, "and holds the slot");
+    // The request was dropped: neither success nor failure was ever recorded.
+    at(COOLDOWN_MS * 4);
+    assert.equal(r.isProviderAvailable(P), true, "the next window may probe again");
+    restore();
+  });
+
+  test("a successful probe reopens the lane for everyone", () => {
+    trip();
+    at(COOLDOWN_MS + 1_000);
+    assert.equal(r.isProviderAvailable(P), true);
+    r.recordSuccess(P, "key", "model");
+    const allowed = Array.from({ length: 5 }, () => r.isProviderAvailable(P)).filter(Boolean).length;
+    assert.equal(allowed, 5);
+    restore();
+  });
+
+  test("a failed probe re-opens the breaker against the next caller", () => {
+    trip();
+    at(COOLDOWN_MS + 1_000);
+    assert.equal(r.isProviderAvailable(P), true);
+    r.recordProviderFailure(P);
+    assert.equal(r.isProviderAvailable(P), false);
+    restore();
+  });
+});
+
+// The preview endpoint answers "what would this route do". It reported only
+// hasKey and enabled, two of the six conditions skipReason applies, so a lane
+// with an open breaker or spend past its cap previewed as ready to serve.
+describe("routing preview reflects every condition the router skips on", () => {
+  let buildCandidates, skipReason, settingsMod, cost;
+
+  before(async () => {
+    ({ buildCandidates, skipReason } = await import("../src/routing/router.js"));
+    settingsMod = await import("../src/storage/settings.js");
+    cost = await import("../src/storage/costTracker.js");
+  });
+
+  const laneFor = (id) =>
+    buildCandidates("auto", { model: "auto", messages: [] }).find((c) => c.provider.id === id);
+
+  // A provider that has a key in this process, so the "no API key" check does
+  // not mask the conditions under test.
+  const keyed = () =>
+    buildCandidates("auto", { model: "auto", messages: [] }).find((c) => c.provider.available);
+
+  const reasonFor = (lane) =>
+    skipReason(lane.provider, settingsMod.getSettings(), lane.model, { claimProbe: false });
+
+  test("an open breaker is visible in the preview", (t) => {
+    const lane = keyed();
+    if (!lane) return t.skip("no provider has a key in this environment");
+    r.reset();
+    assert.equal(reasonFor(lane), null, "should start contactable");
+    for (let i = 0; i < 3; i++) r.recordProviderFailure(lane.provider.id);
+    assert.match(reasonFor(laneFor(lane.provider.id)), /circuit open/);
+    r.reset();
+  });
+
+  test("a provider over its monthly cap is visible in the preview", (t) => {
+    const lane = keyed();
+    if (!lane) return t.skip("no provider has a key in this environment");
+    r.reset();
+    const release = cost.reserveSpend(lane.provider.id, 5);
+    settingsMod.updateSettings({ budgetCapsUsd: { [lane.provider.id]: 0.01 } });
+    try {
+      assert.match(reasonFor(laneFor(lane.provider.id)), /budget cap/);
+    } finally {
+      release();
+      settingsMod.updateSettings({ budgetCapsUsd: {} });
+    }
+  });
+
+  test("previewing never consumes the half-open probe", (t) => {
+    const lane = keyed();
+    if (!lane) return t.skip("no provider has a key in this environment");
+    r.reset();
+    const id = lane.provider.id;
+    for (let i = 0; i < 3; i++) r.recordProviderFailure(id);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 31_000;
+    try {
+      for (let i = 0; i < 5; i++) reasonFor(laneFor(id));
+      // If any of those had claimed the slot, the real request would be denied.
+      assert.equal(r.isProviderAvailable(id), true);
+    } finally {
+      Date.now = realNow;
+      r.reset();
     }
   });
 });

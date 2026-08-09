@@ -129,10 +129,23 @@ export function buildCandidates(modelString, request = null) {
   return [explicit];
 }
 
-function skipReason(provider, settings, model) {
+/**
+ * Why this lane would be passed over, or null if it would be contacted.
+ *
+ * @param {{ claimProbe?: boolean }} options
+ *   The routing gate claims a half-open probe slot as a side effect, which is
+ *   correct when a request is about to be dispatched and wrong when something
+ *   is only asking. `claimProbe: false` reads the same state without moving
+ *   it, so the preview endpoint can answer the question without spending the
+ *   one probe a recovering provider gets per cooldown window.
+ */
+export function skipReason(provider, settings, model, { claimProbe = true } = {}) {
   if (settings.disabledProviders.includes(provider.id)) return "disabled in control panel";
   if (!provider.available) return "no API key configured";
-  if (!resilience.isProviderAvailable(provider.id)) return "circuit open (provider)";
+  const providerUp = claimProbe
+    ? resilience.isProviderAvailable(provider.id)
+    : resilience.canServe(provider.id);
+  if (!providerUp) return "circuit open (provider)";
   if (model && !resilience.isModelAvailable(provider.id, model)) return "model locked out";
   if (overBudget(provider, settings.budgetCapsUsd)) return "monthly budget cap reached";
   // Every key for this provider cooling down is the connection layer

@@ -187,7 +187,9 @@ export const SKILLS = {
       const settings = getSettings();
       const open = Object.entries(snap.providers).filter(([, v]) => v.status === "OPEN").map(([id]) => id);
       const routable = providers.filter(
-        (p) => p.available && !settings.disabledProviders.includes(p.id) && resilience.isProviderAvailable(p.id)
+        // canServe, not isProviderAvailable: this is a listing, and the gate
+        // claims a probe slot as a side effect of being asked.
+        (p) => p.available && !settings.disabledProviders.includes(p.id) && resilience.canServe(p.id)
       );
       return {
         text: [
