@@ -18,6 +18,10 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # The suite takes about 20s. A hung child process in a spawn-based test
+    # would otherwise sit on the runner until the six hour default, and the
+    # run reads as "cancelled" with nothing saying why.
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write # required for npm provenance attestation
@@ -36,6 +40,7 @@ jobs:
 
       - name: Run the test suite
         run: npm test
+        timeout-minutes: 5
 
       # Proves the tarball carries no credentials or local state before anything
       # reaches the registry. A published secret cannot be recalled.
