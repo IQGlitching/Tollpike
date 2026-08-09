@@ -13,7 +13,12 @@ import path from "node:path";
 // auth check to `token !== gatewayApiKey` passed all 100 behavioural
 // tests. Structural assertions are the cheap, reliable guard.
 
-const src = (rel) => fs.readFileSync(path.join(import.meta.dirname, "..", "src", rel), "utf-8");
+// Line endings are normalised on read. git checks these files out with CRLF
+// on Windows, and every assertion below that embeds a newline in a search
+// string silently stops matching, so a fresh clone went red on correct code.
+const src = (rel) =>
+  fs.readFileSync(path.join(import.meta.dirname, "..", "src", rel), "utf-8")
+    .replace(/\r\n/g, "\n");
 
 describe("security invariants: constant-time comparison", () => {
   const auth = src("middleware/auth.js");

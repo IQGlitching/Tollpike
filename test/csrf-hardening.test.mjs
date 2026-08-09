@@ -16,7 +16,12 @@ import os from "node:os";
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-csrf-"));
 process.env.TOLLPIKE_DATA_DIR = tmp;
 
-const src = (rel) => fs.readFileSync(path.join(import.meta.dirname, "..", "src", rel), "utf-8");
+// Line endings are normalised on read. git checks these files out with CRLF
+// on Windows, and every assertion below that embeds a newline in a search
+// string silently stops matching, so a fresh clone went red on correct code.
+const src = (rel) =>
+  fs.readFileSync(path.join(import.meta.dirname, "..", "src", rel), "utf-8")
+    .replace(/\r\n/g, "\n");
 
 const { isCrossSite, csrfGuard } = await import("../src/middleware/csrf.js");
 const { rewritePathToken } = await import("../src/middleware/pathToken.js");
