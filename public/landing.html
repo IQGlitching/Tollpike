@@ -539,12 +539,89 @@ text { font-family: var(--mono); }
 .dev-feat .df-v { font-size: 13px; color: var(--txt-3); line-height: 1.6; }
 .dev-feat .df-v code { font-family: var(--mono); font-size: 11px; color: var(--model); }
 
+/* ---------- get started ---------- */
+.inst-grid {
+  margin-top: 46px; display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+}
+.inst {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 10px;
+  padding: 20px 20px 18px; display: flex; flex-direction: column; min-width: 0;
+}
+.inst-h { display: flex; align-items: baseline; gap: 10px; }
+.inst-n {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
+  color: var(--route); border: 1px solid var(--line-2); border-radius: 4px; padding: 3px 6px;
+}
+.inst-t { font-size: 14px; font-weight: 600; color: var(--txt); }
+.inst-d { margin-top: 10px; font-size: 12.5px; line-height: 1.65; color: var(--txt-3); flex: 1; }
+.inst-d b { color: var(--txt-2); font-weight: 600; }
+.cmdrow {
+  margin-top: 16px; display: flex; align-items: center; gap: 10px;
+  background: #0b0e14; border: 1px solid var(--line); border-radius: 7px; padding: 9px 10px 9px 12px;
+}
+.cmd {
+  font-family: var(--mono); font-size: 11.5px; color: var(--txt); white-space: pre;
+  overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: thin;
+}
+/* Rendered, not written into the element, so the copy button reads the command
+   itself rather than a shell prompt the reader would have to delete. */
+.cmd::before { content: '$'; color: var(--txt-4); margin-right: 10px; }
+.cmd.nodollar::before { content: none; }
+.cmdrow .copybtn {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--txt-4); background: transparent; border: 1px solid var(--line-2);
+  border-radius: 5px; padding: 5px 8px; cursor: pointer; flex: 0 0 auto;
+}
+.cmdrow .copybtn:hover { color: var(--txt); border-color: var(--line-3); }
+
+.flow { margin-top: 58px; border-top: 1px solid var(--line); }
+.fstep {
+  display: grid; grid-template-columns: 54px 1fr; gap: 20px;
+  padding: 26px 2px; border-bottom: 1px solid var(--line); align-items: start;
+}
+/* A grid item defaults to min-width:auto, so it refuses to shrink below the
+   width of its content. Without this the pre-formatted commands pushed the
+   track wider than the phone and took the whole page horizontal with them.
+   Same trap the diagram grids hit. */
+.fstep > * { min-width: 0; }
+.fs-n { font-family: var(--mono); font-size: 22px; color: var(--line-3); line-height: 1; }
+.fs-t { font-size: 15px; font-weight: 600; color: var(--txt); }
+.fs-d { margin-top: 8px; font-size: 13px; line-height: 1.7; color: var(--txt-3); max-width: 640px; }
+.fs-d b { color: var(--txt-2); font-weight: 600; }
+.fs-d code { font-family: var(--mono); font-size: 11.5px; color: var(--model); }
+.fs-note {
+  margin-top: 10px; font-family: var(--mono); font-size: 10px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--txt-4);
+}
+.fs-note.ok { color: var(--ok); }
+.start-foot {
+  margin-top: 40px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+}
+.start-req {
+  margin-top: 22px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+  color: var(--txt-4); line-height: 1.9;
+}
+.start-req b { color: var(--txt-2); font-weight: 500; }
+@media (max-width: 640px) {
+  .fstep { grid-template-columns: 38px 1fr; gap: 14px; }
+  .fs-n { font-size: 17px; }
+}
+
 /* ---------- dashboard preview ---------- */
 .dash-wrap { position: relative; margin-top: 54px; }
 .dash-glow {
   position: absolute; inset: -60px -80px; pointer-events: none;
   background: radial-gradient(ellipse 55% 50% at 50% 45%, rgba(139,92,246,.13), transparent 65%);
 }
+/* The halo bleeding 80px past its wrapper is the effect. Bleeding past the
+   viewport edge widened the document and gave the whole page a horizontal
+   scrollbar: measured 1310px of scroll width against a 1271px viewport, and
+   hiding this one element alone accounted for every pixel of it. Clipped at
+   the section, so the glow the reader can see is unchanged and only the part
+   already off screen is cut. `clip` rather than `hidden` because hidden would
+   make this a scroll container and break the sticky hero above it. */
+#dashboard { overflow-x: clip; }
 .dash-frame {
   position: relative; border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden;
   background: var(--bg); box-shadow: 0 40px 120px -30px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.02);
@@ -714,6 +791,13 @@ html:is(.spatial, .spatial-t) #rn-2.cvis,
 html:is(.spatial, .spatial-t) #rn-3.cvis { opacity: 1; transform: none; }
 html:is(.spatial, .spatial-t) .stream-panel { opacity: 0; transform: translateX(24px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
 html:is(.spatial, .spatial-t) .stream-panel.svis { opacity: 1; transform: none; }
+/* On a phone the panel already reaches the right edge, so entering from 24px
+   further right put it past the viewport and gave the page a horizontal
+   scrollbar for the length of the animation. It comes up from below instead,
+   where there is room. Same reveal, no sideways overflow. */
+@media (max-width: 700px) {
+  html:is(.spatial, .spatial-t) .stream-panel { transform: translateY(18px); }
+}
 
 /* resilience: pinned scene, scroll drives the failure story */
 html.spatial #resilience { height: 215vh; }
@@ -805,11 +889,12 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
       <a href="#providers">Providers</a>
       <a href="#routing">Routing</a>
       <a href="#developers">Docs</a>
+      <a href="#start">Install</a>
     </nav>
     <div class="nav-right">
       <a class="ghost" href="https://github.com/IQGlitching/Tollpike" rel="noopener">GitHub</a>
       <a class="ghost" href="/panel">Sign in</a>
-      <a class="btn primary sm" href="#developers">Get started</a>
+      <a class="btn primary sm" href="#start">Get started</a>
     </div>
   </div>
 </header>
@@ -1802,6 +1887,141 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
   <div class="conduit" aria-hidden="true"></div>
 </section>
 
+<!-- ======================= GET STARTED ======================= -->
+<section id="start" class="band gridpaper">
+  <div class="band-in">
+    <div class="rv" style="max-width:760px">
+      <p class="kicker sc-g">GET STARTED</p>
+      <h2 class="display">Self-hosted. Yours from the first&nbsp;request.</h2>
+      <p class="lede">Nothing to sign up for and no account to create. It runs on your machine,
+        binds to loopback, and holds your provider keys locally. Pick an install, add one key,
+        and point the client you already use at it.</p>
+    </div>
+
+    <div class="inst-grid rv">
+      <div class="inst">
+        <div class="inst-h"><span class="inst-n">01</span><span class="inst-t">Try it</span></div>
+        <p class="inst-d">No install and nothing left behind. Fetches the package and runs the
+          gateway in one command.</p>
+        <div class="cmdrow">
+          <code class="cmd" id="cmdNpx">npx tollpike</code>
+          <button class="copybtn" type="button" data-copy="#cmdNpx">Copy</button>
+        </div>
+      </div>
+
+      <div class="inst">
+        <div class="inst-h"><span class="inst-n">02</span><span class="inst-t">Install the CLI</span></div>
+        <p class="inst-d">State lives in <b>~/.tollpike</b>, so an upgrade never throws away your
+          usage ledger, budget caps or provider toggles.</p>
+        <div class="cmdrow">
+          <code class="cmd" id="cmdGlobal">npm install -g tollpike</code>
+          <button class="copybtn" type="button" data-copy="#cmdGlobal">Copy</button>
+        </div>
+      </div>
+
+      <div class="inst">
+        <div class="inst-h"><span class="inst-n">03</span><span class="inst-t">Docker</span></div>
+        <p class="inst-d">For anything long running. Named volume for your data, healthcheck every
+          30s, restarts after a reboot, and runs as a <b>non-root user</b> in the container.</p>
+        <div class="cmdrow">
+          <code class="cmd" id="cmdDocker">npm run docker:up</code>
+          <button class="copybtn" type="button" data-copy="#cmdDocker">Copy</button>
+        </div>
+      </div>
+
+      <div class="inst">
+        <div class="inst-h"><span class="inst-n">04</span><span class="inst-t">From source</span></div>
+        <p class="inst-d">Clone it and read every line before you run it. That is the point of a
+          gateway that holds your keys.</p>
+        <div class="cmdrow">
+          <code class="cmd nodollar" id="cmdSrc">git clone https://github.com/IQGlitching/Tollpike.git
+cd Tollpike &amp;&amp; npm install &amp;&amp; npm start</code>
+          <button class="copybtn" type="button" data-copy="#cmdSrc">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="start-req rv">REQUIRES <b>NODE 18</b> OR NEWER<br/>
+      NODE 22.5+ ADDITIONALLY ENABLES THE SQLITE-BACKED HALF OF MEMORY RECALL.
+      BELOW THAT IT FALLS BACK TO AN IN-PROCESS INDEX AND SAYS SO.</p>
+
+    <div class="flow rv">
+      <div class="fstep">
+        <span class="fs-n">01</span>
+        <div>
+          <div class="fs-t">Start it</div>
+          <p class="fs-d">It binds <b>127.0.0.1</b> only. Nothing reaches your network until you
+            deliberately change <code>BIND_HOST</code>, and the control plane is unauthenticated
+            until you set a gateway key, so the default refuses to make that decision for you.</p>
+          <p class="fs-note ok">LISTENING ON HTTP://127.0.0.1:20128</p>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <span class="fs-n">02</span>
+        <div>
+          <div class="fs-t">Open the control center</div>
+          <p class="fs-d">Twenty pages at <code>/panel</code>. It boots with zero keys configured,
+            every provider reads <b>NO KEY</b>, and the router has nowhere to send traffic. That is
+            the expected first state, not a fault.</p>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <span class="fs-n">03</span>
+        <div>
+          <div class="fs-t">Add one provider key</div>
+          <p class="fs-d">Put it in the protected env file, which sits outside the source tree on
+            purpose. Several keys for one provider is a comma separated list, and each becomes an
+            independently cooled connection, so one rate-limited key does not bench the lane.
+            Restart after editing.</p>
+          <div class="cmdrow">
+            <code class="cmd" id="cmdKey">printf 'ANTHROPIC_API_KEY=your_key_here\n' &gt;&gt; ~/.tollpike/.env</code>
+            <button class="copybtn" type="button" data-copy="#cmdKey">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <span class="fs-n">04</span>
+        <div>
+          <div class="fs-t">Point your tools at it</div>
+          <p class="fs-d">Anything that speaks the OpenAI chat-completions format works by changing
+            the base URL. No SDK swap and no code rewrite. Most tools read these two variables, so
+            exporting them is often the whole integration.</p>
+          <div class="cmdrow">
+            <code class="cmd nodollar" id="cmdEnv">export OPENAI_BASE_URL=http://127.0.0.1:20128/v1
+export OPENAI_API_KEY=unused</code>
+            <button class="copybtn" type="button" data-copy="#cmdEnv">Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="fstep">
+        <span class="fs-n">05</span>
+        <div>
+          <div class="fs-t">Or hand the whole gateway to an agent</div>
+          <p class="fs-d">The gateway exposes itself as <b>104 MCP tools across 31 scopes</b> over
+            stdio, so a model can read routing state, inspect spend and drive the control plane.
+            Drop <code>MCP_READ_ONLY</code> to let it spend money and change settings.</p>
+          <div class="cmdrow">
+            <code class="cmd nodollar" id="cmdMcp">{ "mcpServers": { "tollpike": {
+    "command": "tollpike", "args": ["mcp"],
+    "env": { "MCP_READ_ONLY": "true" } } } }</code>
+            <button class="copybtn" type="button" data-copy="#cmdMcp">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="start-foot rv">
+      <a class="btn primary" href="https://github.com/IQGlitching/Tollpike#install" rel="noopener">Read the full install guide</a>
+      <a class="btn" href="https://github.com/IQGlitching/Tollpike" rel="noopener">Source on GitHub</a>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
 <!-- ======================= FINAL CTA ======================= -->
 <section id="cta" class="band final">
   <svg class="final-bg" viewBox="0 0 1400 520" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -1813,7 +2033,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
     <h2 class="display" style="max-width:820px;margin:0 auto">Put a router between your app and the model&nbsp;ecosystem.</h2>
     <p class="lede" style="margin:24px auto 0">One endpoint. Every model that matters. Full command of cost, latency, and traffic.</p>
     <div class="cta-row">
-      <a class="btn primary" href="#developers">Get started</a>
+      <a class="btn primary" href="#start">Get started</a>
       <a class="btn" href="/panel">Open the control center</a>
     </div>
   </div>
@@ -1843,6 +2063,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
       </div>
       <div class="foot-col">
         <h4>Developers</h4>
+        <a href="#start">Install</a>
         <a href="#developers">Documentation</a>
         <a href="https://github.com/IQGlitching/Tollpike" rel="noopener">GitHub</a>
         <a href="#developers">API · /v1</a>

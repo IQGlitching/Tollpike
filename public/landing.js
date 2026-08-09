@@ -972,13 +972,29 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     const href = '#' + e.target.id;
     navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === href));
   }), { rootMargin: '-40% 0px -55% 0px' });
-  ['product', 'how', 'providers', 'routing', 'developers'].forEach(id => {
+  ['product', 'how', 'providers', 'routing', 'developers', 'start'].forEach(id => {
     const el = document.getElementById(id);
     if (el) secIO.observe(el);
   });
 })();
 
-/* -------------------------------------------------------------- COPY BTN */
+/* ------------------------------------------------------------- COPY BTNS */
+/* Reads the command out of the element it points at, so the text on screen and
+   the text on the clipboard cannot drift apart. The `$` prompt is drawn by CSS
+   rather than written into the markup, which keeps it out of textContent and
+   saves the reader deleting it. */
+for (const btn of $$('.copybtn[data-copy]')) {
+  btn.addEventListener('click', async () => {
+    const target = document.querySelector(btn.getAttribute('data-copy'));
+    if (!target) return;
+    try {
+      await navigator.clipboard.writeText(target.textContent.trim());
+      btn.textContent = 'Copied';
+    } catch { btn.textContent = 'Select + copy'; }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  });
+}
+
 $('#copyReq')?.addEventListener('click', async e => {
   const text = `curl http://localhost:20128/v1/chat/completions \\
   -H "Content-Type: application/json" \\
