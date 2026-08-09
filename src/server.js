@@ -1357,7 +1357,7 @@ app.get("/api/panel/knowledge", async (req, res) => {
   res.json({
     notion: await notion.notionStatus(),
     obsidian: obsidian.obsidianStatus(),
-    access: "read-only for both — a writable knowledge source is one an injected instruction can edit"
+    access: "read-only for both, because a writable knowledge source is one an injected instruction can edit"
   });
 });
 
@@ -1491,7 +1491,7 @@ app.listen(PORT, BIND_HOST, () => {
   console.log(`  A2A: ${a2aStatus().skills.length} skills over JSON-RPC at /a2a · card at /.well-known/agent-card.json`);
   console.log(`  routing: ${STRATEGY_IDS.length} strategies, ${Object.keys(listCombos(getSettings().combos)).length} combos`);
   if (isPathTokenEnabled()) {
-    console.log("  path-token aliases ENABLED (/vscode/<key>/...) — keys will appear in URLs");
+    console.log("  path-token aliases ENABLED (/vscode/<key>/...): keys will appear in URLs");
   }
 
   const settings = getSettings();

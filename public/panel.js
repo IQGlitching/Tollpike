@@ -216,13 +216,13 @@ const PAGE_META = {
   knowledge: ["Knowledge", "Notion and Obsidian as read-only context"],
   protocols: ["Protocols", "The MCP and A2A surface this gateway exposes"],
   agents: ["Cloud agents", "Codex, Cursor, Devin and Jules through one interface"],
-  services: ["Services", "Managed sidecars — supervised, never installed"],
+  services: ["Services", "Managed sidecars · supervised, never installed"],
   achievements: ["Achievements", "Streaks, savings and milestones"]
 };
 
 const CATEGORIES = [
   { id: "frontier", label: "Frontier", hint: "The big three, bespoke adapters for Anthropic and Gemini." },
-  { id: "inference", label: "Inference providers", hint: "OpenAI-compatible wire format — one adapter serves all of them." },
+  { id: "inference", label: "Inference providers", hint: "OpenAI-compatible wire format. One adapter serves all of them." },
   { id: "aggregator", label: "Aggregators", hint: "Route to many upstream models behind a single key." },
   { id: "local", label: "Local runtimes", hint: "No credential needed. Priority 50+, so they never preempt a paid lane." }
 ];
@@ -375,7 +375,7 @@ function alerts(s) {
   }
   const t = s.pricingTrust || {};
   if (t.activeUnverified?.length) {
-    out.push({ level: "bad", title: `${t.activeUnverified.length} active lane(s) priced from an unchecked table`, body: `${t.activeUnverified.join(", ")} — spend figures and any cap on them may be wrong in either direction. Run npm run verify-pricing.`, action: "budgets" });
+    out.push({ level: "bad", title: `${t.activeUnverified.length} active lane(s) priced from an unchecked table`, body: `${t.activeUnverified.join(", ")}. Spend figures and any cap on them may be wrong in either direction. Run npm run verify-pricing.`, action: "budgets" });
   }
   if (s.corruptLogLines > 0) {
     out.push({ level: "warn", title: `${s.corruptLogLines} unreadable line(s) in the usage log`, body: "Skipped. Spend totals exclude them.", action: null });
@@ -386,7 +386,7 @@ function alerts(s) {
   }
   const capped = s.providers.filter((p) => p.budgetCapUsd !== null && p.monthlySpendUsd >= p.budgetCapUsd);
   if (capped.length) {
-    out.push({ level: "warn", title: `${capped.length} lane(s) at their monthly cap`, body: `${capped.map((p) => p.name).join(", ")} — being skipped by the router until next month.`, action: "budgets" });
+    out.push({ level: "warn", title: `${capped.length} lane(s) at their monthly cap`, body: `${capped.map((p) => p.name).join(", ")}, skipped by the router until next month.`, action: "budgets" });
   }
   return out;
 }
@@ -647,7 +647,7 @@ function paintEngine(s) {
   const meta = document.getElementById("engMeta");
 
   if (routingChain === null) {
-    list.innerHTML = '<div class="cr-empty">Chain preview unavailable. The engine could not be asked for its order &mdash; the gates above are still live.</div>';
+    list.innerHTML = '<div class="cr-empty">Chain preview unavailable. The engine could not be asked for its order. The gates above are still live.</div>';
     if (hops) hops.textContent = "";
     if (meta) meta.textContent = "";
     return;
@@ -690,7 +690,7 @@ function paintEngine(s) {
     // of it belongs.
     return `<div class="cr-item${skip ? " skipped" : ""}${serves ? " first" : ""}${skip === "NO KEY" ? " fixable" : ""}"
         data-prov="${esc(c.provider)}"
-        ${skip === "NO KEY" ? `data-addkey="${esc(c.provider)}" title="No credential — click to add one"` : ""}>
+        ${skip === "NO KEY" ? `data-addkey="${esc(c.provider)}" title="No credential · click to add one"` : ""}>
       <div class="cr-n">${String(i + 1).padStart(2, "0")}</div>
       <div style="min-width:0">
         <div class="cr-nm">${esc(c.provider)}</div>
@@ -1158,7 +1158,7 @@ function paintInstruments(s) {
       ? p.used.requestsToday + p.remaining.requestsToday : null;
     const used = p.used?.requestsToday || 0;
     const w = lim ? Math.min(100, (used / lim) * 100) : 0;
-    const tip = `${p.pool} — ${used}${lim ? ` / ${lim}` : ""} requests today${p.confidence === "assumed" ? " (limit assumed)" : ""}`;
+    const tip = `${p.pool} · ${used}${lim ? ` / ${lim}` : ""} requests today${p.confidence === "assumed" ? " (limit assumed)" : ""}`;
     return `<div class="pb" title="${esc(tip)}"><div class="pbt"><i class="${p.exhausted ? "full" : ""}" style="width:${w.toFixed(1)}%"></i></div>
       <div class="pbl">${esc(trunc(p.pool, 9))}</div></div>`;
   }).join("") : '<div class="pbl" style="text-align:left">no declared free pool</div>';
@@ -1169,7 +1169,7 @@ function paintInstruments(s) {
       <div class="iv">${esc(fmtUsd(spend))}</div>
       ${arcGauge(capPct === null ? 0 : Math.min(100, capPct), spendInk)}
       <div class="is">${capPct === null
-        ? "NO CAP SET &mdash; <em>nothing is capping spend</em>"
+        ? "NO CAP SET · <em>nothing is capping spend</em>"
         : `<em>${esc(capPct.toFixed(capPct < 10 ? 1 : 0))}%</em> OF ${esc(fmtUsd(cap))} &#183; ${esc(fmtUsd(Math.max(0, cap - spend)))} HEADROOM`}</div>
     </div>
 
@@ -1222,7 +1222,7 @@ async function paintTelemetry() {
     telSeries = series;
     telBucket = bucket;
   } catch {
-    host.innerHTML = '<div class="empty-note"><b>Could not load the series.</b>The gateway did not answer for this window — the panels below still read from the live state.</div>';
+    host.innerHTML = '<div class="empty-note"><b>Could not load the series.</b>The gateway did not answer for this window. The panels below still read from the live state.</div>';
     return;
   }
   drawTelemetry();
@@ -1550,7 +1550,7 @@ function paintHealth(s) {
     // and fifth legible without a second chart.
     const share = (p.lifetimeStats.requests / busiest) * 100;
     return `<div class="ph-row${st === "idle" || st === "off" ? " quiet" : ""}" data-prov="${esc(p.id)}"
-        title="${esc(p.name)} — ${esc(LANE_LABEL[st])}" style="--share:${share.toFixed(1)}%">
+        title="${esc(p.name)} · ${esc(LANE_LABEL[st])}" style="--share:${share.toFixed(1)}%">
       <span class="dot" style="background:${ink};box-shadow:0 0 6px ${ink}"></span>
       <div class="ph-nm">${esc(trunc(p.name, 18))}<span class="sc ph-state ${stCls}">${esc(LANE_LABEL[st])}${p.connectionsCoolingDown ? ` · ${esc(p.connectionsCoolingDown)}/${esc(p.connections)} KEY` : ""}</span></div>
       <div class="ph-v ${p.lifetimeStats.requests ? "" : "zero"}">${esc(p.lifetimeStats.requests)}</div>
@@ -1622,7 +1622,7 @@ function paintMatrix(s) {
         const bg = `rgba(0,206,201,${(0.14 + t * 0.72).toFixed(3)})`;
         return `<td><div class="mxc ${t > 0.55 ? "hot" : ""}${grew ? " pulse" : ""}" data-prov="${esc(pid)}" data-model="${esc(m)}"
           style="background:${bg};border-color:rgba(0,206,201,${(0.2 + t * 0.4).toFixed(2)})"
-          title="${esc(pid)} · ${esc(m)} — ${esc(req)} req · ${esc(fmtUsd(cell.cost))}">${esc(req)}</div></td>`;
+          title="${esc(pid)} · ${esc(m)} · ${esc(req)} req · ${esc(fmtUsd(cell.cost))}">${esc(req)}</div></td>`;
       }).join("") + "</tr>";
     }).join("") + "</tbody></table>";
 
@@ -1632,7 +1632,7 @@ function paintMatrix(s) {
     provs.filter((pid) => fold.byProvider.get(pid).models.has(m)).length > 1).length;
   host.innerHTML += `<div class="mx-read">
     <b>${esc(shared)} of ${esc(models.length)}</b> model${models.length === 1 ? " is" : "s are"} reachable through more than one lane.
-    ${shared ? "Those are the ones a breaker can trip without you noticing." : "Every model here is pinned to a single provider — if that lane opens, the request has nowhere else to go."}
+    ${shared ? "Those are the ones a breaker can trip without you noticing." : "Every model here is pinned to a single provider. If that lane opens, the request has nowhere else to go."}
   </div>`;
   mxPrev = next;
 }
@@ -1649,7 +1649,7 @@ function paintStream(s) {
     host.innerHTML = `<div class="empty-note wide">
       <b>No crossings yet.</b>
       Point an OpenAI-compatible client at <em>${esc(s.endpoints?.base || "this gateway")}${esc(s.endpoints?.chatCompletions || "/v1/chat/completions")}</em>
-      and every request lands here in order — which lane took it, which model answered,
+      and every request lands here in order: which lane took it, which model answered,
       what it cost and how long it took. The panels above fill from the same rows.</div>`;
     if (meta) meta.textContent = "AWAITING FIRST CROSSING";
     firstStreamPaint = false;
@@ -1675,7 +1675,7 @@ function paintStream(s) {
       <div class="ev-t">${esc(fmtTime(r.ts))}</div>
       <div class="ev-p">${esc(trunc(r.providerId, 12))}</div>
       <div class="ev-m" title="${esc(r.model)}">${esc(r.model)}</div>
-      <div class="r">${esc(tokens)}${r.estimated ? ' <span class="est" title="estimated locally — the provider did not report usage">~</span>' : ""}</div>
+      <div class="r">${esc(tokens)}${r.estimated ? ' <span class="est" title="estimated locally · the provider did not report usage">~</span>' : ""}</div>
       <div class="r ev-c${cost ? "" : " free"}">${esc(fmtUsd(cost))}</div>
       <div class="ev-lat hide-sm"><div class="ev-track"><i class="${sev}" style="width:${Math.max(3, (lat / worst) * 100).toFixed(1)}%"></i></div></div>
       <div class="r ev-ms ${sev}">${esc(fmtMs(lat))}</div>
@@ -1835,7 +1835,7 @@ function paintCensus(s, counts) {
   const ticks = s.providers.map((p) => {
     const st = laneState(p);
     const cls = st === "open" ? "open" : st === "cold" || st === "half" ? "cold" : st === "live" || st === "idle" ? "on" : "";
-    return `<i class="${cls}" title="${esc(p.name)} — ${esc(LANE_LABEL[st])}"></i>`;
+    return `<i class="${cls}" title="${esc(p.name)} · ${esc(LANE_LABEL[st])}"></i>`;
   }).join("");
 
   const keyNodes = s.providers.map((p) =>
@@ -1843,7 +1843,7 @@ function paintCensus(s, counts) {
 
   const busiest = carrying[0]?.lifetimeStats.requests || 1;
   const topBars = carrying.length ? carrying.slice(0, 3).map((p) =>
-    `<div class="pb" data-prov="${esc(p.id)}" title="${esc(p.name)} — ${esc(p.lifetimeStats.requests)} requests">
+    `<div class="pb" data-prov="${esc(p.id)}" title="${esc(p.name)} · ${esc(p.lifetimeStats.requests)} requests">
       <div class="pbt"><i style="width:${((p.lifetimeStats.requests / busiest) * 100).toFixed(1)}%"></i></div>
       <div class="pbl">${esc(trunc(p.id, 9))}</div></div>`).join("")
     : '<div class="pbl" style="text-align:left">nothing has served yet</div>';
@@ -1883,7 +1883,7 @@ function paintCensus(s, counts) {
       <div class="iv">${esc(counts.capped)}<span class="u"> / ${esc(counts.all)}</span></div>
       ${arcGauge(capPct === null ? 0 : capPct, capPct === null ? SCOPE.dim : capPct >= 80 ? SCOPE.conn : SCOPE.ok)}
       <div class="is">${capPct === null
-        ? "NO CAP SET &mdash; <em>nothing limits a runaway lane</em>"
+        ? "NO CAP SET · <em>nothing limits a runaway lane</em>"
         : `<em>${esc(fmtUsd(spend))}</em> OF ${esc(fmtUsd(cap))} THIS MONTH`}</div>
     </div>
 
@@ -2394,7 +2394,7 @@ function paintWalk(s) {
   if (intro) {
     intro.innerHTML = `The order the engine resolves for <em>auto</em> right now, under
       <b>${combo ? "combo/" + esc(combo) : "priority order"}</b>. A request walks it top to bottom and stops at the
-      first lane that answers &mdash; so everything below the serving hop is reached only when something above it fails.`;
+      first lane that answers, so everything below the serving hop is reached only when something above it fails.`;
   }
 
   if (routingChain === null) {
@@ -2424,7 +2424,7 @@ function paintWalk(s) {
       ? `<span class="tp-k">AS THINGS STAND</span> <em>auto</em> resolves to
          <b data-prov="${esc(t.c.provider)}">${esc(t.c.provider)}</b> &#183; <span class="tp-m">${esc(trunc(t.c.model, 28))}</span>.
          Sending costs real money on that lane.`
-      : `<span class="tp-k">AS THINGS STAND</span> <em>auto</em> resolves to nothing &mdash; a trial would fail at every hop.`;
+      : `<span class="tp-k">AS THINGS STAND</span> <em>auto</em> resolves to nothing. A trial would fail at every hop.`;
   }
 
   host.innerHTML = rows.map(({ c, p, gate, i }) => {
@@ -2435,7 +2435,7 @@ function paintWalk(s) {
       : `<span class="cr-tag">T${esc(c.tier)}</span>`;
     return `<div class="walk-row${gate ? " skipped" : ""}${serves ? " serves" : ""}${after ? " after" : ""}${gate?.id === "nokey" ? " fixable" : ""}"
         data-provider-id="${esc(c.provider)}" data-prov="${esc(c.provider)}"
-        ${gate?.id === "nokey" ? 'title="No credential — click to add one"' : ""}>
+        ${gate?.id === "nokey" ? 'title="No credential · click to add one"' : ""}>
       <div class="wk-n">${String(i + 1).padStart(2, "0")}</div>
       <div class="wk-id">
         <div class="wk-nm">${esc(c.provider)}</div>
@@ -2572,7 +2572,7 @@ function paintStrategies(s) {
     ${usable.map((st) => {
       const vol = VOLATILE_STRATEGIES.has(st.id);
       return `<div class="cmp-row${st.id === active ? " on" : ""}" title="${esc(st.description || "")}">
-        <span class="cmp-k">${esc(st.label)}${vol ? '<em title="re-orders itself on every call — this row is one sample">~</em>'
+        <span class="cmp-k">${esc(st.label)}${vol ? '<em title="re-orders itself on every call · this row is one sample">~</em>'
           : ""}<b>${esc(st.route)}</b></span>
         ${Array.from({ length: CMP_RANKS }, (_, i) => {
           const id = st.order[i];
@@ -2584,7 +2584,7 @@ function paintStrategies(s) {
   </div>
   <div class="cmp-read">${esc(usable.length)} strategies produce <b>${esc(firsts.length)}</b> different first pick${firsts.length === 1 ? "" : "s"}
     ${firsts.length === 1
-      ? `&mdash; every policy reaches for <em>${esc(firsts[0])}</em> first, so with this fleet the choice makes no difference to hop one.`
+      ? `: every policy reaches for <em>${esc(firsts[0])}</em> first, so with this fleet the choice makes no difference to hop one.`
       : `: ${firsts.map((f) => `<em>${esc(f)}</em>`).join(", ")}. Which policy you run decides which lane pays for your traffic.`}</div>`;
 }
 
@@ -2599,7 +2599,7 @@ function paintTrial() {
   const meta = document.getElementById("trialMeta");
   if (!out) return;
   if (!lastTrial) {
-    out.textContent = "Idle — nothing has been sent from this panel.";
+    out.textContent = "Idle. Nothing has been sent from this panel.";
     if (meta) meta.textContent = "";
     return;
   }
@@ -2785,7 +2785,7 @@ function paintBudgetInstruments(s) {
       <div class="iv">${esc(fmtUsd(monthSpend))}</div>
       ${arcGauge(capPct === null ? 0 : Math.min(100, capPct), capPct === null ? SCOPE.dim : capPct >= 100 ? SCOPE.bad : capPct >= 80 ? SCOPE.conn : SCOPE.ok)}
       <div class="is">${capPct === null
-        ? "NO CAP SET &mdash; <em>nothing is watching this</em>"
+        ? "NO CAP SET · <em>nothing is watching this</em>"
         : `<em>${esc(capPct.toFixed(capPct < 10 ? 1 : 0))}%</em> OF ${esc(fmtUsd(totalCap))} CAPPED TOTAL`}</div>
     </div>
 
@@ -2839,7 +2839,7 @@ function paintBudgetInstruments(s) {
           .sort((a, b) => b.monthlySpendUsd - a.monthlySpendUsd).slice(0, 3);
         if (!un.length) return '<div class="pbl" style="text-align:left">every spending lane is capped</div>';
         const top = un[0].monthlySpendUsd || 1;
-        return un.map((p) => `<div class="pb" data-prov="${esc(p.id)}" title="${esc(p.name)} — ${esc(fmtUsd(p.monthlySpendUsd))} uncapped">
+        return un.map((p) => `<div class="pb" data-prov="${esc(p.id)}" title="${esc(p.name)} · ${esc(fmtUsd(p.monthlySpendUsd))} uncapped">
           <div class="pbt"><i class="full" style="width:${((p.monthlySpendUsd / top) * 100).toFixed(1)}%"></i></div>
           <div class="pbl">${esc(trunc(p.id, 9))}</div></div>`).join("");
       })()}</div>
@@ -3210,13 +3210,13 @@ function paintTrust(l) {
     host.innerHTML = `<div class="empty-note">
       <b>Nothing to vouch for yet.</b>
       When money has moved, this panel splits it by how much rests on a price table that has been
-      checked against the vendor's published rates — the figure that decides whether the statement
+      checked against the vendor's published rates, the figure that decides whether the statement
       beside it can be argued from.</div>`;
     return;
   }
 
   const seg = (usd, cls, label) => usd <= 0 ? "" :
-    `<i class="${cls}" style="width:${((usd / Math.max(total, 0.000001)) * 100).toFixed(2)}%" title="${label} — ${esc(fmtUsd(usd))}"></i>`;
+    `<i class="${cls}" style="width:${((usd / Math.max(total, 0.000001)) * 100).toFixed(2)}%" title="${label} · ${esc(fmtUsd(usd))}"></i>`;
 
   host.innerHTML = `
     <div class="tr-lede">
@@ -3287,7 +3287,7 @@ PAGES.resilience = (el, s) => {
         </div>
         <div class="iso-intro">Failures trip the smallest scope that explains them:
           <b>model &#8834; connection &#8834; provider</b>. Each figure below is one lane, drawn as what it
-          contains &mdash; so you can see the part that is isolated and the part still carrying traffic
+          contains, so you can see the part that is isolated and the part still carrying traffic
           inside the same outline. Recovery is lazy: checked on access, never on a background timer.</div>
         <div id="isoHost"></div>
       </div>
@@ -3323,7 +3323,7 @@ PAGES.resilience = (el, s) => {
           <div class="setrow">
             <div><div class="nm">Clear all failure state</div>
               <div class="hh">Closes every breaker, releases cooling keys and unlocks models immediately.
-                Recovery is normally lazy and automatic &mdash; use this after fixing the underlying cause,
+                Recovery is normally lazy and automatic. Use this after fixing the underlying cause,
                 not to skip a cooldown that is doing its job.</div></div>
             <button class="sm danger" id="resetResilience">Reset</button>
           </div>
@@ -3367,7 +3367,7 @@ function paintIsolation(s) {
       <div class="ic-h"><span class="dot live beat"></span>ALL THREE SCOPES CLEAR</div>
       <div class="ic-b">No breaker is open, no credential is cooling and no model is locked out.
         When something does break, the lane it belongs to appears here as an outline with the failed part
-        shaded and the rest of it still drawn in &mdash; a locked model does not take its siblings with it,
+        shaded and the rest of it still drawn in. A locked model does not take its siblings with it,
         and a bad key does not take the provider's other keys with it.</div>
       <div class="ic-rules">
         <div><b>401 / 403</b><span>cools that one credential for ${esc(resPolicy(s).connectionCooldownSec)}s</span></div>
@@ -3392,7 +3392,7 @@ function paintIsolation(s) {
     const half = v.breaker?.status === "HALF_OPEN";
     const scope = open ? "p" : cooling ? "c" : v.models.length ? "m" : "p";
     const verdict = open ? "WHOLE LANE ISOLATED"
-      : half ? "PROBING — ONE CALL DECIDES"
+      : half ? "PROBING · ONE CALL DECIDES"
       : cooling >= total ? "EVERY KEY COOLING"
       : cooling ? `${cooling} OF ${total} KEYS COOLING`
       : v.models.length ? `${v.models.length} MODEL${v.models.length === 1 ? "" : "S"} LOCKED, LANE SERVING`
@@ -3405,10 +3405,10 @@ function paintIsolation(s) {
     const slots = Array.from({ length: Math.max(total, cooling) }, (_, i) => {
       const cool = i < cooling;
       if (open) {
-        return `<div class="iso-slot dead" title="the whole lane is isolated — this credential is not reachable">
+        return `<div class="iso-slot dead" title="the whole lane is isolated · this credential is not reachable">
           <span>${esc(cool ? v.conns[i].key : "KEY " + (i + 1))}</span><b>&mdash;</b></div>`;
       }
-      return `<div class="iso-slot ${cool ? "cool" : "live"}" title="${cool ? esc(v.conns[i].key) + " — cooling" : "credential " + (i + 1) + " — serving"}">
+      return `<div class="iso-slot ${cool ? "cool" : "live"}" title="${cool ? esc(v.conns[i].key) + " · cooling" : "credential " + (i + 1) + " · serving"}">
         <span>${cool ? esc(v.conns[i].key) : "KEY " + (i + 1)}</span>
         ${cool ? `<b>${esc(v.conns[i].cooldownSecRemaining)}s</b>` : "<b>OK</b>"}
       </div>`;
@@ -3417,7 +3417,7 @@ function paintIsolation(s) {
     const chips = open
       ? '<span class="iso-chip dead">no model reachable while the lane is open</span>'
       : v.models.length
-        ? v.models.map((m) => `<span class="iso-chip" title="${esc(m.reason)} — ${esc(m.lockedSecRemaining)}s left">
+        ? v.models.map((m) => `<span class="iso-chip" title="${esc(m.reason)} · ${esc(m.lockedSecRemaining)}s left">
             ${esc(trunc(m.model, 22))}<i>${esc(m.lockedSecRemaining)}s</i></span>`).join("")
         : `<span class="iso-chip ok">every model reachable</span>`;
 
@@ -3714,7 +3714,7 @@ function paintCacheInstruments(s) {
       <div class="bar big"><i class="${occ >= 90 ? "over" : ""}" style="width:${occ.toFixed(1)}%"></i></div>
       <div class="is">${max
         ? (occ >= 90
-            ? "<em>FULL</em> &mdash; EACH NEW ENTRY EVICTS THE LEAST RECENTLY USED"
+            ? "<em>FULL</em> · EACH NEW ENTRY EVICTS THE LEAST RECENTLY USED"
             : `<em>${esc(max - entries)}</em> SLOTS BEFORE LRU EVICTION STARTS`)
         : "STORED ENTRIES"}</div>
     </div>
@@ -3723,7 +3723,7 @@ function paintCacheInstruments(s) {
       <div class="ik">ENTRY LIFETIME</div>
       <div class="iv">${ttl ? esc(Math.round(ttl / 60)) + '<span class="u"> min</span>' : "&mdash;"}</div>
       <div class="is tall">Every entry expires <em>${esc(ttl)}s</em> after it is written, and expiry is
-        checked on read &mdash; a stale entry costs nothing until somebody asks for it.
+        checked on read. A stale entry costs nothing until somebody asks for it.
         Nothing here survives a restart.</div>
     </div>
 
@@ -3751,7 +3751,7 @@ function paintCachePolicy(s) {
     { k: "CALLER", v: "part of the key", ink: SCOPE.conn,
       n: "Two callers with the same prompt get their own entries, so per-user auth can land later without one person's answer being served to another." },
     { k: "PROVIDER", v: "NOT part of the key", ink: SCOPE.provider,
-      n: "An answer is reusable whichever backend produced it — which is exactly what makes a cache worth having in front of many providers." },
+      n: "An answer is reusable whichever backend produced it, which is exactly what makes a cache worth having in front of many providers." },
     { k: "LIFETIME", v: c.ttlSeconds ? `${c.ttlSeconds}s, then expired` : "time-limited", ink: SCOPE.model,
       n: "Expiry is checked on read, so a stale entry costs nothing until someone asks for it." },
     { k: "CAPACITY", v: c.maxEntries ? `${c.maxEntries} entries, LRU` : "bounded, LRU", ink: SCOPE.conn,
@@ -3792,7 +3792,7 @@ PAGES.compression = (el, s) => {
         <div class="ai">&#8226;</div>
         <div><div class="at">Caveman is lossy, and scope is the safety argument</div>
           <div class="ab">It never touches your system prompt, and by default never touches the newest user
-            message either &mdash; the two places exact wording matters most. Words whose removal inverts meaning
+            message either. Those are the two places exact wording matters most. Words whose removal inverts meaning
             (<span class="mono">not</span>, <span class="mono">never</span>, <span class="mono">without</span>,
             <span class="mono">unless</span>) are never dropped at any level, and fenced code, paths, URLs and
             identifiers are protected byte-exact.</div></div>
@@ -3806,7 +3806,7 @@ PAGES.compression = (el, s) => {
           <span class="p-s" id="cmpMeta2"></span>
         </div>
         <div class="pipe-intro">Every request walks these three layers in order, and each one only sees what the
-          one above it left. <b>Base</b> collapses whitespace and duplicate lines &mdash; free and effectively
+          one above it left. <b>Base</b> collapses whitespace and duplicate lines, free and effectively
           lossless. <b>RTK</b> attacks the shape of machine output. <b>Caveman</b> rewrites prose and is the only
           lossy step. Callers opt out per request with <span class="mono">"compress": false</span>, and every
           response carries <span class="mono">X-Tollpike-Compression-Detail</span> with this same split.</div>
@@ -3829,7 +3829,7 @@ PAGES.compression = (el, s) => {
           ${sw("toggleCompression", c.enabled)}
         </div>
         <div class="setrow">
-          <div><div class="nm">History window</div><div class="hh">Most recent non-system messages kept. The system prompt is always preserved regardless. This is forgetting, not compression &mdash; usually the single largest saving.</div></div>
+          <div><div class="nm">History window</div><div class="hh">Most recent non-system messages kept. The system prompt is always preserved regardless. This is forgetting, not compression, usually the single largest saving.</div></div>
           <input type="number" min="1" max="500" id="historyWindow" value="${esc(c.historyWindow ?? 12)}" style="width:96px" />
         </div>
       </div>
@@ -3849,7 +3849,7 @@ PAGES.compression = (el, s) => {
           ${sw("rtkRuns", rtk.runs)}
         </div>
         <div class="setrow">
-          <div><div class="nm">Elide blobs</div><div class="hh">Base64, data URIs and hexdumps become a size marker. Lossy, and always visible &mdash; a compressor that silently drops data teaches the model to trust text that is not there.</div></div>
+          <div><div class="nm">Elide blobs</div><div class="hh">Base64, data URIs and hexdumps become a size marker. Lossy, and always visible. A compressor that silently drops data teaches the model to trust text that is not there.</div></div>
           ${sw("rtkBlobs", rtk.blobs)}
         </div>
         <div class="setrow">
@@ -3870,7 +3870,7 @@ PAGES.compression = (el, s) => {
             `<option value="${l}" ${caveman.level === l ? "selected" : ""}>${l}</option>`).join("")}</select>
         </div>
         <div class="setrow">
-          <div><div class="nm">Scope</div><div class="hh"><span class="mono">tools</span> is tool output only. <span class="mono">tools+history</span> adds older turns. <span class="mono">all</span> includes the newest user message &mdash; the one setting here that can change what the model is asked to do.</div></div>
+          <div><div class="nm">Scope</div><div class="hh"><span class="mono">tools</span> is tool output only. <span class="mono">tools+history</span> adds older turns. <span class="mono">all</span> includes the newest user message, the one setting here that can change what the model is asked to do.</div></div>
           <select id="cavemanScope" style="width:140px">${["tools", "tools+history", "all"].map((sc) =>
             `<option value="${sc}" ${caveman.scope === sc ? "selected" : ""}>${sc}</option>`).join("")}</select>
         </div>
@@ -3997,7 +3997,7 @@ function paintPipeline(s) {
         ${seg.map((x) => `<span><i style="background:${x.ink}"></i>${esc(x.k)} &minus;${esc(x.pct)}%</span>`).join("")}
         <span><i class="kept"></i>KEPT ${esc(Math.max(0, Math.round(running)))}%</span>
       </div>
-      <div class="wf-total"><b>${esc(st.savedPct)}%</b> smaller overall &mdash; ${esc(before)} characters in, ${esc(st.afterChars)} out.</div>
+      <div class="wf-total"><b>${esc(st.savedPct)}%</b> smaller overall: ${esc(before)} characters in, ${esc(st.afterChars)} out.</div>
     </div>`;
   })() : `<div class="empty-note">
     <b>Nothing measured yet.</b>
@@ -4035,7 +4035,7 @@ const PII_LABEL = {
   iban: ["IBANs", "Bank account numbers in the international format."],
   api_key: ["API-key shapes", "Long high-entropy tokens with a recognisable vendor prefix."],
   private_key_block: ["Private-key blocks", "PEM armour and everything between it."],
-  jwt: ["JWTs", "Three base64url segments — usually carrying a whole session."]
+  jwt: ["JWTs", "Three base64url segments, usually carrying a whole session."]
 };
 const INJ_LABEL = {
   instruction_override: ["Instruction override", "“ignore all previous instructions” and its close relatives."],
@@ -4055,7 +4055,7 @@ PAGES.guards = (el, s) => {
       <div class="alert">
         <div class="ai" style="background:var(--conn-dim);color:var(--conn)">&#8226;</div>
         <div><div class="at">These are heuristics, not boundaries</div>
-          <div class="ab">PII redaction is pattern matching, not DLP &mdash; it will miss unusual formats, names and
+          <div class="ab">PII redaction is pattern matching, not DLP. It will miss unusual formats, names and
             anything contextual. Injection detection is a known-unsolved problem: it catches low-effort attempts and
             will not stop a determined adversary. Both are defence in depth, and neither is a reason to send
             something you would not otherwise send.</div></div>
@@ -4083,7 +4083,7 @@ PAGES.guards = (el, s) => {
                 <code>${esc(n)}</code></div>`;
             }).join("")
           : '<div class="empty-note">The gateway did not report its pattern list.</div>'}</div>
-        <div class="cov-foot">Anything not in this list passes through untouched &mdash; names, addresses, free-text
+        <div class="cov-foot">Anything not in this list passes through untouched: names, addresses, free-text
           secrets and anything that only reads as sensitive in context.</div>
       </div>
 
@@ -4152,7 +4152,7 @@ const SURFACES = [
   { path: "/a2a", key: true, limit: true, csrf: true,
     n: "Agent-to-agent. An unauthenticated one lets any peer run completions on your keys." },
   { path: "/api/panel/*", key: true, limit: false, csrf: true,
-    n: "The control plane. Deliberately NOT rate limited — the request that turns the limiter off must never be the one it rejects." },
+    n: "The control plane. Deliberately NOT rate limited. The request that turns the limiter off must never be the one it rejects." },
   { path: "/panel", key: false, limit: false, csrf: false,
     n: "Panel assets. Reachable without the key on purpose: the page holds no data of its own and has to be able to ask you for one." },
   { path: "/health", key: false, limit: false, csrf: false,
@@ -4186,7 +4186,7 @@ PAGES.access = (el, s) => {
             : "No key is set, so every surface below that says <em>key</em> is currently answering anyone who can reach this port."}</div>
         </div>
         <div class="row" style="margin-top:16px">
-          <input type="password" id="gatewayKeyInput" placeholder="${locked ? "locked — enter a new key to replace" : "unlocked — set a key to lock"}" />
+          <input type="password" id="gatewayKeyInput" placeholder="${locked ? "locked · enter a new key to replace" : "unlocked · set a key to lock"}" />
           <button class="sm nowrap" id="gatewayKeyGen">Generate</button>
           <button class="sm primary nowrap" id="gatewayKeySave">Save</button>
           <button class="sm danger nowrap" id="gatewayKeyClear">Clear</button>
@@ -4206,7 +4206,7 @@ PAGES.access = (el, s) => {
         </div>
         <div class="cov-foot">${locked && rl.enabled
           ? "Every tick is live. The cross-site guard runs ahead of authentication on all four state-changing surfaces, because the case it exists for is the one where auth is a no-op."
-          : `<em>&#10003;*</em> marks a control that would apply but is currently switched off &mdash;
+          : `<em>&#10003;*</em> marks a control that would apply but is currently switched off:
              ${!locked ? "no gateway key is set" : ""}${!locked && !rl.enabled ? ", and " : ""}${!rl.enabled ? "the rate limiter is disabled" : ""}.`}</div>
       </div>
 
@@ -4247,7 +4247,7 @@ PAGES.access = (el, s) => {
           <div class="setrow">
             <div><div class="nm">Token bucket on the spending surfaces</div>
               <div class="hh">Keyed by an HMAC of the gateway key, or by source IP when no key is set, and evaluated
-                <b>after</b> authentication &mdash; the other order let a stranger name someone else's bucket and drain
+                <b>after</b> authentication. The other order let a stranger name someone else's bucket and drain
                 it without ever holding a valid key.</div></div>
             <div class="switch ${rl.enabled ? "on" : ""}" id="toggleRateLimit"></div>
           </div>
@@ -4264,7 +4264,7 @@ PAGES.access = (el, s) => {
         <div class="p-head"><span class="p-t">What it is for</span></div>
         <div class="why-note">
           <p>A runaway agent loop can burn a month of paid quota in seconds. That is the one failure this limiter
-            exists to stop, and it is a <b>/v1</b> concern &mdash; which is why the control plane is exempt.</p>
+            exists to stop, and it is a <b>/v1</b> concern, which is why the control plane is exempt.</p>
           <p>It is not a defence against an attacker who has your key. Someone holding a valid key can wait out
             a bucket; the limiter only bounds the rate, never the total. The thing that bounds the total is a
             <em>monthly cap</em> on the Budgets page.</p>
@@ -4570,7 +4570,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
     { m: "GET", p: "/v1/models", tag: `${modelCount} listed`, ok: true,
       n: "Every model on every configured lane, as <em>provider/model</em>. Unavailable lanes are listed with <em>available: false</em> rather than hidden." },
     { m: "GET", p: "/health", tag: "open", ok: true,
-      n: "Liveness only — no configuration, no traffic figures, no key required." },
+      n: "Liveness only. No configuration, no traffic figures, no key required." },
     { m: "·", p: "/api/panel/*", tag: locked ? "locked" : "unlocked", ok: locked,
       n: "The control plane behind this panel. Same key as <em>/v1</em>, deliberately not rate limited." },
     { m: "·", p: "/mcp · /a2a", tag: "agent surface", ok: true,
@@ -4578,7 +4578,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
   ];
 
   const HEADERS = [
-    ["X-Tollpike-Provider", "Which lane actually answered — not which one you asked for."],
+    ["X-Tollpike-Provider", "Which lane actually answered, not which one you asked for."],
     ["X-Tollpike-Cache", "HIT, MISS or BYPASS. BYPASS means the request was not cacheable, usually temperature above zero."],
     ["X-Tollpike-Attempts", "How many candidates were walked before one answered. Greater than 1 means a fallback fired."],
     ["X-Tollpike-Compression-Saved-Pct", "What the compression passes removed, as a share of the original."],
@@ -4599,7 +4599,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
         </div>
         <div class="conn-note">Point any OpenAI-compatible client at that URL. Use <em>auto</em> as the model to walk
           the fallback chain, or <em>${esc(sample)}</em> to pin one lane.
-          ${locked ? "Every request needs <em>Authorization: Bearer &lt;key&gt;</em>." : "No key is set, so the bearer header is optional — and so is everyone else's."}</div>
+          ${locked ? "Every request needs <em>Authorization: Bearer &lt;key&gt;</em>." : "No key is set, so the bearer header is optional, and so is everyone else's."}</div>
 
         <div class="seg" id="snipSeg" style="margin-top:18px">${SNIPPETS.map((x, i) =>
           `<b data-snip="${esc(x.id)}"${i === 0 ? ' class="on"' : ""}>${esc(x.label)}</b>`).join("")}</div>
@@ -4609,7 +4609,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
         <div class="p-head"><span class="p-t">Response headers</span><span class="p-s">ON EVERY /v1 REPLY</span></div>
         <div class="hdrs">${HEADERS.map(([k, v]) => `<div class="hdr-row">
           <div class="hdr-k">${esc(k)}</div><div class="hdr-v">${esc(v)}</div></div>`).join("")}</div>
-        <div class="cov-foot">These are how you tell what happened without opening this panel &mdash; every one of
+        <div class="cov-foot">These are how you tell what happened without opening this panel. Every one of
           them is also a column somewhere on the control center.</div>
       </aside>
     </section>
@@ -4627,7 +4627,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
       <aside class="pane">
         <div class="p-head"><span class="p-t">Pinning a lane</span></div>
         <div class="why-note">
-          <p><b>auto</b> walks the fallback chain and is what you want almost always &mdash; it is the only mode
+          <p><b>auto</b> walks the fallback chain and is what you want almost always. It is the only mode
             where a dead provider costs you a retry rather than an outage.</p>
           <p><b>auto/&lt;strategy&gt;</b> keeps the fallback but changes the order. <b>combo/&lt;name&gt;</b> uses a
             tiered policy. Both are on the <em>Combos</em> page.</p>
@@ -4714,7 +4714,7 @@ async function loadPage(el, fetcher, render) {
         <b>${esc(err.message)}</b>
         This page fetches its own data instead of reading the dashboard's state, because the endpoint
         behind it does real work. A failure here usually means that subsystem is unreachable rather
-        than the gateway being down &mdash; the rest of the console will still be live.
+        than the gateway being down. The rest of the console will still be live.
       </div>
       <div class="row"><button class="sm" data-retry="1">Try again</button></div>
     </div></section>`;
@@ -4747,7 +4747,7 @@ PAGES.combos = (el) =>
           </div>
           <div class="combo-intro">A <b>strategy</b> orders every lane best-first. A <b>combo</b> stacks strategies
             into tiers and walks them in order. Every strategy is a total order and never a filter, so the fallback
-            chain always contains every lane &mdash; nothing silently disappears from it.</div>
+            chain always contains every lane. Nothing silently disappears from it.</div>
           <div id="comboHost"></div>
         </div>
         <aside class="pane preview-pane">
@@ -4778,7 +4778,7 @@ PAGES.combos = (el) =>
         <aside class="pane">
           <div class="p-head"><span class="p-t">Subscription lanes</span><span class="p-s" id="subMeta"></span></div>
           <div class="sub-note"><b>You declare this.</b> Nothing in a provider's API reports "this key is included
-            in a plan you already bought", so it cannot be detected &mdash; and a gateway that guessed would either
+            in a plan you already bought", so it cannot be detected, and a gateway that guessed would either
             waste a plan you are paying for or bill you for one you are not.
             <span class="mono">auto/drain-subscription</span> puts whatever you tick here first.</div>
           <div id="subsList" class="filters" style="margin-top:15px"></div>
@@ -4831,7 +4831,7 @@ PAGES.combos = (el) =>
         const rows = result.chain.slice(0, PREVIEW_ROWS);
         if (meta) meta.textContent = `${result.chainLength} HOP${result.chainLength === 1 ? "" : "S"}`;
         if (!rows.length) {
-          out.innerHTML = '<div class="pv-empty">That route resolves to nothing — every candidate is missing a credential or switched off.</div>';
+          out.innerHTML = '<div class="pv-empty">That route resolves to nothing. Every candidate is missing a credential or switched off.</div>';
           return;
         }
         // Built as DOM nodes: the route string is operator input and the
@@ -4922,7 +4922,7 @@ PAGES.quota = (el) =>
           <div class="ai" style="background:var(--model-dim);color:var(--model)">&#8226;</div>
           <div><div class="at">Observed here, never read from the vendor</div>
             <div class="ab">Almost no provider exposes remaining quota, so every figure below is what this gateway
-              itself counted. Usage of the same key from another client is invisible to it &mdash; real remaining
+              itself counted. Usage of the same key from another client is invisible to it. Real remaining
               quota is always this or less, never more.</div></div>
         </div>
         ${t.unverifiedLimits ? `<div class="alert warn"><div class="ai">&#8226;</div>
@@ -4931,7 +4931,7 @@ PAGES.quota = (el) =>
               Headroom computed from a wrong limit is confidently wrong.</div></div></div>` : ""}
         ${t.undeclaredFreeTiers?.length ? `<div class="alert warn"><div class="ai">&#8226;</div>
           <div><div class="at">${esc(t.undeclaredFreeTiers.length)} lane(s) have a free tier with no limits configured</div>
-            <div class="ab">${esc(t.undeclaredFreeTiers.join(", "))} &mdash; quota that cannot be counted is not counted.
+            <div class="ab">${esc(t.undeclaredFreeTiers.join(", "))}. Quota that cannot be counted is not counted.
               They are treated as paid lanes rather than reported with imaginary headroom.</div></div></div>` : ""}
       </div>
 
@@ -4963,8 +4963,8 @@ PAGES.quota = (el) =>
           <div class="recon-body">
             <div class="setrow">
               <div><div class="nm">Clear observed counters</div>
-                <div class="hh">Resets what this gateway has counted today. It changes nothing at the vendor
-                  &mdash; their limits keep counting, and the next request still lands against the real allowance.</div></div>
+                <div class="hh">Resets what this gateway has counted today. It changes nothing at the vendor.
+                  Their limits keep counting, and the next request still lands against the real allowance.</div></div>
               <button class="sm danger" id="resetQuota">Reset</button>
             </div>
           </div>
@@ -5070,7 +5070,7 @@ PAGES.quota = (el) =>
     }).join("") : `<div class="empty-note">
       <b>No lane declares a free tier.</b>
       Providers with a configured free allowance appear here with their limits, what is left of each one, and
-      which pool they draw from &mdash; so a lane sharing an allowance with another is obvious before it runs out.</div>`;
+      which pool they draw from, so a lane sharing an allowance with another is obvious before it runs out.</div>`;
 
     root.querySelector("#resetQuota").addEventListener("click", async () => {
       if (!confirm("Clear observed quota counters?")) return;
@@ -5115,7 +5115,7 @@ PAGES.memory = (el) =>
         <div class="ai">&#8226;</div>
         <div><div class="at">Configured ${esc(data.mode)}, actually running ${esc(data.effectiveMode)}</div>
           <div class="ab">${esc(emb.reason || "The vector half is unavailable.")}
-            Recall is still working &mdash; it is just working with one half.</div></div>
+            Recall is still working. It is just working with one half.</div></div>
       </div></div>` : ""}
 
       <section class="zone recallzone">
@@ -5125,8 +5125,8 @@ PAGES.memory = (el) =>
             <span class="p-s">${esc(String(data.effectiveMode || "off").toUpperCase())} &#183; TOP ${esc(data.topK)}</span>
           </div>
           <div class="mem-lede">Turns are stored after a successful answer and recalled against the newest user
-            message on the next request. <b>Off by default</b>, because it changes the prompt the model sees
-            &mdash; when it is on, every affected response carries <em>X-Tollpike-Memory-Recalled</em>.</div>
+            message on the next request. <b>Off by default</b>, because it changes the prompt the model sees.
+            When it is on, every affected response carries <em>X-Tollpike-Memory-Recalled</em>.</div>
 
           <div class="halves">
             ${half("KEYWORD", store.fts && store.fts !== "none",
@@ -5138,12 +5138,12 @@ PAGES.memory = (el) =>
               vectorLive
                 ? `Qdrant reachable &#183; <em>${esc(vec.points ?? 0)}</em> points at <em>${esc(vec.dimensions ?? "?")}</em> dims.`
                 : esc(vec.reason || emb.reason || "No embedding provider configured."),
-              "Matches on meaning. Needs a real embedding provider — there is deliberately no built-in fallback embedder.")}
+              "Matches on meaning. Needs a real embedding provider. There is deliberately no built-in fallback embedder.")}
           </div>
           <div class="fuse ${data.effectiveMode === "hybrid" ? "on" : ""}">
             <b>${data.effectiveMode === "hybrid" ? "FUSED" : "NOT FUSED"}</b>
             <span>${data.effectiveMode === "hybrid"
-              ? "Both halves run and are combined by reciprocal rank, which is scale-free — neither half can dominate because its numbers happen to be bigger."
+              ? "Both halves run and are combined by reciprocal rank, which is scale-free, so neither half can dominate because its numbers happen to be bigger."
               : "Only one half is contributing, so there is nothing to fuse. Reciprocal-rank fusion needs two ranked lists."}</span>
           </div>
 
@@ -5181,7 +5181,7 @@ PAGES.memory = (el) =>
               <div class="ik">PARTITIONING</div>
               <div class="iv ${data.crossSession ? "warn" : "ok"}" style="font-size:17px">${data.crossSession ? "SHARED" : "PER CALLER"}</div>
               <div class="is">${data.crossSession
-                ? "<em>CROSS-SESSION IS ON</em> &mdash; ONE CALLER CAN RECALL ANOTHER'S TURNS"
+                ? "<em>CROSS-SESSION IS ON</em> · ONE CALLER CAN RECALL ANOTHER'S TURNS"
                 : "A CALLER ONLY EVER RECALLS ITS OWN TURNS"}</div>
             </div>
           </div>
@@ -5220,7 +5220,7 @@ PAGES.memory = (el) =>
             <input id="embProvider" class="mono" placeholder="openai" value="${esc(emb.provider || "")}" style="width:150px" />
           </div>
           <div class="setrow">
-            <div><div class="nm">Embedding model</div><div class="hh">Changing this invalidates every stored vector &mdash; the collection's dimension count is fixed at creation.</div></div>
+            <div><div class="nm">Embedding model</div><div class="hh">Changing this invalidates every stored vector. The collection's dimension count is fixed at creation.</div></div>
             <input id="embModel" class="mono" placeholder="text-embedding-3-small" value="${esc(emb.model || "")}" style="width:210px" />
           </div>
           <div class="setrow">
@@ -5294,7 +5294,7 @@ function paintMemResults() {
   const meta = document.getElementById("memMeta");
   if (!out) return;
   if (!memLastResult) {
-    out.textContent = "Nothing recalled yet — this runs the same retrieval a real request would.";
+    out.textContent = "Nothing recalled yet. This runs the same retrieval a real request would.";
     if (meta) meta.textContent = "";
     return;
   }
@@ -5351,12 +5351,12 @@ PAGES.knowledge = (el) =>
           <div class="src ${ob.configured ? "on" : ""}">
             <div class="src-v">${ob.configured ? esc(ob.notes) : "&mdash;"}<span>${ob.configured ? "notes indexed" : "no vault"}</span></div>
             <div class="src-n">${ob.configured
-              ? `Containment: <em>${esc(ob.containment || "path-checked")}</em> &mdash; reads cannot escape the vault
+              ? `Containment: <em>${esc(ob.containment || "path-checked")}</em>. Reads cannot escape the vault
                  directory, so a note containing a traversal path cannot pull a file from elsewhere on the disk.`
               : esc(ob.reason || "Point this at a vault directory to index it.")}</div>
           </div>
           <div class="setrow">
-            <div><div class="nm">Vault path</div><div class="hh">A local directory. Nothing is copied &mdash; notes are read at query time.</div></div>
+            <div><div class="nm">Vault path</div><div class="hh">A local directory. Nothing is copied. Notes are read at query time.</div></div>
             <input id="vaultPath" class="mono" placeholder="C:\\Users\\you\\vault" value="${esc(ob.vault || "")}" style="width:250px" />
           </div>
           <div class="row"><button class="sm primary" id="saveVault">Save</button></div>
@@ -5372,14 +5372,14 @@ PAGES.knowledge = (el) =>
               no.configured && no.reachable ? `api ${esc(no.apiVersion || "?")}` : "integration status"}</span></div>
             <div class="src-n">${no.configured
               ? (no.reachable
-                  ? "Reachable, and unverified against a live workspace &mdash; the connection works, but nothing here has confirmed which pages are actually shared with the integration."
+                  ? "Reachable, and unverified against a live workspace. The connection works, but nothing here has confirmed which pages are actually shared with the integration."
                   : esc(no.reason || "The API did not answer."))
               : esc(no.reason || "No integration key present.")}</div>
           </div>
           <div class="setrow">
             <div><div class="nm">Where the key lives</div>
               <div class="hh">Set <span class="mono">NOTION_API_KEY</span> in the environment and share pages with the
-                integration. Keys live in env, not in settings &mdash; this panel never handles them, which is why
+                integration. Keys live in env, not in settings. This panel never handles them, which is why
                 there is no field here to paste one into.</div></div>
             <span class="badge">env only</span>
           </div>
@@ -5430,7 +5430,7 @@ function paintKResults() {
   const meta = document.getElementById("kMeta");
   if (!out) return;
   if (!kLastResult) {
-    out.textContent = "Nothing searched yet — this reads both sources exactly as a request would.";
+    out.textContent = "Nothing searched yet. This reads both sources exactly as a request would.";
     if (meta) meta.textContent = "";
     return;
   }
@@ -5474,7 +5474,7 @@ PAGES.protocols = (el) =>
             <span class="p-s">${esc(mcp.tools ?? 0)} TOOLS &#183; ${esc(mcp.scopes ?? 0)} SCOPES</span>
           </div>
           <div class="proto-lede">For a model driving this gateway step by step. It gets the individual levers
-            &mdash; read a figure, set a cap, toggle a lane &mdash; and is expected to know what it is doing with them.</div>
+            (read a figure, set a cap, toggle a lane) and is expected to know what it is doing with them.</div>
 
           <div class="mix">
             <div class="mix-bar">
@@ -5533,7 +5533,7 @@ PAGES.protocols = (el) =>
                 ? "and <em>message/stream</em> honours it."
                 : "and <em>message/stream</em> refuses accordingly. Advertising a capability that returns one chunk at the end is worse than not advertising it at all."}</span></div>
             <div class="hon-row"><b>Task history: ${esc(a2a.taskHistory || "in-process")}</b>
-              <span>&mdash; <em>${esc(a2a.tasksTracked ?? 0)}</em> tracked right now.
+              <span>· <em>${esc(a2a.tasksTracked ?? 0)}</em> tracked right now.
                 A peer that reconnects after a restart gets an honest "unknown task", not a fabricated one.</span></div>
             <div class="hon-row"><b>The Agent Card is unauthenticated</b>
               <span>on purpose. A peer has to be able to read how to authenticate before it can.</span></div>
@@ -5549,7 +5549,7 @@ PAGES.protocols = (el) =>
               <div><div class="nm">Same key, same limiter</div>
                 <div class="hh">MCP and A2A sit behind the gateway key and the rate limiter exactly as
                   <span class="mono">/v1</span> does. Both can reach the router, so leaving either off the limiter
-                  would leave a way around the one control that stops a runaway agent loop &mdash; and an
+                  would leave a way around the one control that stops a runaway agent loop, and an
                   unauthenticated MCP endpoint is a remote control for this gateway's spend.</div></div>
               <span class="badge on">enforced</span>
             </div>
@@ -5583,8 +5583,8 @@ PAGES.agents = (el) =>
         <div class="alert warn">
           <div class="ai">&#8226;</div>
           <div><div class="at">Every driver here is unverified, and every task bypasses your caps</div>
-            <div class="ab">${esc(data.caveat || "")} A task created here is billed by the vendor directly &mdash;
-              it does not pass through this gateway's router, so no monthly cap, breaker or free-quota rule applies
+            <div class="ab">${esc(data.caveat || "")} A task created here is billed by the vendor directly.
+              It does not pass through this gateway's router, so no monthly cap, breaker or free-quota rule applies
               to it.</div></div>
         </div>
       </div>
@@ -5639,7 +5639,7 @@ PAGES.agents = (el) =>
             <button class="sm nowrap" id="lookupBtn">Fetch</button>
             <button class="sm nowrap" id="approveBtn">Approve plan</button>
           </div>
-          <div class="inspect-n">Fetch is read-only. <b>Approve plan</b> is not &mdash; the agent acts on the plan
+          <div class="inspect-n">Fetch is read-only. <b>Approve plan</b> is not. The agent acts on the plan
             the moment you confirm, on the vendor's account.</div>
           <div id="lookupOut" class="out" style="margin-top:12px"></div>
         </div>
@@ -5741,7 +5741,7 @@ PAGES.services = (el) =>
 
         <aside class="pane">
           <div class="p-head"><span class="p-t">Cluster profiles</span><span class="p-s">${esc((data.profiles || []).length)} DEFINED</span></div>
-          <div class="prof-n">Starts several at once. Partial success is reported as partial &mdash; a half-started
+          <div class="prof-n">Starts several at once. Partial success is reported as partial. A half-started
             cluster does not report healthy, because the thing you would do about it differs.</div>
           <div class="profs">${(data.profiles || []).map((p) =>
             `<button class="sm" data-profile="${esc(p.id)}">${esc(p.label)}</button>`).join("")
@@ -5906,7 +5906,7 @@ function paintSidebarFoot(s) {
   document.getElementById("sfStrip").innerHTML = s.providers.map((p) => {
     const st = laneState(p);
     const cls = st === "open" ? "open" : st === "cold" || st === "half" ? "cold" : st === "live" || st === "idle" ? "on" : "";
-    return `<i class="sf-tick ${cls}" title="${esc(p.name)} — ${esc(LANE_LABEL[st])}"></i>`;
+    return `<i class="sf-tick ${cls}" title="${esc(p.name)} · ${esc(LANE_LABEL[st])}"></i>`;
   }).join("");
   const cool = Object.keys(s.resilience?.connections || {}).length;
   const locked = Object.keys(s.resilience?.models || {}).length;

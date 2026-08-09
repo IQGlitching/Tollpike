@@ -1,4 +1,4 @@
-# Tollpike — handover
+# Tollpike: handover
 
 Context for an agent or developer picking this up cold.
 
@@ -17,7 +17,7 @@ you find any `patchbay` string, it's a leftover.
 A self-hosted AI gateway. One OpenAI-compatible endpoint at
 `127.0.0.1:20128/v1` fans out to 36 providers with tiered fallback, hard
 spend caps, free-quota accounting, stacked compression, persistent memory,
-response caching, and optional guardrails — and exposes the whole gateway
+response caching, and optional guardrails, and exposes the whole gateway
 as tools an agent can drive over MCP and A2A.
 
 **It optimizes for cost control and honest reporting, not provider reach.**
@@ -38,7 +38,7 @@ number itself is unchanged.
 beyond Express. Two runtime dependencies beyond Express and dotenv: `undici`
 (ProxyAgent/Agent) and the MCP SDK. Zero known advisories.
 
-**Subsystem map** — where to look for what:
+**Subsystem map**. Where to look for what:
 
 | Area | Files |
 |---|---|
@@ -78,7 +78,7 @@ Requires Node 18+ (uses native `fetch`, `node:test`, `import.meta.dirname`).
 
 **Node 22.5+ gets a better memory backend.** `memory/store.js` prefers
 `node:sqlite` with an FTS5 index and falls back to an in-process BM25 inverted
-index below that. Same ranking family, so relevance is broadly comparable — the
+index below that. Same ranking family, so relevance is broadly comparable. The
 fallback is slower, not differently behaved. Which one is live is reported on
 every `storeStats()` call, because "why is recall worse on the server than on my
 laptop" is otherwise unanswerable. Force the fallback with
@@ -142,16 +142,16 @@ Three ordering choices worth not undoing:
 - **Memory ingests after a successful answer**, never before. Ingesting a
   request that then failed fills recall with dead ends.
 - **Memory stores what the CLIENT sent**, not the compressed and hydrated
-  version — otherwise each turn stores a caveman paraphrase with the previous
+  version. Otherwise each turn stores a caveman paraphrase with the previous
   recall block folded in, compounding into memories increasingly unlike the
   conversation they came from.
 
 **Auth runs before the rate limiter.** The other order let an
 unauthenticated caller reach the limiter, which derived bucket identity
-from the bearer token — so a stranger could name someone else's bucket and
+from the bearer token, so a stranger could name someone else's bucket and
 drain it.
 
-The limiter is mounted on `/v1`, `/api/chat`, `/mcp` and `/a2a` — every path
+The limiter is mounted on `/v1`, `/api/chat`, `/mcp` and `/a2a`. Every path
 that can reach `routeChatCompletion`. It is deliberately **not** on the rest of
 `/api`: putting it on the control plane means the request that turns the limiter
 off can itself be rejected, locking the operator out of their own panel with no
@@ -160,14 +160,14 @@ recovery but restarting the process. MCP and A2A are on it because
 exempting them would leave a way around the only control that stops a runaway
 agent loop.
 
-Streaming (`"stream": true`) takes `routeChatCompletionStream()` — same
+Streaming (`"stream": true`) takes `routeChatCompletionStream()`. Same
 candidate logic, but fallback only works up to connection-open. Once bytes
 flow, the provider is committed. Usage is recorded even if the stream dies
 partway, because those tokens were still generated and billed.
 
 ---
 
-## 4. Invariants — do not break these
+## 4. Invariants: do not break these
 
 `test/security-invariants.test.mjs` asserts these **structurally** (by
 reading source text), because behavioral tests can't catch them. That suite
@@ -175,7 +175,7 @@ exists because mutation testing found the gap: reverting the auth check to
 `token !== gatewayApiKey` passed all behavioral tests, since a
 timing-unsafe compare returns the identical 401.
 
-If you change any of these, that suite fails loudly. That's intended — read
+If you change any of these, that suite fails loudly. That's intended. Read
 the reasoning before "fixing" the test. Two of them carry a `CHANGED,
 deliberately` comment explaining why the *original* invariant was wrong.
 
@@ -191,7 +191,7 @@ deliberately` comment explaining why the *original* invariant was wrong.
 | Server binds `127.0.0.1` unless `BIND_HOST` overrides | `server.js` | `app.listen(PORT)` alone binds every interface, and the panel API is unauthenticated by default |
 | Host-header guard mounted ahead of all routes | `middleware/hostGuard.js` | Same-origin policy does not stop DNS rebinding; the Host header is what an attacker can't forge away |
 | Proxy endpoint validates provider id **and** URL scheme | `server.js`, `routing/proxy.js` | It configures where every upstream request is routed |
-| Gateway key encrypted at rest when a secret is available | `storage/settings.js` | The panel claimed "encryption active" while writing plaintext — the exact false-confidence failure invariant #2 exists to prevent |
+| Gateway key encrypted at rest when a secret is available | `storage/settings.js` | The panel claimed "encryption active" while writing plaintext: the exact false-confidence failure invariant #2 exists to prevent |
 | Luhn `validate()` gates card redaction | `security/guardrails.js` | Without it, any 13–19 digit order number gets mangled |
 | Injection scan covers `user` **and `tool`**, never `system`/`assistant` | `security/guardrails.js` | Tool results are untrusted input and the primary indirect-injection vector. The system prompt is the operator's own text |
 | Panel never uses `innerHTML` for model output | `public/panel.js` | The panel holds the gateway key in `localStorage`; markup reaching the DOM is a credential leak |
@@ -203,7 +203,7 @@ deliberately` comment explaining why the *original* invariant was wrong.
 | Caveman never touches a system prompt | `compression/compress.js` | It is the operator's own text and the one thing in the request they wrote deliberately |
 | Recalled memory is injection-scanned before injection | `memory/index.js` | It lands in a `system` message, the one role the scanner skips because that slot is meant to hold the operator's words. Memory puts someone else's words there |
 | Memory recall is caller-partitioned | `memory/store.js`, `server.js` | Same reasoning as the cache: one caller recalling another's turns is a data leak |
-| `freeTierOf` rejects a non-object `freeTier` | `storage/quotaTracker.js` | The legacy `freeTier: true` boolean has no limits, so headroom computed from it was 1.0 — reporting plenty of free quota for a lane nobody can count |
+| `freeTierOf` rejects a non-object `freeTier` | `storage/quotaTracker.js` | The legacy `freeTier: true` boolean has no limits, so headroom computed from it was 1.0: reporting plenty of free quota for a lane nobody can count |
 | Every quota reading carries `observedOnly` | `storage/quotaTracker.js` | The gateway cannot see the same key used elsewhere, so real remaining quota is always this or less |
 | Sidecars spawn with `shell: false`, from a closed service list | `services/embedded.js` | Arguments include operator input; one string in a shell is a command injection reachable from the panel. An arbitrary-command supervisor is a remote shell |
 | Obsidian paths are realpath-resolved and contained | `knowledge/obsidian.js` | A symlink inside the vault contains no `..` and resolves straight out of the tree |
@@ -237,11 +237,11 @@ code. Only Anthropic and Gemini need bespoke adapters.
 stall watchdog, and the `ProviderError` shape live there. There was
 previously no timeout anywhere: a provider that accepted the connection and
 went quiet held the request open forever *and* never let the fallback chain
-advance. Timeouts are deliberately **not** retryable — retrying an
+advance. Timeouts are deliberately **not** retryable. Retrying an
 unresponsive provider twice with backoff triples the wait before fallback.
 
 **3-layer resilience: `model ⊂ connection ⊂ provider`.** Failures trip the
-smallest scope that explains them — 429 locks one model for 60s, 401 cools
+smallest scope that explains them: 429 locks one model for 60s, 401 cools
 one API key, 5xx counts toward the provider breaker, 404 locks the model for
 30 min. Recovery is lazy (checked on access), so there are no background
 timers to leak. See `routing/resilience.js:classifyAndRecord`.
@@ -250,15 +250,15 @@ timers to leak. See `routing/resilience.js:classifyAndRecord`.
 just ones with keys, so `attempts[]` can report *why* each was skipped
 ("no API key" vs "circuit open" vs "over budget"). Filtering early made
 debugging much worse. Don't re-optimize this. The client-facing copy of
-`attempts[]` is sanitized by `publicAttempts()` — upstream error bodies
+`attempts[]` is sanitized by `publicAttempts()`. Upstream error bodies
 stay in the log.
 
-**Prices are per MILLION tokens — `costPer1mTokens`.** The field used to be
+**Prices are per MILLION tokens: `costPer1mTokens`.** The field used to be
 named `costPer1kTokens` while holding per-million values (which is how every
 vendor publishes them), and `costTracker.js` divided by 1,000. Every recorded
 cost was therefore **1000× too high**, and since caps are checked against
 those numbers a $5/month cap behaved like $0.005 and skipped the provider
-almost immediately. No test caught it — all 152 asserted internal
+almost immediately. No test caught it. All 152 asserted internal
 consistency, and the arithmetic was self-consistently wrong. The very first
 live request made it obvious. The field name now matches the unit so config
 values can be pasted straight from a vendor pricing page, which is the
@@ -268,7 +268,7 @@ conversion step that silently went missing. `TOKENS_PER_PRICE_UNIT` in
 Corollary: monetary figures carry **8 decimal places** internally and the
 panel formats adaptively. At real per-million rates a handful of requests
 costs millionths of a dollar, and the previous 4dp rounding printed that as
-`$0.0000` — which reads as *free* rather than *small*, the wrong signal
+`$0.0000`, which reads as *free* rather than *small*, the wrong signal
 from a spend-control tool.
 
 **Pricing is per MODEL, not per provider.** `priceFor(provider, model)` in
@@ -298,14 +298,14 @@ The audit turned up more than bad numbers:
   longer exist at those vendors. With the model allowlist now enforced, such
   entries are broken in both directions: the listed model 404s upstream, and
   the model that *does* exist is rejected locally. Both are corrected.
-- **Six providers are priced 0/0** — cerebras, openrouter, nvidia,
+- **Six providers are priced 0/0**: cerebras, openrouter, nvidia,
   githubmodels, huggingface, chutes. Cerebras is demonstrably not free. A
   zero rate means recorded spend is always $0 and **the cap can never
   trip**, so setting one there is worse than setting none. `/api/panel/
   providers/:id/budget` now returns a `warning` in exactly that case, and
   the panel surfaces it.
 - **`verified: true` was meaningless.** In this config it means "the baseURL
-  answered", which was never established for any provider — it came with the
+  answered", which was never established for any provider. It came with the
   unaudited drop (§10). Reset to `false` for all non-local providers.
 
 **`npm run verify-pricing` keeps this honest.** A one-off audit is worthless
@@ -318,7 +318,7 @@ something you remember to re-check. `scripts/verify-pricing.mjs` +
   hand-verified rates exactly. `--write` applies corrections and restamps.
 - **third-party hosts** resell someone else's open model at their own rate,
   so the catalogue says nothing about them. These are reported with their
-  vendor URL and how old the last human check is — never auto-"verified".
+  vendor URL and how old the last human check is, never auto-"verified".
 - **free-tier** entries priced 0/0 are reported as `NO CAP`, because a zero
   rate means recorded spend is always $0 and a budget cap can never trip.
 
@@ -343,7 +343,7 @@ for the duration of a call. Without it the cap only saw committed spend, so
 N concurrent requests all read "not yet reached" and collectively overshot.
 
 **Cost aggregates are incremental and in-memory.** `getMonthlySpend` used to
-re-read and re-parse the whole log once per candidate provider — up to 36
+re-read and re-parse the whole log once per candidate provider. Up to 36
 full file reads per `auto` request, against a file that only grows.
 
 **Local runtimes carry `requiresKey: false`** and get priority 50+, so they
@@ -361,7 +361,7 @@ implying they're guarantees.
 
 The gateway understands four request formats and translates all of them into
 one internal shape before routing. **This is what determines which tools can
-connect — not provider coverage.** Claude Code was unreachable not because a
+connect, not provider coverage.** Claude Code was unreachable not because a
 provider was missing but because it only speaks `/v1/messages`.
 
 | Endpoint | Format | Unlocks |
@@ -380,13 +380,13 @@ Notes that cost time:
 
 - **Anthropic clients authenticate with `x-api-key`, not `Authorization`.**
   `middleware/auth.js` accepts both, or `/v1/messages` is unreachable.
-- **Anthropic's stream is block-structured** — every piece of content is
-  opened, streamed, then closed — while OpenAI's is a flat delta sequence.
+- **Anthropic's stream is block-structured**: every piece of content is
+  opened, streamed, then closed, while OpenAI's is a flat delta sequence.
   The encoder tracks which block is open and closes it before opening
   another; getting this wrong produces a stream clients silently drop.
 - **Ollama streams newline-delimited JSON, not SSE.** No `data:` prefix, no
   blank-line separator, no `[DONE]`.
-- **Ollama streams by default** — an absent `stream` field means true, the
+- **Ollama streams by default**: an absent `stream` field means true, the
   opposite of OpenAI.
 - **`/api/*` sits outside `/v1`**, so it needs its own auth and rate-limit
   mounts. Easy to forget and leaves an unauthenticated hole.
@@ -411,7 +411,7 @@ CSS; `public/panel.js` is the router plus one renderer per page.
 | Providers | the 36-lane grid: category groups, search, filter chips, per-card cap + toggle + `Test lane` |
 | Routing | fallback chain visual, routing modes, trial run with chain animation |
 | Budgets | caps vs month-to-date spend |
-| Resilience | `resilience.snapshot()` — breakers, cooling keys, locked models |
+| Resilience | `resilience.snapshot()`: breakers, cooling keys, locked models |
 | Cache / Compression | cache stats + clear; compression enable + history window |
 | Guards / Access | PII, injection mode; gateway key, rate limit, encryption, bind posture |
 | Proxy / Endpoints | per-provider egress proxy; connection URLs and response headers |
@@ -423,8 +423,8 @@ hash-based.
 **Everything rendered goes through `esc()`, and model output is built with
 DOM nodes.** This is not stylistic. The panel is reachable without auth by
 design and holds the gateway key in `localStorage`; a model emitting
-`<img onerror=...>` — trivially reachable through indirect prompt injection
-— would exfiltrate that key on the next 8-second refresh.
+`<img onerror=...>`, trivially reachable through indirect prompt injection,
+would exfiltrate that key on the next 8-second refresh.
 
 Deliberately **not** built, despite appearing in the reference design this
 was modelled on: MITM proxy (contradicts `proxy.js`'s promise not to touch
@@ -446,7 +446,7 @@ Each of these cost real debugging time. Don't rediscover them.
 - **Anthropic and Gemini report real token counts mid-stream.** The adapters capture them and yield an internal `{__usage}` frame that the router consumes and never forwards to the client.
 - **Don't send `stream_options: {include_usage: true}`.** It would give exact streamed spend, but strict providers reject unknown body fields and none of the 30 OpenAI-compatible entries has been exercised live.
 - **`undici` is a real dependency.** Node bundles it internally but doesn't expose it as a bare specifier, so `import("undici")` fails without the package. Needed for `ProxyAgent`.
-- **`fetch` cannot set a `Host` header** — it's forbidden. The host-guard tests use `node:http` for that reason.
+- **`fetch` cannot set a `Host` header**: it's forbidden. The host-guard tests use `node:http` for that reason.
 - **Streaming latency is full stream duration**, not time-to-first-byte. If you add a TTFB metric, add it as a separate field.
 
 ---
@@ -455,16 +455,16 @@ Each of these cost real debugging time. Don't rediscover them.
 
 `node --test`, no framework. Four kinds:
 
-1. **Pure unit** — `translate`, `guardrails`, `cache`, `resilience`, `crypto`, `compression`. No I/O.
-2. **Behavioural regression** — `hardening.test.mjs`. One test per fixed security finding; each fails against the pre-fix code.
-3. **Fake-server integration** — `adapters.integration.test.mjs`. Spins a local `http.createServer` mimicking a provider's wire format including real SSE framing.
-4. **E2E** — `gateway.e2e.test.mjs`. Spawns the real server, hits real endpoints.
+1. **Pure unit**: `translate`, `guardrails`, `cache`, `resilience`, `crypto`, `compression`. No I/O.
+2. **Behavioural regression**: `hardening.test.mjs`. One test per fixed security finding; each fails against the pre-fix code.
+3. **Fake-server integration**: `adapters.integration.test.mjs`. Spins a local `http.createServer` mimicking a provider's wire format including real SSE framing.
+4. **E2E**: `gateway.e2e.test.mjs`. Spawns the real server, hits real endpoints.
 
 **When adding a feature, prefer pure functions + a fake server over mocks.**
 Every bug this project actually shipped was caught by a fake server.
 
 **Never commit a live API key to a test.** Nothing here has been verified
-against a real provider — see gap #1 below.
+against a real provider. See gap #1 below.
 
 **The e2e suite's flakiness is fixed, and it had three causes**, none of
 them timing in the way it looked:
@@ -474,22 +474,22 @@ them timing in the way it looked:
 3. The suite deleted the shared `./data` while the crypto suite was concurrently deriving a key from `.salt`. It now uses its own `TOLLPIKE_DATA_DIR`.
 
 If you see `cancelled` again, check for a stale server squatting port 20777
-before assuming flakiness — the health poll will happily succeed against
+before assuming flakiness. The health poll will happily succeed against
 someone else's process.
 
 ---
 
 ## 10. Known gaps
 
-1. **Only Groq and Ollama have been exercised live.** Both buffered and streamed, both returning `usage_source: "provider"` — Groq sends a usage frame in its SSE and the parser picks it up. The other 34 entries remain verified only against fake servers. Before trusting one with money, run a real buffered *and* streamed request through it and confirm the content and the `usage` numbers. `npm run verify` probes reachability but does not exercise completions.
-2. **Docker image never actually built** — no daemon was available. Compose YAML parses, all `COPY` paths exist, `npm ci --omit=dev` succeeds. Confirm the container reaches `healthy` before depending on it. Note the container sets `BIND_HOST=0.0.0.0` (the namespace is the boundary) while compose publishes to `127.0.0.1` on the host.
+1. **Only Groq and Ollama have been exercised live.** Both buffered and streamed, both returning `usage_source: "provider"`: Groq sends a usage frame in its SSE and the parser picks it up. The other 34 entries remain verified only against fake servers. Before trusting one with money, run a real buffered *and* streamed request through it and confirm the content and the `usage` numbers. `npm run verify` probes reachability but does not exercise completions.
+2. **Docker image never actually built**. No daemon was available. Compose YAML parses, all `COPY` paths exist, `npm ci --omit=dev` succeeds. Confirm the container reaches `healthy` before depending on it. Note the container sets `BIND_HOST=0.0.0.0` (the namespace is the boundary) while compose publishes to `127.0.0.1` on the host.
 3. **Cache is in-memory per process.** Restart drops it; two containers don't share it. Keys are already caller-partitioned, so sharing it later is safe.
 4. **Chart is last-20 raw requests**, not time-bucketed.
 5. **Single shared gateway key**, not per-user auth with separate quotas.
-6. **`tools`/`tool_choice` shape isn't validated** — malformed input surfaces as a raw provider error, not a clean 400.
+6. **`tools`/`tool_choice` shape isn't validated**. Malformed input surfaces as a raw provider error, not a clean 400.
 7. **`data/usage.jsonl` has no rotation.** Aggregates are incremental now so it only costs startup time, but it grows forever.
 8. **Streamed spend is estimated unless the provider volunteers usage.** Anthropic and Gemini always do; Groq does too (confirmed live). The rest of the OpenAI-compatible path depends on the provider.
-9. **21 of 30 remote providers have unverified pricing**, and their model ids are equally unverified — two of the six checked had stale ones. Treat any unchecked provider as indicative only, and check the vendor page before enforcing a cap against it. Prices and model names both drift; this needs periodic re-checking, not a one-off pass.
+9. **21 of 30 remote providers have unverified pricing**, and their model ids are equally unverified. Two of the six checked had stale ones. Treat any unchecked provider as indicative only, and check the vendor page before enforcing a cap against it. Prices and model names both drift; this needs periodic re-checking, not a one-off pass.
 
 ### Gaps added by the routing/memory/agents work
 
@@ -511,7 +511,7 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
     an entry that fronts an allowance another entry already draws on, you must
     set the same `quotaPool` on both or the counter reports twice the quota you
     have. Seven pools are marked `poolConfidence: "assumed"`.
-12. **`nebius` carries `freeTier: true`** — the legacy boolean from the original
+12. **`nebius` carries `freeTier: true`**. The legacy boolean from the original
     config, with no limits. `freeTierOf` rejects non-objects and reports it under
     `undeclaredFreeTiers`, so it is treated as a paid lane rather than one with
     imaginary headroom. Filling in real limits is a config change.
@@ -524,7 +524,7 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
     faster than their documentation. Expect the first live call per driver to
     need a fix, and treat the endpoint paths in `agents/cloud.js` as a starting
     point rather than a contract.
-15. **No sidecar has been started for real** — none of Bifrost, 9Router or
+15. **No sidecar has been started for real**, none of Bifrost, 9Router or
     CLIProxy was installed here. The supervisor's failure paths are tested
     (missing binary, bad port, double start, partial cluster); the success path
     is not. `serviceHealth` assumes each exposes the `healthPath` declared in
@@ -541,11 +541,11 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
     track live work, and a restart loses it. `tasks/cancel` on a finished task
     returns -32002 rather than pretending it did something. `tasks/list` is a
     non-standard extension and labels itself as one in its response.
-19. **The MCP HTTP transport is stateless per request** — a new `Server` and
+19. **The MCP HTTP transport is stateless per request**. A new `Server` and
     transport per POST, `sessionIdGenerator: undefined`. The SSE transport *is*
     stateful, and its sessions do not survive a restart; a stale `sessionId`
     returns a 404 telling the client to reopen the stream.
-20. **`STRATEGY_IDS.length` is 19, not 18.** Nothing hardcodes a count — the
+20. **`STRATEGY_IDS.length` is 19, not 18.** Nothing hardcodes a count. The
     panel, the README table and `/api/panel/strategies` all read the registry —
     so adding or removing a strategy leaves no stale number to chase.
 21. **The Obsidian symlink-escape test skips on Windows** without the privilege
@@ -557,7 +557,7 @@ Roadmap order in `README.md`.
 
 ---
 
-## 11. Provenance note — read before publishing
+## 11. Provenance note: read before publishing
 
 During early development, a set of files appeared in the working tree that
 the authoring session did not write: `test/` (9 files),
@@ -580,7 +580,7 @@ server. `npm audit` reports zero vulnerabilities.
 
 ## 12. Most common task: adding a provider
 
-If it speaks the OpenAI chat-completions format — **config only, no code:**
+If it speaks the OpenAI chat-completions format: **config only, no code:**
 
 ```jsonc
 // config/providers.json

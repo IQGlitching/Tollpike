@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Tollpike">
+  <rect width="32" height="32" rx="7" fill="#0b0e14"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#a78bfa" stroke-opacity="0.4"/>
+  <path d="M 10 14.4 C 15 12.2 16 9.5 20.6 9.5" fill="none" stroke="#a78bfa" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M 10 17.6 C 15 19.8 16 22.5 20.6 22.5" fill="none" stroke="#4b5563" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="7.6" cy="16" r="3.1" fill="#c9d1d9"/>
+  <circle cx="24.4" cy="9.5" r="4.1" fill="#a78bfa"/>
+  <circle cx="24.4" cy="22.5" r="4.1" fill="#4b5563"/>
+</svg>

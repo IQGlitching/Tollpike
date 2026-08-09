@@ -317,7 +317,7 @@ export const SCOPES = {
         description: "Show the exact fallback chain a model string would produce, without sending a request.",
         schema: OBJECT({
           model: STR("Model string, e.g. auto/cheapest or combo/free-first"),
-          prompt: STR("Sample prompt — affects context-aware ordering")
+          prompt: STR("Sample prompt, used for context-aware ordering")
         }),
         handler: ({ model = "auto", prompt = "preview" }) => {
           const settings = getSettings();
@@ -337,7 +337,7 @@ export const SCOPES = {
         }
       },
       order_by_strategy: {
-        description: "Order the provider pool by one named strategy. Diagnostic — shows why a lane ranks where it does.",
+        description: "Order the provider pool by one named strategy. Diagnostic: shows why a lane ranks where it does.",
         schema: OBJECT({ strategy: STR("Strategy id or alias"), prompt: STR("Sample prompt") }, ["strategy"]),
         handler: ({ strategy, prompt = "preview" }) => {
           const settings = getSettings();
@@ -458,7 +458,7 @@ export const SCOPES = {
     description: "Send completions through the gateway, with full routing and cost tracking.",
     tools: {
       chat: {
-        description: "Route a chat completion. Costs money — the whole fallback chain and every cap applies.",
+        description: "Route a chat completion. Costs money. The whole fallback chain and every cap applies.",
         schema: OBJECT(
           {
             model: STR('Model string, default "auto"'),
@@ -899,7 +899,7 @@ export const SCOPES = {
             scannedRoles: ["user", "tool"],
             honesty:
               "Heuristics, not boundaries. PII redaction is pattern matching, not DLP. " +
-              "Injection detection is a known-unsolved problem — treat a clean scan as weak evidence."
+              "Injection detection is a known-unsolved problem, so treat a clean scan as weak evidence."
           };
         }
       },
@@ -1007,7 +1007,7 @@ export const SCOPES = {
   },
 
   tls: {
-    description: "Outbound TLS handshake shaping. Not browser impersonation — read the caveat.",
+    description: "Outbound TLS handshake shaping. Not browser impersonation. Read the caveat.",
     tools: {
       profiles: {
         description: "Available TLS profiles and what each actually changes.",
@@ -1051,7 +1051,7 @@ export const SCOPES = {
         })
       },
       generate_key: {
-        description: "Generate a strong candidate key. Does NOT install it — setting the gateway key is panel-only.",
+        description: "Generate a strong candidate key. Does NOT install it. Setting the gateway key is panel-only.",
         schema: OBJECT(),
         handler: () => ({
           apiKey: generateApiKey(),
@@ -1073,7 +1073,7 @@ export const SCOPES = {
   },
 
   services: {
-    description: "Managed sidecars: Bifrost, 9Router, CLIProxy. Supervises only — never installs.",
+    description: "Managed sidecars: Bifrost, 9Router, CLIProxy. Supervises only, never installs.",
     tools: {
       list: {
         description: "Declared services, whether each is running, and cluster profiles.",
@@ -1342,7 +1342,7 @@ export const SCOPES = {
         }
       },
       unverified: {
-        description: "Lanes with a key configured but unverified pricing — the ones that can cost real money.",
+        description: "Lanes with a key configured but unverified pricing: the ones that can cost real money.",
         schema: OBJECT(),
         handler: () =>
           providers.filter((p) => p.available && p.category !== "local" && !isPricingVerified(p)).map((p) => p.id)
@@ -1396,7 +1396,7 @@ export const SCOPES = {
         handler: () => memory.storeStats()
       },
       search: {
-        description: "Keyword search across every session. Ignores session partitioning — use deliberately.",
+        description: "Keyword search across every session. Ignores session partitioning, so use it deliberately.",
         schema: OBJECT({ query: STR("Search text"), limit: NUM("Max results") }, ["query"]),
         handler: ({ query, limit = 10 }) =>
           memory.keywordSearch(query, { limit: Math.min(Number(limit) || 10, 50), crossSession: true })
@@ -1466,7 +1466,7 @@ export const SCOPES = {
         description: "What each dialect does NOT support, so a client is not surprised.",
         schema: OBJECT(),
         handler: () => ({
-          "/v1/responses": "text and function tools only — no built-in tools, no previous_response_id threading, no reasoning items or images",
+          "/v1/responses": "text and function tools only: no built-in tools, no previous_response_id threading, no reasoning items or images",
           "/v1/messages": "full text and tool streaming; block-structured stream is re-encoded from the internal delta shape",
           "/api/chat": "newline-delimited JSON, and stream defaults to TRUE unlike OpenAI",
           streaming: "fallback works only up to connection-open; once bytes flow the provider is committed"

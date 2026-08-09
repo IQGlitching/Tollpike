@@ -253,7 +253,7 @@ export function servicesStatus(settings = {}) {
     profiles: Object.entries(CLUSTER_PROFILES).map(([id, p]) => ({ id, ...p })),
     // Stated on the API, not just in a comment. Someone clicking "start" in a
     // dashboard should be able to see that nothing is being fetched.
-    installs: "never — binaries must already be present; this supervises, it does not install"
+    installs: "never. Binaries must already be present; this supervises, it does not install"
   };
 }
 

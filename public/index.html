@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>tollpike · routing control center</title>
+<link rel="icon" type="image/svg+xml" href="/panel/favicon.svg" />
 <style>
   /* ==========================================================================
      TOLLPIKE DESIGN SYSTEM
@@ -119,14 +120,25 @@
     display: flex; align-items: center; gap: 10px;
     padding: 15px 16px 14px; border-bottom: 1px solid var(--line);
   }
+  /* Brand mark: one request in, the selected route in purple, the lane held
+     in fallback in grey. Same symbol the landing page uses. */
+  .tp-mark-svg { width: 64%; height: 64%; display: block; }
+  .tp-mark-svg .tp-sel { filter: drop-shadow(0 0 3px rgba(167,139,250,.45)); }
   .sb-mark {
     width: 28px; height: 28px; border-radius: 7px; flex: 0 0 28px;
     background: var(--surface-3); border: 1px solid rgba(167,139,250,.45);
     display: grid; place-items: center; position: relative;
     font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--route);
   }
-  .sb-name { font-family: var(--mono); font-size: 13px; letter-spacing: .04em; color: var(--txt); }
-  .sb-ver { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; color: var(--txt-4); margin-top: 2px; }
+  /* Logotype: monospace uppercase, tracked out, matching the lock screen and
+     the marketing lockup. The negative right margin cancels the trailing
+     letter-space so the mark-to-wordmark gap stays optically even. */
+  .sb-name {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 500;
+    letter-spacing: .28em; margin-right: -.28em;
+    text-transform: uppercase; color: var(--txt);
+  }
+  .sb-ver { font-family: var(--mono); font-size: 9px; letter-spacing: .28em; margin-right: -.28em; text-transform: uppercase; color: var(--txt-4); margin-top: 3px; }
   .sb-tag {
     margin-left: auto; font-family: var(--mono); font-size: 8.5px; letter-spacing: .14em;
     color: var(--txt-4); border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 5px;
@@ -2144,7 +2156,7 @@
     background: var(--surface-3); border: 1px solid rgba(167,139,250,.45); color: var(--route);
     font-family: var(--mono); font-size: 14px; font-weight: 700;
   }
-  .lock-h { font-family: var(--mono); font-size: 14px; letter-spacing: .05em; color: var(--txt); }
+  .lock-h { font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: .28em; margin-right: -.28em; color: var(--txt); }
   .lock-sub { font-family: var(--mono); font-size: 9px; letter-spacing: .17em; color: var(--txt-4); margin-top: 4px; }
   .lock-badge {
     margin-left: auto; display: flex; align-items: center; gap: 7px;
@@ -2302,10 +2314,22 @@
 </style>
 </head>
 <body>
+
+<!-- Tollpike mark, defined once and referenced wherever the brand appears. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <symbol id="tp-mark" viewBox="5 7 54 50">
+    <path class="tp-sel" d="M 17 29 C 30 24 32 17 42 17" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 17 35 C 30 40 32 47 42 47" fill="none" stroke="#3f4757" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="12" cy="32" r="6" fill="#c9d1d9"/>
+    <circle class="tp-sel" cx="50" cy="17" r="8" fill="#a78bfa"/>
+    <circle cx="50" cy="47" r="8" fill="#3f4757"/>
+  </symbol>
+</svg>
+
 <div class="lockwrap gridpaper" id="lockWrap" hidden>
   <div class="lockbox">
     <div class="lock-top">
-      <div class="lock-mark">T</div>
+      <div class="lock-mark"><svg class="tp-mark-svg"><use href="#tp-mark"/></svg></div>
       <div>
         <div class="lock-h">TOLLPIKE</div>
         <div class="lock-sub">ROUTING CONTROL CENTER</div>
@@ -2339,7 +2363,7 @@
     <div class="lock-foot">
       <b>Lost it?</b> Stop the gateway, clear <span class="mono">gatewayApiKey</span> in
       <span class="mono">data/settings.json</span>, restart, then set a new one on the
-      <span class="mono">Access</span> page. Nothing else is lost &mdash; the key is the only thing that file
+      <span class="mono">Access</span> page. Nothing else is lost. The key is the only thing that file
       holds which cannot be recovered from the gateway itself.
     </div>
   </div>
@@ -2347,7 +2371,7 @@
 <div class="app">
   <aside class="sidebar">
     <div class="sb-brand">
-      <div class="sb-mark">T</div>
+      <div class="sb-mark"><svg class="tp-mark-svg"><use href="#tp-mark"/></svg></div>
       <div style="min-width:0">
         <div class="sb-name">tollpike</div>
         <div class="sb-ver" id="sbVersion">V0.1.0</div>

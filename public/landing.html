@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tollpike · route every AI request with intelligence</title>
+<meta name="description" content="Tollpike is the control layer for AI traffic. Route every request across providers and models while keeping cost, latency, quotas, and system behavior in view." />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<style>
+/* ============================================================================
+   TOLLPIKE LANDING · same design system as the control panel.
+   The dashboard is the operating environment; this page is the cinematic
+   introduction to it. Same tokens, same grid, same colour grammar:
+     PURPLE routing · AMBER connection/warning · CYAN model/telemetry
+     GREEN healthy/serving · RED failed/unavailable
+   ========================================================================== */
+:root {
+  --bg: #0b0e14;
+  --bg-deep: #080a10;
+  --surface: #10141c;
+  --surface-2: #161b22;
+  --surface-3: #1c2330;
+
+  --line: rgba(255,255,255,.07);
+  --line-2: rgba(255,255,255,.11);
+  --line-3: rgba(255,255,255,.16);
+  --grid-ink: rgba(255,255,255,.045);
+
+  --txt: #c9d1d9;
+  --txt-2: #9aa3b0;
+  --txt-3: #868d99;
+  --txt-4: #737b8a;
+
+  --route: #a78bfa;
+  --route-deep: #8b5cf6;
+  --conn: #fdcb6e;
+  --model: #00cec9;
+  --ok: #7ee787;
+  --bad: #f87171;
+
+  --mono: 'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  --sans: 'Inter', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ease: cubic-bezier(.2,.7,.3,1);
+  --measure: 1240px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-anchor: none; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--txt);
+  font-family: var(--sans); font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+a { color: var(--route); text-decoration: none; }
+::selection { background: rgba(167,139,250,.28); }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #232a38; border-radius: 5px; }
+
+.gridpaper {
+  background-image:
+    linear-gradient(to right, var(--grid-ink) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-ink) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ---------- shared type ---------- */
+.kicker {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--txt-3);
+  display: flex; align-items: center; gap: 11px; margin: 0 0 18px;
+}
+.kicker::before { content: '\25C6'; font-size: 7px; color: var(--route); }
+.kicker.sc-m::before { color: var(--model); }
+.kicker.sc-c::before { color: var(--conn); }
+.kicker.sc-g::before { color: var(--ok); }
+.kicker.sc-b::before { color: var(--bad); }
+.kicker::after { content: ''; flex: 1; height: 1px; background: var(--line); max-width: 220px; }
+
+h1, h2.display {
+  font-family: var(--sans); font-weight: 700; letter-spacing: -.025em;
+  line-height: 1.04; margin: 0; color: var(--txt); text-wrap: balance;
+}
+h1 { font-size: clamp(38px, 4.9vw, 68px); }
+h2.display { font-size: clamp(30px, 3.4vw, 48px); }
+.lede {
+  color: var(--txt-2); font-size: clamp(15px, 1.25vw, 17.5px); line-height: 1.68;
+  max-width: 620px; margin: 22px 0 0;
+}
+.lede b, .lede strong { color: var(--txt); font-weight: 600; }
+.mono { font-family: var(--mono); }
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 12px 22px; border-radius: 8px; border: 1px solid var(--line-2);
+  color: var(--txt); background: var(--surface-2); cursor: pointer;
+  transition: border-color .14s var(--ease), background .14s var(--ease), color .14s var(--ease);
+}
+.btn:hover { border-color: var(--line-3); background: var(--surface-3); color: var(--txt); }
+.btn.primary { background: var(--route-deep); border-color: var(--route-deep); color: #0b0713; font-weight: 700; }
+.btn.primary:hover { background: var(--route); border-color: var(--route); }
+.btn.sm { padding: 8px 14px; font-size: 10.5px; }
+.btn:focus-visible, a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--route); outline-offset: 2px;
+}
+
+/* ---------- nav ---------- */
+.nav {
+  position: fixed; inset: 0 0 auto 0; z-index: 100;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  transition: background .25s var(--ease), border-color .25s var(--ease);
+}
+.nav.scrolled {
+  background: rgba(11,14,20,.84);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--line);
+}
+.nav-in {
+  max-width: var(--measure); margin: 0 auto; height: 58px;
+  display: flex; align-items: center; gap: 26px; padding: 0 26px;
+}
+.brand { display: flex; align-items: center; gap: 10px; color: var(--txt); }
+/* The mark is the product in miniature: one request in on the left, the
+   selected route in purple, the lane held in fallback in grey. Bare in the
+   horizontal lockup; the tile variant is reserved for app-icon contexts and
+   for the control panel's own sidebar. */
+.brand-mark {
+  width: 27px; height: 27px; flex: 0 0 27px;
+  display: grid; place-items: center;
+}
+.brand-mark svg { width: 100%; height: 100%; display: block; }
+.brand-mark .tp-sel { filter: drop-shadow(0 0 3px rgba(167,139,250,.45)); }
+.brand-mark.tile {
+  border-radius: 7px; background: var(--surface-3);
+  border: 1px solid rgba(167,139,250,.45);
+}
+.brand-mark.tile svg { width: 64%; height: 64%; }
+/* Logotype: the product's own monospace, set uppercase and tracked out, used
+   as a signature rather than as UI text. The negative right margin cancels
+   the trailing letter-space so the lockup aligns optically with what follows. */
+.brand-name {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 500;
+  letter-spacing: .28em; margin-right: -.28em;
+  text-transform: uppercase; line-height: 1.3; color: var(--txt);
+}
+.brand-ver {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .28em;
+  margin-right: -.28em; text-transform: uppercase; color: var(--txt-4);
+}
+.nav-sys {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .16em; color: var(--txt-4);
+  border: 1px solid var(--line); border-radius: 20px; padding: 4px 10px 4px 8px;
+}
+.nav-links { display: flex; gap: 2px; margin-left: 8px; }
+.nav-links a {
+  font-size: 12.5px; color: var(--txt-3); padding: 7px 11px; border-radius: 6px;
+  transition: color .12s var(--ease), background .12s var(--ease);
+}
+.nav-links a:hover { color: var(--txt); background: rgba(255,255,255,.035); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.nav-right .ghost {
+  font-size: 12.5px; color: var(--txt-3); padding: 7px 11px;
+}
+.nav-right .ghost:hover { color: var(--txt); }
+@media (max-width: 980px) { .nav-links, .nav-sys { display: none; } }
+@media (max-width: 540px) { .nav-right .ghost { display: none; } .nav-in { gap: 14px; } }
+
+/* dots */
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--txt-4); flex: 0 0 6px; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
+.dot.warn { background: var(--conn); }
+.dot.route { background: var(--route); box-shadow: 0 0 6px var(--route); }
+.dot.model { background: var(--model); box-shadow: 0 0 6px var(--model); }
+.dot.beat { animation: beat 2.6s var(--ease) infinite; }
+@keyframes beat { 0%,100% { opacity: 1; } 45% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot.beat { animation: none; } }
+
+/* ---------- section scaffolding: full-bleed bands, hairline to hairline ---------- */
+section.band { border-bottom: 1px solid var(--line); position: relative; }
+.band-in { max-width: var(--measure); margin: 0 auto; padding: 96px 26px; }
+.band-in.tight { padding: 72px 26px; }
+@media (max-width: 720px) { .band-in, .band-in.tight { padding: 60px 18px; } }
+
+/* the conduit: a request travelling from one section into the next */
+.conduit {
+  position: absolute; left: 50%; bottom: -37px; width: 1px; height: 74px;
+  background: var(--line-2); z-index: 5; overflow: hidden; pointer-events: none;
+}
+.conduit::after {
+  content: ''; position: absolute; left: -1.5px; top: -14px; width: 4px; height: 14px;
+  border-radius: 3px; background: linear-gradient(to bottom, transparent, var(--route));
+  animation: conduit 3.2s linear infinite;
+}
+@keyframes conduit { to { transform: translateY(102px); } }
+@media (prefers-reduced-motion: reduce) { .conduit::after { animation: none; opacity: 0; } }
+
+/* scroll reveal */
+.rv { opacity: 0; transform: translateY(14px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+.rv.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; transition: none; } }
+
+/* ---------- SVG network canvases ---------- */
+.netcanvas {
+  position: relative; border: 1px solid var(--line); border-radius: 12px;
+  background:
+    radial-gradient(ellipse 70% 55% at 30% 0%, rgba(139,92,246,.07), transparent 60%),
+    var(--bg-deep);
+  overflow: hidden;
+}
+.netcanvas svg { display: block; width: 100%; height: auto; }
+/* On small screens the diagrams stay readable and pan inside their own
+   frame; the page body never scrolls horizontally. */
+@media (max-width: 720px) {
+  .netcanvas { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .netcanvas svg { min-width: 640px; }
+  .netcanvas .frame-note { position: sticky; left: 12px; display: inline-block; }
+}
+/* grid items must never inherit the diagrams' intrinsic min width */
+.hero-grid > *, .pos-grid > *, .route-grid > *, .topo-wrap > *,
+.cost-grid > *, .dev-grid > * { min-width: 0; }
+.netcanvas .frame-note {
+  position: absolute; right: 12px; bottom: 9px;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .13em; color: var(--txt-4);
+  text-transform: uppercase; pointer-events: none;
+}
+text { font-family: var(--mono); }
+.colhead { font-size: 9px; letter-spacing: .18em; fill: var(--txt-4); }
+.nlabel { font-size: 11px; fill: var(--txt); }
+.nsub { font-size: 8.5px; letter-spacing: .06em; fill: var(--txt-4); }
+.tele { font-size: 9.5px; letter-spacing: .04em; fill: var(--txt-2); }
+
+.wire { fill: none; stroke: rgba(255,255,255,.09); stroke-width: 1.2; transition: stroke .4s var(--ease), stroke-width .4s var(--ease); }
+.wire.hot { stroke: var(--route); stroke-width: 1.6; filter: drop-shadow(0 0 3px rgba(167,139,250,.6)); }
+.wire.hot-ok { stroke: var(--ok); stroke-width: 1.6; filter: drop-shadow(0 0 3px rgba(126,231,135,.55)); }
+.wire.hot-cyan { stroke: var(--model); stroke-width: 1.4; filter: drop-shadow(0 0 3px rgba(0,206,201,.5)); }
+.wire.dead { stroke: rgba(248,113,113,.28); stroke-dasharray: 3 4; }
+
+.nodebox { fill: var(--surface-2); stroke: var(--line-2); rx: 8; transition: stroke .35s var(--ease), fill .35s var(--ease); }
+.nodebox.on { stroke: rgba(126,231,135,.6); }
+.nodebox.on-route { stroke: rgba(167,139,250,.65); }
+.nodebox.on-cyan { stroke: rgba(0,206,201,.6); }
+.nodebox.down { stroke: rgba(248,113,113,.55); }
+.nodebox.dim { opacity: .5; }
+
+.rail { transition: fill .35s var(--ease); }
+
+.particle { pointer-events: none; }
+
+/* ---------- hero ---------- */
+#hero { padding-top: 58px; border-bottom: 1px solid var(--line); position: relative; }
+.hero-in {
+  max-width: var(--measure); margin: 0 auto; padding: 84px 26px 0;
+}
+.hero-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 54px; align-items: center; }
+@media (max-width: 1080px) { .hero-grid { grid-template-columns: 1fr; gap: 40px; } }
+.hero-copy .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+.hero-proof {
+  display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 34px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--txt-4);
+}
+.hero-proof span b { color: var(--txt-2); font-weight: 500; }
+
+.hero-tele {
+  position: absolute; pointer-events: none;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .05em;
+  background: rgba(8,10,16,.88); border: 1px solid var(--line-2); border-radius: 7px;
+  padding: 7px 10px; color: var(--txt-2); line-height: 1.7;
+  opacity: 0; transform: translateY(5px);
+  transition: opacity .4s var(--ease), transform .4s var(--ease);
+}
+.hero-tele.show { opacity: 1; transform: none; }
+.hero-tele .t-lat { color: var(--model); }
+.hero-tele .t-cost { color: var(--ok); }
+.hero-tele .t-tok { color: var(--txt-3); }
+
+/* hero system strip */
+.sys-strip {
+  max-width: var(--measure); margin: 64px auto 0; border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: repeat(6, 1fr);
+}
+.sys-cell {
+  padding: 18px 26px 22px; border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.sys-cell:last-child { border-right: none; }
+.sys-k { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; color: var(--txt-4); text-transform: uppercase; }
+.sys-v { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; }
+@media (max-width: 980px) {
+  .sys-strip { grid-template-columns: repeat(3, 1fr); }
+  .sys-cell { border-bottom: 1px solid var(--line); }
+}
+@media (max-width: 560px) { .sys-strip { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- positioning stack ---------- */
+.pos-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 64px; align-items: center; }
+@media (max-width: 1000px) { .pos-grid { grid-template-columns: 1fr; gap: 40px; } }
+
+/* ---------- chaos / order ---------- */
+.mode-chips { display: flex; gap: 8px; margin: 26px 0 18px; }
+.mode-chip {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--txt-3); background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 13px; cursor: pointer;
+  transition: all .14s var(--ease);
+}
+.mode-chip:hover { color: var(--txt); border-color: var(--line-3); }
+.mode-chip[aria-pressed="true"] { background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.5); color: var(--route); }
+.fade-stack { position: relative; }
+.fade-stack .layer { transition: opacity .8s var(--ease); }
+.fade-stack .layer.hide { opacity: 0; pointer-events: none; }
+.fade-stack .layer.abs { position: absolute; inset: 0; }
+
+/* ---------- routing intelligence ---------- */
+.route-grid { display: grid; grid-template-columns: minmax(0, 8.2fr) minmax(0, 3.8fr); gap: 18px; align-items: stretch; }
+@media (max-width: 1080px) { .route-grid { grid-template-columns: 1fr; } }
+.stream-panel {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  display: flex; flex-direction: column; overflow: hidden; min-height: 320px;
+}
+.stream-head {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--txt-4); padding: 12px 14px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+.stream-head::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.stream-body { flex: 1; min-height: 0; position: relative; }
+.stream-rows { position: absolute; inset: 6px 0; overflow: hidden; }
+.stream-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline;
+  font-family: var(--mono); font-size: 10.5px; padding: 7px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.035); color: var(--txt-3);
+  animation: streamIn .4s var(--ease);
+}
+@keyframes streamIn { from { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .stream-row { animation: none; } }
+.stream-row .sr-prov { color: var(--txt); }
+.stream-row .sr-cost { color: var(--ok); }
+.stream-row .sr-lat { color: var(--model); }
+.stream-row .sr-model { color: var(--txt-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stream-foot {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; color: var(--txt-4);
+  padding: 10px 14px; border-top: 1px solid var(--line); text-transform: uppercase;
+}
+
+/* gate cells inside routing engine */
+.gate { transition: all .3s var(--ease); }
+.gate rect { fill: var(--surface-3); stroke: var(--line-2); transition: stroke .3s var(--ease), fill .3s var(--ease); }
+.gate.lit rect { stroke: var(--route); fill: #221b38; }
+.gate.lit .gk { fill: var(--route); }
+.gate .gk { font-size: 8.5px; letter-spacing: .14em; fill: var(--txt-4); transition: fill .3s var(--ease); }
+.gate .gv { font-size: 9.5px; fill: var(--txt-2); }
+
+/* ---------- provider/model interactive topology ---------- */
+.topo-wrap { display: grid; grid-template-columns: minmax(0, 4.4fr) minmax(0, 7.6fr); gap: 48px; align-items: center; }
+@media (max-width: 1000px) { .topo-wrap { grid-template-columns: 1fr; gap: 36px; } }
+.topo-list { display: flex; flex-direction: column; gap: 8px; margin-top: 26px; }
+.topo-btn {
+  text-align: left; display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+  padding: 13px 15px; cursor: pointer; color: var(--txt);
+  font-family: var(--mono); font-size: 12px; letter-spacing: .04em;
+  position: relative; overflow: hidden;
+  transition: border-color .14s var(--ease), background .14s var(--ease);
+}
+.topo-btn::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #2a3140; transition: background .2s var(--ease); }
+.topo-btn:hover { border-color: var(--line-3); background: var(--surface-2); }
+.topo-btn.active { border-color: rgba(167,139,250,.45); background: var(--surface-2); }
+.topo-btn.active::before { background: var(--route); box-shadow: 0 0 8px rgba(167,139,250,.5); }
+.topo-btn.live::before { background: var(--ok); box-shadow: 0 0 8px rgba(126,231,135,.45); }
+.topo-btn .tb-sub { margin-left: auto; font-size: 9px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase; }
+.topo-btn .tb-state { font-size: 8.5px; letter-spacing: .1em; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--txt-4); }
+.topo-btn .tb-state.serving { color: var(--ok); border-color: rgba(126,231,135,.4); }
+
+/* ---------- cost ---------- */
+.cost-grid { display: grid; grid-template-columns: minmax(0, 4.6fr) minmax(0, 7.4fr); gap: 54px; align-items: start; }
+@media (max-width: 1000px) { .cost-grid { grid-template-columns: 1fr; gap: 40px; } }
+.stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: var(--line); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; margin-top: 30px;
+}
+.stat { background: var(--surface); padding: 15px 17px; }
+.stat .k { font-family: var(--mono); font-size: 8.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--txt-4); }
+.stat .v { font-family: var(--mono); font-size: 21px; margin-top: 10px; line-height: 1; letter-spacing: -.015em; }
+.stat .v.ok { color: var(--ok); } .stat .v.warn { color: var(--conn); }
+.stat .s { font-family: var(--mono); font-size: 9px; letter-spacing: .06em; color: var(--txt-4); margin-top: 9px; }
+.budgetbar { margin-top: 22px; }
+.budgetbar .bb-track { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; position: relative; }
+.budgetbar .bb-fill { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--ok), #4ade80); transition: width 1.4s var(--ease); }
+.budgetbar .bb-cap { position: absolute; right: 0; top: -3px; bottom: -3px; width: 2px; background: var(--bad); opacity: .7; }
+.budgetbar .bb-note { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; letter-spacing: .1em; color: var(--txt-4); margin-top: 8px; text-transform: uppercase; }
+
+.costflow { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.cf-head {
+  display: grid; grid-template-columns: 1.35fr .9fr .7fr 1.6fr .8fr; gap: 12px;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--txt-4); padding: 12px 18px; border-bottom: 1px solid var(--line);
+}
+.cf-row {
+  display: grid; grid-template-columns: 1.35fr .9fr .7fr 1.6fr .8fr; gap: 12px; align-items: center;
+  font-family: var(--mono); font-size: 11.5px; padding: 13px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.cf-row:last-child { border-bottom: none; }
+.cf-prov { color: var(--txt); display: flex; align-items: center; gap: 9px; }
+.cf-model { color: var(--txt-4); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-tok { color: var(--txt-3); }
+.cf-barwrap { height: 5px; background: var(--surface-3); border-radius: 3px; overflow: hidden; }
+.cf-bar { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--model), var(--route)); transition: width 1.1s var(--ease); }
+.cf-cost { color: var(--ok); text-align: right; }
+.cf-foot { font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; color: var(--txt-4); padding: 11px 18px; border-top: 1px solid var(--line); text-transform: uppercase; }
+@media (max-width: 760px) {
+  .cf-head, .cf-row { grid-template-columns: 1.2fr .8fr 1.2fr .9fr; }
+  .cf-model { display: none; }
+}
+
+/* ---------- latency ---------- */
+.lat-wrap { margin-top: 40px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-deep); padding: 34px 30px 24px; position: relative; overflow: hidden; }
+.lat-chart { display: flex; align-items: flex-end; gap: 10px; height: 220px; position: relative; }
+.lat-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; height: 100%; justify-content: flex-end; min-width: 0; }
+.lat-bar {
+  width: 100%; max-width: 44px; border-radius: 4px 4px 2px 2px;
+  background: linear-gradient(to top, rgba(0,206,201,.25), rgba(0,206,201,.75));
+  border: 1px solid rgba(0,206,201,.35); border-bottom: none;
+  height: 0; transition: height 1s var(--ease); position: relative;
+}
+.lat-col.outlier .lat-bar { background: linear-gradient(to top, rgba(253,203,110,.22), rgba(253,203,110,.7)); border-color: rgba(253,203,110,.4); }
+.lat-col.extreme .lat-bar { background: linear-gradient(to top, rgba(248,113,113,.2), rgba(248,113,113,.65)); border-color: rgba(248,113,113,.4); }
+.lat-val { font-family: var(--mono); font-size: 10px; color: var(--txt-2); white-space: nowrap; }
+.lat-prov { font-family: var(--mono); font-size: 8.5px; letter-spacing: .06em; color: var(--txt-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lat-col.outlier .lat-val { color: var(--conn); }
+.lat-col.extreme .lat-val { color: var(--bad); }
+.lat-avg {
+  position: absolute; left: 0; right: 0; height: 1px;
+  background: repeating-linear-gradient(90deg, var(--route) 0 6px, transparent 6px 12px);
+  opacity: .75;
+}
+.lat-avg .tag {
+  position: absolute; right: 0; top: -22px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .1em; color: var(--route);
+  background: rgba(8,10,16,.9); border: 1px solid rgba(167,139,250,.35); border-radius: 5px; padding: 3px 8px;
+}
+.lat-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-family: var(--mono); font-size: 9px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase; }
+.lat-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.lat-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+/* ---------- observability instruments ---------- */
+.obs-grid {
+  display: grid; grid-template-columns: repeat(12, 1fr); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  margin-top: 44px;
+}
+.obs-cell { background: var(--surface); padding: 17px 19px; min-width: 0; }
+.obs-cell.c3 { grid-column: span 3; } .obs-cell.c4 { grid-column: span 4; }
+.obs-cell.c5 { grid-column: span 5; } .obs-cell.c6 { grid-column: span 6; }
+.obs-cell.c12 { grid-column: span 12; }
+@media (max-width: 900px) { .obs-cell.c3, .obs-cell.c4, .obs-cell.c5, .obs-cell.c6 { grid-column: span 6; } }
+@media (max-width: 580px) { .obs-cell.c3, .obs-cell.c4, .obs-cell.c5, .obs-cell.c6 { grid-column: span 12; } }
+.obs-k { font-family: var(--mono); font-size: 8.5px; letter-spacing: .17em; text-transform: uppercase; color: var(--txt-4); display: flex; align-items: center; gap: 8px; }
+.obs-v { font-family: var(--mono); font-size: 24px; margin-top: 11px; letter-spacing: -.015em; line-height: 1; }
+.obs-s { font-family: var(--mono); font-size: 9px; letter-spacing: .07em; color: var(--txt-4); margin-top: 10px; line-height: 1.6; }
+.lanestrip { display: flex; gap: 2px; margin-top: 14px; height: 16px; align-items: flex-end; }
+.lanestrip i { flex: 1; border-radius: 1px; background: #1e2431; height: 5px; }
+.lanestrip i.on { background: var(--ok); height: 14px; box-shadow: 0 0 5px rgba(126,231,135,.5); }
+
+/* ---------- how it works ---------- */
+.how-stage { position: relative; margin-top: 48px; }
+.how-track { position: absolute; top: 27px; left: 6%; right: 6%; height: 1px; background: var(--line-2); }
+.how-track .pulse {
+  position: absolute; top: -2px; left: 0; width: 34px; height: 5px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--route));
+  animation: howpulse 6.4s linear infinite;
+}
+@keyframes howpulse { from { left: -4%; } to { left: 101%; } }
+@media (prefers-reduced-motion: reduce) { .how-track .pulse { animation: none; opacity: 0; } }
+.how-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; position: relative; }
+@media (max-width: 900px) { .how-grid { grid-template-columns: repeat(2, 1fr); } .how-track { display: none; } }
+@media (max-width: 540px) { .how-grid { grid-template-columns: 1fr; } }
+.how-card { display: flex; flex-direction: column; }
+.how-num {
+  width: 54px; height: 54px; border-radius: 50%; border: 1px solid var(--line-2);
+  background: var(--bg-deep); display: grid; place-items: center;
+  font-family: var(--mono); font-size: 12px; color: var(--route); letter-spacing: .1em;
+  position: relative; z-index: 2;
+}
+.how-title { font-family: var(--mono); font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--txt); margin: 20px 0 10px; }
+.how-body { font-size: 13px; line-height: 1.65; color: var(--txt-3); max-width: 250px; }
+.how-body code { font-family: var(--mono); font-size: 11px; color: var(--model); }
+
+/* ---------- developer / code ---------- */
+.dev-grid { display: grid; grid-template-columns: minmax(0, 4.4fr) minmax(0, 7.6fr); gap: 54px; align-items: start; }
+@media (max-width: 1020px) { .dev-grid { grid-template-columns: 1fr; gap: 36px; } }
+.console {
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg-deep);
+}
+.console-bar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.console-bar .cdots { display: flex; gap: 5px; }
+.console-bar .cdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--line-2); }
+.console-bar .ctitle { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--txt-4); }
+.console-bar .copybtn {
+  margin-left: auto; font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase;
+  background: var(--surface-2); color: var(--txt-3); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 5px 10px; cursor: pointer; transition: all .13s var(--ease);
+}
+.console-bar .copybtn:hover { color: var(--txt); border-color: var(--line-3); }
+.console pre {
+  margin: 0; padding: 18px 0; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+}
+.console .cl { display: flex; }
+.console .ln {
+  flex: 0 0 46px; text-align: right; padding-right: 16px; user-select: none;
+  color: #333c4d; font-size: 10.5px; line-height: inherit; padding-top: 2px;
+}
+.console .cc { padding-right: 22px; white-space: pre; color: var(--txt-2); }
+.tok-cmd { color: var(--txt); }
+.tok-flag { color: var(--txt-4); }
+.tok-str { color: var(--ok); }
+.tok-key { color: var(--route); }
+.tok-punc { color: var(--txt-4); }
+.tok-url { color: var(--model); }
+.tok-comment { color: #4b5563; font-style: italic; }
+.tok-hdr { color: var(--conn); }
+.dev-headers { margin-top: 14px; }
+.dev-feats { margin-top: 30px; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+.dev-feat { display: flex; gap: 14px; padding: 14px 2px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.dev-feat .df-k { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--route); text-transform: uppercase; flex: 0 0 148px; }
+.dev-feat .df-v { font-size: 13px; color: var(--txt-3); line-height: 1.6; }
+.dev-feat .df-v code { font-family: var(--mono); font-size: 11px; color: var(--model); }
+
+/* ---------- dashboard preview ---------- */
+.dash-wrap { position: relative; margin-top: 54px; }
+.dash-glow {
+  position: absolute; inset: -60px -80px; pointer-events: none;
+  background: radial-gradient(ellipse 55% 50% at 50% 45%, rgba(139,92,246,.13), transparent 65%);
+}
+.dash-frame {
+  position: relative; border: 1px solid var(--line-2); border-radius: 14px; overflow: hidden;
+  background: var(--bg); box-shadow: 0 40px 120px -30px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.02);
+}
+.dash-titlebar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  background: var(--bg-deep); border-bottom: 1px solid var(--line);
+}
+.dash-titlebar .urlchip {
+  font-family: var(--mono); font-size: 10px; color: var(--txt-4); letter-spacing: .05em;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px;
+}
+.dash-topbar {
+  display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
+  background: var(--bg); height: 52px; overflow: hidden;
+}
+.dash-topbar .dt-id { display: flex; align-items: center; gap: 10px; padding: 0 18px; }
+.dash-topbar .dt-id .t { font-family: var(--mono); font-size: 11px; letter-spacing: .28em; margin-right: -.28em; text-transform: uppercase; color: var(--txt); }
+.dash-topbar .dt-id .s { font-family: var(--mono); font-size: 8px; letter-spacing: .16em; color: var(--txt-4); text-transform: uppercase; }
+.dash-rail { margin-left: auto; display: flex; }
+.dash-cell { display: flex; flex-direction: column; justify-content: center; padding: 0 16px; border-left: 1px solid var(--line); min-width: 78px; }
+.dash-cell .k { font-family: var(--mono); font-size: 8px; letter-spacing: .15em; color: var(--txt-4); text-transform: uppercase; }
+.dash-cell .v { font-family: var(--mono); font-size: 13px; color: var(--txt); margin-top: 4px; }
+.dash-cell .v.ok { color: var(--ok); }
+@media (max-width: 860px) { .dash-cell:nth-child(n+4) { display: none; } }
+.dash-main { display: grid; grid-template-columns: 250px 1fr; min-height: 380px; }
+@media (max-width: 860px) { .dash-main { grid-template-columns: 1fr; } }
+.dash-side { border-right: 1px solid var(--line); background: var(--surface); padding: 16px; }
+@media (max-width: 860px) { .dash-side { display: none; } }
+.dash-side .ds-h { font-family: var(--mono); font-size: 8.5px; letter-spacing: .18em; color: var(--txt-4); text-transform: uppercase; margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+.dash-side .ds-h::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.dash-strategy { font-family: var(--mono); font-size: 15px; color: var(--txt); background: var(--bg-deep); border: 1px solid var(--line-2); border-radius: 8px; padding: 12px; }
+.dash-strategy small { display: block; font-size: 8.5px; color: var(--txt-4); letter-spacing: .1em; margin-top: 7px; }
+.dash-gates { margin-top: 16px; display: flex; flex-direction: column; }
+.dash-gate { display: flex; align-items: center; gap: 9px; padding: 9px 2px; border-bottom: 1px solid rgba(255,255,255,.04); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; color: var(--txt-3); }
+.dash-gate .val { margin-left: auto; color: var(--txt-2); }
+.dash-gate .val.ok { color: var(--ok); } .dash-gate .val.route { color: var(--route); }
+.dash-topo { position: relative; padding: 0; }
+.dash-topo .dt-head {
+  display: flex; justify-content: space-between; padding: 12px 18px;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: .18em; color: var(--txt-4);
+  text-transform: uppercase; border-bottom: 1px solid var(--line);
+}
+.dash-instr { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.dash-instr .di { background: var(--surface); padding: 13px 16px; }
+.dash-instr .di .k { font-family: var(--mono); font-size: 8px; letter-spacing: .16em; color: var(--txt-4); text-transform: uppercase; }
+.dash-instr .di .v { font-family: var(--mono); font-size: 17px; margin-top: 8px; }
+.dash-instr .di .v.ok { color: var(--ok); }
+@media (max-width: 700px) { .dash-instr { grid-template-columns: repeat(2, 1fr); } }
+
+.dash-anno {
+  position: absolute; z-index: 6; pointer-events: none;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--txt-2); background: rgba(8,10,16,.92); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 6px 11px; display: flex; align-items: center; gap: 7px;
+}
+.dash-anno i { width: 5px; height: 5px; border-radius: 50%; }
+@media (max-width: 1100px) { .dash-anno { display: none; } }
+.dash-cta { display: flex; justify-content: center; margin-top: 40px; gap: 12px; flex-wrap: wrap; }
+
+/* ---------- differentiation ---------- */
+.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 44px; }
+@media (max-width: 860px) { .diff-grid { grid-template-columns: 1fr; } }
+.diff-cell { background: var(--bg-deep); padding: 30px; }
+.diff-cell h3 { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; margin: 0 0 22px; display: flex; align-items: center; gap: 9px; }
+.diff-cell.without h3 { color: var(--txt-4); }
+.diff-cell.with h3 { color: var(--route); }
+
+/* ---------- final cta ---------- */
+.final { text-align: center; position: relative; overflow: hidden; }
+.final .band-in { padding-top: 130px; padding-bottom: 130px; position: relative; }
+.final .cta-row { display: flex; justify-content: center; gap: 12px; margin-top: 40px; flex-wrap: wrap; }
+.final-bg { position: absolute; inset: 0; pointer-events: none; opacity: .8; }
+
+/* ---------- footer ---------- */
+footer { background: var(--bg-deep); }
+.foot-in { max-width: var(--measure); margin: 0 auto; padding: 64px 26px 34px; }
+.foot-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; }
+@media (max-width: 820px) { .foot-grid { grid-template-columns: 1fr 1fr; } }
+.foot-col h4 { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--txt-4); margin: 0 0 16px; }
+.foot-col a { display: block; font-size: 13px; color: var(--txt-3); padding: 5px 0; }
+.foot-col a:hover { color: var(--txt); }
+.foot-tag { font-family: var(--mono); font-size: 11px; color: var(--txt-3); margin-top: 14px; line-height: 1.7; }
+.foot-bottom {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--line);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase;
+}
+.foot-bottom .status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ============================================================================
+   SPATIAL EXPERIENCE LAYER
+   Progressive enhancement only. The html.spatial class is added by JS when
+   the visitor has a fine pointer, a desktop viewport, and no reduced-motion
+   preference. Without it, the page is exactly the page it was before.
+   ========================================================================== */
+
+/* ghost section labels: spatial typography sitting behind the instruments */
+.ghostlabel {
+  position: absolute; top: 30px; right: 2%; z-index: 0; pointer-events: none;
+  font-family: var(--mono); font-weight: 700; letter-spacing: .04em;
+  font-size: clamp(72px, 10.5vw, 168px); line-height: 1; color: transparent;
+  -webkit-text-stroke: 1px rgba(255,255,255,.05);
+  user-select: none; will-change: transform;
+}
+@supports not (-webkit-text-stroke: 1px black) { .ghostlabel { color: rgba(255,255,255,.03); } }
+section.band > .band-in { position: relative; z-index: 1; }
+
+/* hero depth layers */
+#hero { position: relative; overflow: clip; }
+.hero-sticky { position: relative; }
+.hero-bg {
+  position: absolute; inset: -70px; pointer-events: none; z-index: 0; opacity: .85;
+  background-image:
+    radial-gradient(2px 2px at 12% 28%, rgba(167,139,250,.22), transparent 65%),
+    radial-gradient(1.5px 1.5px at 26% 72%, rgba(0,206,201,.16), transparent 65%),
+    radial-gradient(2px 2px at 44% 14%, rgba(255,255,255,.10), transparent 65%),
+    radial-gradient(1.5px 1.5px at 64% 84%, rgba(167,139,250,.15), transparent 65%),
+    radial-gradient(2px 2px at 82% 36%, rgba(0,206,201,.12), transparent 65%),
+    radial-gradient(1.5px 1.5px at 93% 64%, rgba(255,255,255,.08), transparent 65%),
+    radial-gradient(1.5px 1.5px at 6% 88%, rgba(255,255,255,.07), transparent 65%);
+  will-change: transform;
+}
+.hero-in { position: relative; z-index: 1; }
+html.spatial #hero { height: 168vh; padding-top: 0; }
+html.spatial .hero-sticky { position: sticky; top: 0; padding-top: 58px; }
+.hero-copy, #heroSvg, .tele-holder { will-change: transform; }
+.tele-holder { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+
+/* hero node inspection: information emerges from the node, not a tooltip */
+#heroSvg g[id^="hn-"] { transition: opacity .35s var(--ease); }
+#heroSvg g[id^="hn-p-"], #heroSvg #hn-router, #heroSvg #hn-resp { pointer-events: all; }
+#heroSvg.inspect g[id^="hn-"]:not(.focus) { opacity: .3; }
+#heroSvg.inspect .wire:not(.hot):not(.hot-cyan) { opacity: .35; }
+#heroSvg g[id^="hn-p-"] { transform-box: fill-box; transform-origin: center; transition: opacity .35s var(--ease), transform .35s var(--ease); }
+#heroSvg g[id^="hn-p-"].focus { transform: scale(1.04); }
+#heroSvg g.focus rect.nodebox { stroke: rgba(167,139,250,.6); }
+.node-panel {
+  position: absolute; z-index: 4; pointer-events: none; min-width: 176px;
+  background: rgba(8,10,16,.94); border: 1px solid var(--line-2); border-radius: 8px;
+  padding: 11px 13px; font-family: var(--mono);
+  opacity: 0; transform: translate(-12px, -50%);
+  transition: opacity .26s var(--ease), transform .26s var(--ease);
+}
+.node-panel.show { opacity: 1; transform: translate(0, -50%); }
+.node-panel .np-t { font-size: 10px; letter-spacing: .14em; color: var(--txt); text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+.node-panel .np-r { display: flex; justify-content: space-between; gap: 18px; font-size: 9.5px; margin-top: 7px; }
+.node-panel .np-r .k { color: var(--txt-4); letter-spacing: .1em; }
+.node-panel .np-r .v { color: var(--txt-2); }
+.node-panel .np-r .v.ok { color: var(--ok); }
+.node-panel .np-r .v.cy { color: var(--model); }
+
+/* routing engine: pinned scene, scroll reveals the gates layer by layer */
+html.spatial #routing { height: 235vh; }
+html.spatial #routing .band-in { position: sticky; top: 0; padding-top: 66px; padding-bottom: 40px; }
+html:is(.spatial, .spatial-t) #routing .gate,
+html:is(.spatial, .spatial-t) #rn-1,
+html:is(.spatial, .spatial-t) #rn-2,
+html:is(.spatial, .spatial-t) #rn-3 {
+  opacity: 0; transform: translateY(20px) scale(.88);
+  transition: opacity .55s var(--ease), transform .55s var(--ease);
+  transform-box: fill-box; transform-origin: center;
+}
+html:is(.spatial, .spatial-t) #routing .gate.gvis,
+html:is(.spatial, .spatial-t) #rn-1.cvis,
+html:is(.spatial, .spatial-t) #rn-2.cvis,
+html:is(.spatial, .spatial-t) #rn-3.cvis { opacity: 1; transform: none; }
+html:is(.spatial, .spatial-t) .stream-panel { opacity: 0; transform: translateX(24px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
+html:is(.spatial, .spatial-t) .stream-panel.svis { opacity: 1; transform: none; }
+
+/* resilience: pinned scene, scroll drives the failure story */
+html.spatial #resilience { height: 215vh; }
+html.spatial #resilience .band-in { position: sticky; top: 0; padding-top: 66px; padding-bottom: 40px; }
+
+/* ---- touch tier: same story, tuned for tap and touch scrolling ---- */
+html.spatial-t #hero { height: 132vh; height: 132svh; padding-top: 0; }
+html.spatial-t .hero-sticky { position: sticky; top: 0; padding-top: 58px; }
+html.spatial-t .hero-in { will-change: transform; }
+html.spatial-t #routing { height: 205vh; height: 205svh; }
+html.spatial-t #routing .band-in { position: sticky; top: 0; padding-top: 62px; padding-bottom: 24px; }
+html.spatial-t #resilience { height: 195vh; height: 195svh; }
+html.spatial-t #resilience .band-in { position: sticky; top: 0; padding-top: 62px; padding-bottom: 24px; }
+/* keep the failure replay on screen while scroll drives it */
+html.spatial-t #resilience .pos-grid > .netcanvas { order: -1; }
+/* tapping a node opens a bottom inspection sheet inside the canvas frame */
+html.spatial-t .node-panel {
+  left: 10px; right: 10px; top: auto; bottom: 10px; min-width: 0;
+  transform: translateY(12px);
+}
+html.spatial-t .node-panel.show { transform: none; }
+html.spatial-t #heroSvg g[id^="hn-p-"].focus { transform: scale(1.02); }
+
+/* dashboard: suspended in space, tilts toward the cursor */
+.dash-wrap { perspective: 1500px; }
+.dash-frame { will-change: transform; }
+.dash-anno { will-change: transform; }
+
+/* custom cursor: precision dot + inspection ring */
+html.spatial.curon, html.spatial.curon * { cursor: none !important; }
+#cursor { position: fixed; left: 0; top: 0; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .2s var(--ease); }
+#cursor.on { opacity: 1; }
+#cursor .c-dot {
+  position: fixed; left: 0; top: 0; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--route); box-shadow: 0 0 8px rgba(167,139,250,.8); will-change: transform;
+}
+#cursor .c-ring {
+  position: fixed; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.32); will-change: transform;
+  transition: width .22s var(--ease), height .22s var(--ease), border-color .22s var(--ease);
+}
+#cursor.hov .c-ring { width: 38px; height: 38px; border-color: rgba(167,139,250,.7); }
+#cursor.insp .c-ring { width: 46px; height: 46px; border-color: rgba(167,139,250,.85); }
+#cursor .c-label {
+  position: fixed; left: 0; top: 0; font-family: var(--mono); font-size: 8px;
+  letter-spacing: .18em; color: var(--route); opacity: 0; white-space: nowrap;
+  transition: opacity .2s var(--ease); will-change: transform;
+}
+#cursor.insp .c-label { opacity: 1; }
+
+/* nav: active indicator follows the section in view */
+.nav-links a.active { color: var(--txt); background: rgba(167,139,250,.10); }
+
+/* provider topology: depth-aware hover */
+#topoSvg g[data-lane] { transform-box: fill-box; transform-origin: left center; transition: opacity .35s var(--ease), transform .35s var(--ease); }
+#topoSvg g[data-lane].tfocus { transform: scale(1.03); }
+#topoSvg.tinspect g[data-lane]:not(.tfocus) { opacity: .42; transform: scale(.985); }
+
+.btn { will-change: transform; transition: border-color .14s var(--ease), background .14s var(--ease), color .14s var(--ease), transform .2s var(--ease); }
+</style>
+</head>
+<body>
+
+<!-- Tollpike mark, defined once and referenced wherever the brand appears. -->
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <symbol id="tp-mark" viewBox="5 7 54 50">
+    <path class="tp-sel" d="M 17 29 C 30 24 32 17 42 17" fill="none" stroke="#a78bfa" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 17 35 C 30 40 32 47 42 47" fill="none" stroke="#3f4757" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="12" cy="32" r="6" fill="#c9d1d9"/>
+    <circle class="tp-sel" cx="50" cy="17" r="8" fill="#a78bfa"/>
+    <circle cx="50" cy="47" r="8" fill="#3f4757"/>
+  </symbol>
+</svg>
+
+<!-- ======================= NAV ======================= -->
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#hero" aria-label="Tollpike home">
+      <span class="brand-mark"><svg><use href="#tp-mark"/></svg></span>
+      <span>
+        <span class="brand-name">tollpike</span><br/>
+        <span class="brand-ver">v0.1.0</span>
+      </span>
+    </a>
+    <span class="nav-sys"><span class="dot ok beat"></span>SYSTEM ONLINE</span>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#product">Product</a>
+      <a href="#how">How it works</a>
+      <a href="#providers">Providers</a>
+      <a href="#routing">Routing</a>
+      <a href="#developers">Docs</a>
+    </nav>
+    <div class="nav-right">
+      <a class="ghost" href="#developers">GitHub</a>
+      <a class="ghost" href="/panel">Sign in</a>
+      <a class="btn primary sm" href="#developers">Get started</a>
+    </div>
+  </div>
+</header>
+
+<!-- ======================= HERO ======================= -->
+<section id="hero" class="gridpaper">
+  <div class="hero-sticky">
+  <div class="hero-bg" id="heroBgLayer" aria-hidden="true"></div>
+  <div class="hero-in">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <p class="kicker">AI ROUTING INFRASTRUCTURE</p>
+        <h1>Route every AI request with intelligence.</h1>
+        <p class="lede">Tollpike sits between your application and every major AI provider.
+          It routes each request to the best lane in real time and keeps <b>cost</b>,
+          <b>latency</b>, <b>quotas</b>, and <b>health</b> in view. One endpoint in.
+          The entire model ecosystem out.</p>
+        <div class="cta-row">
+          <a class="btn primary" href="#developers">Get started</a>
+          <a class="btn" href="#traffic">Explore the system</a>
+        </div>
+        <div class="hero-proof">
+          <span><b>36</b> PROVIDERS</span>
+          <span><b>60+</b> MODELS</span>
+          <span><b>4.2M</b> CROSSINGS / MO</span>
+          <span><b>19</b> ROUTING STRATEGIES</span>
+          <span><b>3-LAYER</b> RESILIENCE</span>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="netcanvas" id="heroCanvas">
+          <svg id="heroSvg" viewBox="0 0 860 560" role="img"
+               aria-label="Live routing diagram: requests enter the Tollpike routing engine, which selects a provider lane such as anthropic, openai or gemini, sends each to a model, and returns responses with latency, cost and token telemetry.">
+            <!-- column heads -->
+            <text class="colhead" x="30"  y="34">INGRESS</text>
+            <text class="colhead" x="168" y="34">ROUTING ENGINE</text>
+            <text class="colhead" x="418" y="34">PROVIDER LANES</text>
+            <text class="colhead" x="628" y="34">MODELS</text>
+            <text class="colhead" x="782" y="34">RESPONSE</text>
+            <line x1="0" y1="44" x2="860" y2="44" stroke="rgba(255,255,255,.06)"/>
+
+            <!-- wires -->
+            <path id="hw-in" class="wire" d="M 56 300 H 196"/>
+            <path id="hw-l1" class="wire" d="M 262 300 C 330 300 340 116 416 116"/>
+            <path id="hw-l2" class="wire" d="M 262 300 C 330 300 340 196 416 196"/>
+            <path id="hw-l3" class="wire" d="M 262 300 C 320 300 330 276 416 276"/>
+            <path id="hw-l4" class="wire" d="M 262 300 C 330 300 340 356 416 356"/>
+            <path id="hw-l5" class="wire" d="M 262 300 C 330 300 340 436 416 436"/>
+            <path id="hw-m1" class="wire" d="M 576 116 H 622"/>
+            <path id="hw-m2" class="wire" d="M 576 196 H 622"/>
+            <path id="hw-m3" class="wire" d="M 576 276 H 622"/>
+            <path id="hw-m4" class="wire" d="M 576 356 H 622"/>
+            <path id="hw-m5" class="wire" d="M 576 436 H 622"/>
+            <path id="hw-r1" class="wire" d="M 806 122 C 832 170 824 242 817 274"/>
+            <path id="hw-r2" class="wire" d="M 806 200 C 828 228 822 252 817 274"/>
+            <path id="hw-r3" class="wire" d="M 806 280 C 822 282 818 284 815 285"/>
+
+            <!-- ingress node -->
+            <g id="hn-in">
+              <circle cx="44" cy="300" r="9" fill="none" stroke="var(--txt-3)" stroke-width="1.4"/>
+              <circle id="hn-in-core" cx="44" cy="300" r="3" fill="var(--txt-2)"/>
+              <text class="nsub" x="24" y="330">REQUEST</text>
+            </g>
+
+            <!-- router node -->
+            <g id="hn-router">
+              <circle cx="229" cy="300" r="33" fill="var(--bg-deep)" stroke="rgba(167,139,250,.4)" stroke-width="1.2"/>
+              <circle id="hn-router-ring" cx="229" cy="300" r="24" fill="none" stroke="rgba(167,139,250,.55)" stroke-width="1.2" stroke-dasharray="4 5"/>
+              <circle id="hn-router-core" cx="229" cy="300" r="7" fill="var(--route-deep)"/>
+              <text class="nsub" x="197" y="352">TOLLPIKE</text>
+              <g id="hn-strategy">
+                <rect x="158" y="366" width="142" height="22" rx="6" fill="var(--surface-2)" stroke="rgba(167,139,250,.35)"/>
+                <text x="170" y="381" font-size="10" fill="var(--route)">combo/quality-first</text>
+              </g>
+            </g>
+
+            <!-- provider lanes -->
+            <g id="hn-p-1">
+              <rect class="nodebox" x="416" y="92" width="160" height="48" rx="9"/>
+              <rect class="rail" x="416" y="92" width="2.5" height="48" fill="var(--ok)"/>
+              <text class="nlabel" x="434" y="112">anthropic</text>
+              <text class="nsub" x="434" y="129" fill="var(--ok)">SERVING · 1.2M</text>
+              <circle cx="561" cy="106" r="3.5" fill="var(--ok)"/>
+            </g>
+            <g id="hn-p-2">
+              <rect class="nodebox" x="416" y="172" width="160" height="48" rx="9"/>
+              <rect class="rail" x="416" y="172" width="2.5" height="48" fill="var(--ok)"/>
+              <text class="nlabel" x="434" y="192">openai</text>
+              <text class="nsub" x="434" y="209" fill="var(--ok)">SERVING · 1.1M</text>
+              <circle cx="561" cy="186" r="3.5" fill="var(--ok)"/>
+            </g>
+            <g id="hn-p-3">
+              <rect class="nodebox" x="416" y="252" width="160" height="48" rx="9"/>
+              <rect class="rail" x="416" y="252" width="2.5" height="48" fill="var(--ok)"/>
+              <text class="nlabel" x="434" y="272">gemini</text>
+              <text class="nsub" x="434" y="289" fill="var(--ok)">SERVING · 860K</text>
+              <circle cx="561" cy="266" r="3.5" fill="var(--ok)"/>
+            </g>
+            <g id="hn-p-4">
+              <rect class="nodebox" x="416" y="332" width="160" height="48" rx="9"/>
+              <rect class="rail" x="416" y="332" width="2.5" height="48" fill="var(--ok)"/>
+              <text class="nlabel" x="434" y="352">xai</text>
+              <text class="nsub" x="434" y="369" fill="var(--ok)">SERVING · 420K</text>
+              <circle cx="561" cy="346" r="3.5" fill="var(--ok)"/>
+            </g>
+            <g id="hn-p-5">
+              <rect class="nodebox" x="416" y="412" width="160" height="48" rx="9"/>
+              <rect class="rail" x="416" y="412" width="2.5" height="48" fill="var(--ok)"/>
+              <text class="nlabel" x="434" y="432">deepseek</text>
+              <text class="nsub" x="434" y="449" fill="var(--ok)">SERVING · 380K</text>
+              <circle cx="561" cy="426" r="3.5" fill="var(--ok)"/>
+            </g>
+            <text class="nsub" x="416" y="492" fill="var(--txt-4)">+ 31 MORE LANES ONLINE</text>
+
+            <!-- models -->
+            <g id="hn-m-1">
+              <rect class="nodebox" x="622" y="98" width="184" height="36" rx="7"/>
+              <rect class="rail" x="622" y="98" width="2.5" height="36" fill="var(--model)"/>
+              <text x="638" y="120" font-size="10" fill="var(--txt)">claude-sonnet-4-6</text>
+            </g>
+            <g id="hn-m-2">
+              <rect class="nodebox" x="622" y="178" width="184" height="36" rx="7"/>
+              <rect class="rail" x="622" y="178" width="2.5" height="36" fill="var(--model)"/>
+              <text x="638" y="200" font-size="10" fill="var(--txt)">gpt-4o</text>
+            </g>
+            <g id="hn-m-3">
+              <rect class="nodebox" x="622" y="258" width="184" height="36" rx="7"/>
+              <rect class="rail" x="622" y="258" width="2.5" height="36" fill="var(--model)"/>
+              <text x="638" y="280" font-size="10" fill="var(--txt)">gemini-2.5-pro</text>
+            </g>
+            <g id="hn-m-4">
+              <rect class="nodebox" x="622" y="338" width="184" height="36" rx="7"/>
+              <rect class="rail" x="622" y="338" width="2.5" height="36" fill="var(--model)"/>
+              <text x="638" y="360" font-size="10" fill="var(--txt)">grok-4.5</text>
+            </g>
+            <g id="hn-m-5">
+              <rect class="nodebox" x="622" y="418" width="184" height="36" rx="7"/>
+              <rect class="rail" x="622" y="418" width="2.5" height="36" fill="var(--model)"/>
+              <text x="638" y="440" font-size="10" fill="var(--txt)">deepseek-v4-pro</text>
+            </g>
+
+            <!-- response node -->
+            <g id="hn-resp">
+              <circle cx="814" cy="286" r="12" fill="var(--bg-deep)" stroke="rgba(0,206,201,.5)" stroke-width="1.3"/>
+              <circle id="hn-resp-core" cx="814" cy="286" r="4" fill="var(--model)"/>
+            </g>
+
+            <!-- particle layer -->
+            <g id="heroParticles" class="particle"></g>
+          </svg>
+
+          <!-- floating telemetry chip, held in a foreground depth layer -->
+          <div class="tele-holder" aria-hidden="false">
+            <div class="hero-tele" id="heroTele" style="right: 7.5%; top: 53%;">
+              <span class="t-lat">892ms</span> · <span class="t-cost">$0.0142</span><br/>
+              <span class="t-tok">1.2K TOKENS · anthropic</span>
+            </div>
+          </div>
+          <span class="frame-note">Live routing · thousands of requests in flight</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- system strip -->
+    <div class="sys-strip rv">
+      <div class="sys-cell"><span class="sys-k">Routing</span><span class="sys-v"><span class="dot ok beat"></span>ACTIVE</span></div>
+      <div class="sys-cell"><span class="sys-k">Providers</span><span class="sys-v"><span class="dot ok"></span>36 CONNECTED</span></div>
+      <div class="sys-cell"><span class="sys-k">Models</span><span class="sys-v"><span class="dot model"></span>60+ AVAILABLE</span></div>
+      <div class="sys-cell"><span class="sys-k">Avg latency</span><span class="sys-v"><span class="dot model"></span>486ms</span></div>
+      <div class="sys-cell"><span class="sys-k">Spend · MTD</span><span class="sys-v"><span class="dot ok"></span>$48,290</span></div>
+      <div class="sys-cell"><span class="sys-k">Requests today</span><span class="sys-v"><span class="dot route beat"></span><span id="liveReq">141,204</span></span></div>
+    </div>
+  </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= POSITIONING ======================= -->
+<section id="product" class="band">
+  <div class="band-in">
+    <div class="pos-grid">
+      <div class="rv">
+        <p class="kicker">WHAT TOLLPIKE IS</p>
+        <h2 class="display">One control layer between your application and your AI&nbsp;infrastructure.</h2>
+        <p class="lede">Your application talks to a single OpenAI-compatible endpoint.
+          Behind it, Tollpike holds every provider, model and route, and decides
+          per request where traffic should actually go.</p>
+      </div>
+      <div class="rv netcanvas gridpaper" id="posCanvas">
+        <svg id="posSvg" viewBox="0 0 640 480" role="img"
+             aria-label="Architecture: your application connects once to Tollpike; Tollpike connects to providers, models, routes and responses beneath it.">
+          <!-- app -->
+          <g>
+            <rect class="nodebox" x="220" y="34" width="200" height="46" rx="9"/>
+            <rect class="rail" x="220" y="34" width="2.5" height="46" fill="var(--txt-3)"/>
+            <text class="nlabel" x="240" y="62">YOUR APPLICATION</text>
+          </g>
+          <path id="pw-app" class="wire hot" d="M 320 80 V 158"/>
+          <!-- tollpike -->
+          <g>
+            <circle cx="320" cy="204" r="40" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)" stroke-width="1.3"/>
+            <circle cx="320" cy="204" r="29" fill="none" stroke="rgba(167,139,250,.5)" stroke-width="1.1" stroke-dasharray="4 5"/>
+            <circle cx="320" cy="204" r="8" fill="var(--route-deep)"/>
+            <text class="nsub" x="288" y="262" fill="var(--route)" letter-spacing=".2em">TOLLPIKE</text>
+          </g>
+          <!-- fan out -->
+          <path id="pw-1" class="wire" d="M 296 236 C 250 280 180 290 130 320"/>
+          <path id="pw-2" class="wire" d="M 310 243 C 290 285 260 300 246 322"/>
+          <path id="pw-3" class="wire" d="M 330 243 C 350 285 380 300 394 322"/>
+          <path id="pw-4" class="wire" d="M 344 236 C 390 280 460 290 510 320"/>
+          <!-- targets -->
+          <g>
+            <rect class="nodebox" x="52"  y="322" width="156" height="42" rx="8"/>
+            <text x="70" y="341" font-size="10" fill="var(--txt)">PROVIDERS</text>
+            <text class="nsub" x="70" y="356">36 ONLINE</text>
+          </g>
+          <g>
+            <rect class="nodebox" x="224" y="322" width="120" height="42" rx="8"/>
+            <text x="241" y="341" font-size="10" fill="var(--txt)">MODELS</text>
+            <text class="nsub" x="241" y="356">PER-LANE LIST</text>
+          </g>
+          <g>
+            <rect class="nodebox" x="360" y="322" width="120" height="42" rx="8"/>
+            <text x="377" y="341" font-size="10" fill="var(--txt)">ROUTES</text>
+            <text class="nsub" x="377" y="356">19 STRATEGIES</text>
+          </g>
+          <g>
+            <rect class="nodebox" x="496" y="322" width="132" height="42" rx="8"/>
+            <text x="513" y="341" font-size="10" fill="var(--txt)">RESPONSES</text>
+            <text class="nsub" x="513" y="356">ONE FORMAT</text>
+          </g>
+          <text class="nsub" x="228" y="432" fill="var(--txt-4)">ONE ENDPOINT · EVERY LANE BEHIND IT</text>
+          <g id="posParticles" class="particle"></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= PROBLEM: CHAOS -> CONTROL ======================= -->
+<section id="why" class="band">
+  <div class="band-in">
+    <div class="rv" style="max-width:720px">
+      <p class="kicker sc-b">THE COMPLEXITY</p>
+      <h2 class="display">AI traffic gets complicated fast.</h2>
+      <p class="lede">Every provider has its own prices, its own latencies, its own quotas,
+        its own failure modes. Wire your application to them directly and the wiring
+        becomes your routing layer: unobserved, unpriced, and one 429 away from an outage.</p>
+    </div>
+    <div class="mode-chips rv" role="group" aria-label="Toggle between direct wiring and Tollpike">
+      <button class="mode-chip" id="chipChaos" aria-pressed="true">WITHOUT A CONTROL LAYER</button>
+      <button class="mode-chip" id="chipOrder" aria-pressed="false">WITH TOLLPIKE</button>
+    </div>
+    <div class="rv netcanvas" id="chaosCanvas">
+      <div class="fade-stack">
+        <div class="layer" id="layerChaos">
+          <svg viewBox="0 0 1180 400" role="img" aria-label="Without a control layer: an application wired directly to many providers and models, with crossing connections, mixed prices, rate limits and failures.">
+            <g id="chaosLines"></g>
+            <g>
+              <rect class="nodebox" x="40" y="176" width="170" height="48" rx="9"/>
+              <text class="nlabel" x="60" y="205">APPLICATION</text>
+            </g>
+            <g id="chaosNodes"></g>
+            <g id="chaosParticles" class="particle"></g>
+          </svg>
+        </div>
+        <div class="layer abs hide" id="layerOrder">
+          <svg viewBox="0 0 1180 400" role="img" aria-label="With Tollpike: the application connects once to the router, which fans out to ordered provider lanes.">
+            <g>
+              <rect class="nodebox" x="40" y="176" width="170" height="48" rx="9"/>
+              <text class="nlabel" x="60" y="205">APPLICATION</text>
+            </g>
+            <path class="wire hot" d="M 210 200 H 420"/>
+            <g>
+              <circle cx="472" cy="200" r="36" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)" stroke-width="1.3"/>
+              <circle cx="472" cy="200" r="26" fill="none" stroke="rgba(167,139,250,.5)" stroke-width="1.1" stroke-dasharray="4 5"/>
+              <circle cx="472" cy="200" r="7" fill="var(--route-deep)"/>
+              <text class="nsub" x="443" y="254" fill="var(--route)" letter-spacing=".18em">TOLLPIKE</text>
+            </g>
+            <g id="orderLanes"></g>
+            <g id="orderParticles" class="particle"></g>
+          </svg>
+        </div>
+      </div>
+      <span class="frame-note" id="chaosNote">DIRECT WIRING · UNOBSERVED</span>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= ROUTING INTELLIGENCE (WOW) ======================= -->
+<section id="routing" class="band gridpaper">
+  <span class="ghostlabel" aria-hidden="true">ROUTING</span>
+  <div class="band-in">
+    <div class="rv" style="max-width:720px">
+      <p class="kicker">ROUTING INTELLIGENCE</p>
+      <h2 class="display">Route requests where they make&nbsp;sense.</h2>
+      <p class="lede">Tollpike is not a passthrough. Every request crosses five decision
+        gates before a lane is chosen: <b>policy</b>, <b>quota</b>, <b>health</b>,
+        <b>latency</b>, <b>cost</b>. If the chosen lane fails, the next candidate
+        is already ordered.</p>
+    </div>
+
+    <div class="route-grid rv" style="margin-top:44px">
+      <div class="netcanvas" id="routeCanvas">
+        <svg id="routeSvg" viewBox="0 0 900 460" role="img"
+             aria-label="A request passes through Tollpike's decision gates (policy, quota, health, latency, cost), then the selected provider route illuminates, the model answers, and the response returns.">
+          <text class="colhead" x="26"  y="30">REQUEST</text>
+          <text class="colhead" x="206" y="30">DECISION GATES</text>
+          <text class="colhead" x="618" y="30">CANDIDATE ROUTES</text>
+          <line x1="0" y1="40" x2="900" y2="40" stroke="rgba(255,255,255,.06)"/>
+
+          <!-- wires -->
+          <path id="rw-in" class="wire" d="M 58 230 H 158"/>
+          <path id="rw-1" class="wire" d="M 560 230 C 600 230 596 130 636 130"/>
+          <path id="rw-2" class="wire" d="M 560 230 C 604 230 604 230 636 230"/>
+          <path id="rw-3" class="wire" d="M 560 230 C 600 230 596 330 636 330"/>
+          <path id="rw-resp" class="wire" d="M 830 146 C 856 170 862 260 838 396 C 820 452 120 448 60 260"/>
+
+          <!-- ingress -->
+          <circle cx="46" cy="230" r="9" fill="none" stroke="var(--txt-3)" stroke-width="1.4"/>
+          <circle cx="46" cy="230" r="3" fill="var(--txt-2)"/>
+
+          <!-- engine shell -->
+          <rect x="158" y="150" width="402" height="160" rx="12" fill="rgba(16,20,28,.75)" stroke="rgba(167,139,250,.3)"/>
+          <text class="nsub" x="178" y="176" fill="var(--route)" letter-spacing=".18em">ROUTING ENGINE</text>
+          <text class="nsub" x="390" y="176" fill="var(--txt-4)">combo/quality-first</text>
+
+          <!-- gates -->
+          <g class="gate" id="gate-policy">
+            <rect x="176" y="196" width="66" height="88" rx="7"/>
+            <text class="gk" x="186" y="216">POLICY</text>
+            <text class="gv" x="186" y="262">tiered</text>
+          </g>
+          <g class="gate" id="gate-quota">
+            <rect x="250" y="196" width="66" height="88" rx="7"/>
+            <text class="gk" x="260" y="216">QUOTA</text>
+            <text class="gv" x="260" y="262">11/13</text>
+          </g>
+          <g class="gate" id="gate-health">
+            <rect x="324" y="196" width="66" height="88" rx="7"/>
+            <text class="gk" x="334" y="216">HEALTH</text>
+            <text class="gv" x="334" y="262">closed</text>
+          </g>
+          <g class="gate" id="gate-latency">
+            <rect x="398" y="196" width="70" height="88" rx="7"/>
+            <text class="gk" x="408" y="216">LATENCY</text>
+            <text class="gv" x="408" y="262">486ms</text>
+          </g>
+          <g class="gate" id="gate-cost">
+            <rect x="476" y="196" width="66" height="88" rx="7"/>
+            <text class="gk" x="486" y="216">COST</text>
+            <text class="gv" x="486" y="262">36% left</text>
+          </g>
+
+          <!-- candidates -->
+          <g id="rn-1">
+            <rect class="nodebox" id="rb-1" x="636" y="104" width="196" height="52" rx="9"/>
+            <rect class="rail" id="rr-1" x="636" y="104" width="2.5" height="52" fill="#2a3140"/>
+            <text class="nlabel" x="654" y="125">anthropic</text>
+            <text class="nsub" x="654" y="142">claude-sonnet-4-6</text>
+            <text class="nsub" id="rt-1" x="790" y="125" fill="var(--ok)" opacity="0">#1</text>
+          </g>
+          <g id="rn-2">
+            <rect class="nodebox" id="rb-2" x="636" y="204" width="196" height="52" rx="9"/>
+            <rect class="rail" id="rr-2" x="636" y="204" width="2.5" height="52" fill="#2a3140"/>
+            <text class="nlabel" x="654" y="225">openai</text>
+            <text class="nsub" x="654" y="242">gpt-4o</text>
+            <text class="nsub" id="rt-2" x="790" y="225" fill="var(--txt-3)" opacity="0">#2</text>
+          </g>
+          <g id="rn-3">
+            <rect class="nodebox" id="rb-3" x="636" y="304" width="196" height="52" rx="9"/>
+            <rect class="rail" id="rr-3" x="636" y="304" width="2.5" height="52" fill="#2a3140"/>
+            <text class="nlabel" x="654" y="325">gemini</text>
+            <text class="nsub" x="654" y="342">gemini-2.5-pro</text>
+            <text class="nsub" id="rt-3" x="790" y="325" fill="var(--txt-3)" opacity="0">#3</text>
+          </g>
+
+          <text class="nsub" x="176" y="342" fill="var(--txt-4)" id="routeCaption">EVERY STRATEGY IS A TOTAL ORDER, NEVER A FILTER</text>
+          <g id="routeParticles" class="particle"></g>
+        </svg>
+        <span class="frame-note">Five gates evaluated on every request</span>
+      </div>
+
+      <div class="stream-panel">
+        <div class="stream-head"><span class="dot ok beat"></span>REQUEST STREAM</div>
+        <div class="stream-body"><div class="stream-rows" id="streamBody"></div></div>
+        <div class="stream-foot">Every crossing logged to the ledger</div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= PROVIDERS + MODELS ======================= -->
+<section id="providers" class="band">
+  <span class="ghostlabel" aria-hidden="true">PROVIDERS</span>
+  <div class="band-in">
+    <div class="topo-wrap">
+      <div class="rv">
+        <p class="kicker sc-m">PROVIDERS + MODELS</p>
+        <h2 class="display">Your models. One control&nbsp;plane.</h2>
+        <p class="lede">Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, and 30 more lanes
+          behind one endpoint. Each declares its models, its prices, its quota.
+          One control plane over all of it. Hover a lane to trace it.</p>
+        <div class="topo-list" role="group" aria-label="Select a provider lane to highlight">
+          <button class="topo-btn live active" data-lane="anthropic">
+            <span class="dot ok"></span>anthropic
+            <span class="tb-state serving">SERVING</span>
+            <span class="tb-sub">claude-opus-4-8 · claude-sonnet-4-6</span>
+          </button>
+          <button class="topo-btn live" data-lane="openai">
+            <span class="dot ok"></span>openai
+            <span class="tb-state serving">SERVING</span>
+            <span class="tb-sub">gpt-4o · gpt-4o-mini</span>
+          </button>
+          <button class="topo-btn live" data-lane="gemini">
+            <span class="dot ok"></span>gemini
+            <span class="tb-state serving">SERVING</span>
+            <span class="tb-sub">gemini-2.5-pro · gemini-2.5-flash</span>
+          </button>
+          <button class="topo-btn live" data-lane="xai">
+            <span class="dot ok"></span>xai
+            <span class="tb-state serving">SERVING</span>
+            <span class="tb-sub">grok-4.5</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="rv netcanvas gridpaper" id="topoCanvas">
+        <svg id="topoSvg" viewBox="0 0 760 520" role="img"
+             aria-label="Infrastructure map: Tollpike at the left, provider lanes fanning out to their models. Hovering a provider highlights its models and route.">
+          <!-- hub -->
+          <circle cx="88" cy="260" r="34" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)" stroke-width="1.2"/>
+          <circle cx="88" cy="260" r="24" fill="none" stroke="rgba(167,139,250,.5)" stroke-width="1" stroke-dasharray="4 5"/>
+          <circle cx="88" cy="260" r="7" fill="var(--route-deep)"/>
+          <text class="nsub" x="60" y="312" fill="var(--route)" letter-spacing=".16em">TOLLPIKE</text>
+
+          <!-- lanes -->
+          <path id="tw-anthropic" class="wire" d="M 120 244 C 200 190 240 96 300 84"/>
+          <path id="tw-openai"    class="wire" d="M 122 254 C 210 232 250 196 300 188"/>
+          <path id="tw-gemini"    class="wire" d="M 122 268 C 210 290 250 302 300 306"/>
+          <path id="tw-xai"       class="wire" d="M 120 278 C 200 330 240 414 300 424"/>
+
+          <g id="tg-anthropic" data-lane="anthropic">
+            <rect class="nodebox" x="300" y="60" width="130" height="46" rx="9"/>
+            <rect class="rail" x="300" y="60" width="2.5" height="46" fill="var(--ok)"/>
+            <text class="nlabel" x="318" y="80">anthropic</text>
+            <text class="nsub" x="318" y="96" fill="var(--ok)">SERVING · 1.2M</text>
+            <path id="tw-anthropic-m1" class="wire" d="M 430 84 C 470 84 480 84 512 84"/>
+            <rect class="nodebox" x="512" y="66" width="196" height="36" rx="7"/>
+            <text x="528" y="88" font-size="10" fill="var(--txt)">claude-opus-4-8 · sonnet-4-6</text>
+            <g class="topo-tele" id="tt-anthropic" opacity="0">
+              <rect x="512" y="110" width="150" height="24" rx="6" fill="rgba(8,10,16,.9)" stroke="rgba(0,206,201,.35)"/>
+              <text class="tele" x="524" y="126">892ms · $0.0142</text>
+            </g>
+          </g>
+
+          <g id="tg-openai" data-lane="openai">
+            <rect class="nodebox" x="300" y="164" width="130" height="46" rx="9"/>
+            <rect class="rail" x="300" y="164" width="2.5" height="46" fill="var(--ok)"/>
+            <text class="nlabel" x="318" y="184">openai</text>
+            <text class="nsub" x="318" y="200" fill="var(--ok)">SERVING · 1.1M</text>
+            <path id="tw-openai-m1" class="wire" d="M 430 188 C 470 188 480 188 512 188"/>
+            <rect class="nodebox" x="512" y="170" width="196" height="36" rx="7"/>
+            <text x="528" y="192" font-size="10" fill="var(--txt)">gpt-4o · gpt-4o-mini</text>
+            <g class="topo-tele" id="tt-openai" opacity="0">
+              <rect x="512" y="214" width="150" height="24" rx="6" fill="rgba(8,10,16,.9)" stroke="rgba(0,206,201,.35)"/>
+              <text class="tele" x="524" y="230">720ms · $0.0234</text>
+            </g>
+          </g>
+
+          <g id="tg-gemini" data-lane="gemini">
+            <rect class="nodebox" x="300" y="282" width="130" height="46" rx="9"/>
+            <rect class="rail" x="300" y="282" width="2.5" height="46" fill="var(--ok)"/>
+            <text class="nlabel" x="318" y="302">gemini</text>
+            <text class="nsub" x="318" y="318" fill="var(--ok)">SERVING · 860K</text>
+            <path id="tw-gemini-m1" class="wire" d="M 430 306 C 470 306 480 306 512 306"/>
+            <rect class="nodebox" x="512" y="288" width="196" height="36" rx="7"/>
+            <text x="528" y="310" font-size="10" fill="var(--txt)">gemini-2.5-pro · 2.5-flash</text>
+            <g class="topo-tele" id="tt-gemini" opacity="0">
+              <rect x="512" y="332" width="150" height="24" rx="6" fill="rgba(8,10,16,.9)" stroke="rgba(0,206,201,.35)"/>
+              <text class="tele" x="524" y="348">640ms · $0.0058</text>
+            </g>
+          </g>
+
+          <g id="tg-xai" data-lane="xai">
+            <rect class="nodebox" x="300" y="400" width="130" height="46" rx="9"/>
+            <rect class="rail" x="300" y="400" width="2.5" height="46" fill="var(--ok)"/>
+            <text class="nlabel" x="318" y="420">xai</text>
+            <text class="nsub" x="318" y="436" fill="var(--ok)">SERVING · 420K</text>
+            <path id="tw-xai-m1" class="wire" d="M 430 424 C 470 424 480 424 512 424"/>
+            <rect class="nodebox" x="512" y="406" width="196" height="36" rx="7"/>
+            <text x="528" y="428" font-size="10" fill="var(--txt)">grok-4.5</text>
+            <g class="topo-tele" id="tt-xai" opacity="0">
+              <rect x="512" y="450" width="150" height="24" rx="6" fill="rgba(8,10,16,.9)" stroke="rgba(0,206,201,.35)"/>
+              <text class="tele" x="524" y="466">1042ms · $0.0134</text>
+            </g>
+          </g>
+
+          <text class="nsub" x="300" y="490" fill="var(--txt-4)">+ 32 MORE LANES: DEEPSEEK · MISTRAL · LLAMA · LOCAL RUNTIMES</text>
+          <g id="topoParticles" class="particle"></g>
+        </svg>
+        <span class="frame-note">Hover a lane to trace its route</span>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= COST ======================= -->
+<section id="cost" class="band">
+  <span class="ghostlabel" aria-hidden="true">COST</span>
+  <div class="band-in">
+    <div class="cost-grid">
+      <div class="rv">
+        <p class="kicker sc-g">COST</p>
+        <h2 class="display">See what every request&nbsp;costs.</h2>
+        <p class="lede">Every crossing is priced and logged in real time: tokens in, tokens
+          out, dollars attached. Caps are enforced <b>at routing time</b>, so a lane over
+          budget is skipped like a tripped breaker. No surprise invoices.</p>
+        <div class="stats">
+          <div class="stat"><div class="k">Monthly spend</div><div class="v ok" id="spendCounter">$48,290</div><div class="s">MONTH TO DATE</div></div>
+          <div class="stat"><div class="k">Monthly cap</div><div class="v">$75,000</div><div class="s">ENFORCED AT ROUTING</div></div>
+          <div class="stat"><div class="k">Headroom</div><div class="v warn">$26,710</div><div class="s">36% REMAINING</div></div>
+        </div>
+        <div class="budgetbar">
+          <div class="bb-track"><div class="bb-fill" id="bbFill"></div><div class="bb-cap"></div></div>
+          <div class="bb-note"><span>64% of cap used</span><span>cap $75,000</span></div>
+        </div>
+      </div>
+      <div class="rv">
+        <div class="costflow">
+          <div class="cf-head"><span>Provider</span><span>Top model</span><span>Tokens · MTD</span><span>Cost flow</span><span style="text-align:right">Spend · MTD</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>anthropic</span><span class="cf-model">claude-sonnet-4-6</span><span class="cf-tok">2.4B</span><span class="cf-barwrap"><span class="cf-bar" data-w="100"></span></span><span class="cf-cost">$18,420</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>openai</span><span class="cf-model">gpt-4o</span><span class="cf-tok">1.9B</span><span class="cf-barwrap"><span class="cf-bar" data-w="80"></span></span><span class="cf-cost">$14,730</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>gemini</span><span class="cf-model">gemini-2.5-pro</span><span class="cf-tok">2.1B</span><span class="cf-barwrap"><span class="cf-bar" data-w="37"></span></span><span class="cf-cost">$6,890</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>xai</span><span class="cf-model">grok-4.5</span><span class="cf-tok">840M</span><span class="cf-barwrap"><span class="cf-bar" data-w="23"></span></span><span class="cf-cost">$4,210</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>deepseek</span><span class="cf-model">deepseek-v4-pro</span><span class="cf-tok">1.6B</span><span class="cf-barwrap"><span class="cf-bar" data-w="13"></span></span><span class="cf-cost">$2,480</span></div>
+          <div class="cf-row"><span class="cf-prov"><span class="dot ok"></span>mistral</span><span class="cf-model">mistral-large-latest</span><span class="cf-tok">620M</span><span class="cf-barwrap"><span class="cf-bar" data-w="8"></span></span><span class="cf-cost">$1,560</span></div>
+          <div class="cf-foot">Request → provider → model → tokens → cost · caps enforced at routing time</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= LATENCY ======================= -->
+<section id="latency" class="band">
+  <span class="ghostlabel" aria-hidden="true">LATENCY</span>
+  <div class="band-in">
+    <div class="rv" style="max-width:720px">
+      <p class="kicker sc-m">LATENCY</p>
+      <h2 class="display">See how fast your requests actually&nbsp;are.</h2>
+      <p class="lede">Latency is measured from real request timing and tracked per lane:
+        full stream duration, not time to first byte. Outliers are not smoothed away.
+        They are the reason <span class="mono" style="font-size:.85em">auto/fastest</span> exists.</p>
+    </div>
+    <div class="lat-wrap rv" id="latWrap">
+      <div class="lat-chart" id="latChart" role="img" aria-label="Average latency per model lane, from 114 milliseconds to a 2131 millisecond free-tier tail, with the traffic-weighted fleet average at 486 milliseconds."></div>
+      <div class="lat-legend">
+        <span><i style="background:rgba(0,206,201,.7)"></i>UNDER 1s</span>
+        <span><i style="background:rgba(253,203,110,.7)"></i>OVER 1s · OUTLIER</span>
+        <span><i style="background:rgba(248,113,113,.65)"></i>FREE-TIER TAIL</span>
+        <span><i style="background:var(--route)"></i>FLEET AVG 486ms · WEIGHTED BY TRAFFIC</span>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= TRAFFIC / SEE THE ROUTE ======================= -->
+<section id="traffic" class="band gridpaper">
+  <span class="ghostlabel" aria-hidden="true">TRAFFIC</span>
+  <div class="band-in">
+    <div class="rv" style="max-width:680px">
+      <p class="kicker">LIVE INFRASTRUCTURE</p>
+      <h2 class="display">Watch the traffic&nbsp;move.</h2>
+      <p class="lede">Thousands of requests in flight at once. The router orders the lanes,
+        providers answer, responses return. Route weight follows traffic. Busy lanes
+        burn brighter, quiet lanes hold their place in the fallback order.</p>
+    </div>
+    <div class="rv netcanvas" id="trafCanvas" style="margin-top:44px">
+      <svg id="trafSvg" viewBox="0 0 1240 560" role="img"
+           aria-label="A large network visualization: requests flow from the application through Tollpike to provider lanes and models, and responses return. Traffic density changes the brightness of each route.">
+        <text class="colhead" x="30" y="34">APPLICATION</text>
+        <text class="colhead" x="330" y="34">ROUTER</text>
+        <text class="colhead" x="600" y="34">PROVIDER LANES</text>
+        <text class="colhead" x="880" y="34">MODELS</text>
+        <text class="colhead" x="1128" y="34">RESPONSE</text>
+        <line x1="0" y1="44" x2="1240" y2="44" stroke="rgba(255,255,255,.06)"/>
+        <g id="trafWires"></g>
+        <g id="trafNodes"></g>
+        <g id="trafParticles" class="particle"></g>
+      </svg>
+      <span class="frame-note">Route weight follows traffic · 36 lanes online</span>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= RESILIENCE ======================= -->
+<section id="resilience" class="band">
+  <span class="ghostlabel" aria-hidden="true">RESILIENCE</span>
+  <div class="band-in">
+    <div class="pos-grid">
+      <div class="rv">
+        <p class="kicker sc-b">RESILIENCE</p>
+        <h2 class="display">One route fails. Traffic re-routes. The system&nbsp;continues.</h2>
+        <p class="lede">Failures are isolated to the smallest scope that explains them.
+          A rate-limited <b style="color:var(--model)">model</b> locks for 60s while its siblings
+          keep serving. A bad <b style="color:var(--conn)">key</b> cools without touching the
+          provider. Only repeated 5xx trips the
+          <b style="color:var(--route)">provider</b> breaker: 3 failures, 30s, half-open probe.</p>
+        <div class="dev-feats" style="margin-top:28px">
+          <div class="dev-feat"><span class="df-k" style="color:var(--model)">MODEL LOCKOUT</span><span class="df-v">429 → that model rests 60s. Other models on the same key keep serving.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--conn)">KEY COOLDOWN</span><span class="df-v">401/403 → that connection cools. Other keys for the provider keep serving.</span></div>
+          <div class="dev-feat"><span class="df-k">PROVIDER BREAKER</span><span class="df-v">5xx/network → opens after 3 failures for 30s, then a half-open probe.</span></div>
+        </div>
+      </div>
+      <div class="rv netcanvas" id="resCanvas">
+        <svg id="resSvg" viewBox="0 0 680 480" role="img"
+             aria-label="Failure isolation replay: the anthropic model gets rate-limited and locks; traffic re-routes to openai; the lock expires and traffic returns. The rest of the network stays alive throughout.">
+          <text class="colhead" x="26" y="32">FAILURE ISOLATION · REPLAY</text>
+          <line x1="0" y1="42" x2="680" y2="42" stroke="rgba(255,255,255,.06)"/>
+
+          <circle cx="72" cy="240" r="28" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)" stroke-width="1.2"/>
+          <circle cx="72" cy="240" r="19" fill="none" stroke="rgba(167,139,250,.5)" stroke-width="1" stroke-dasharray="4 5"/>
+          <circle cx="72" cy="240" r="6" fill="var(--route-deep)"/>
+          <text class="nsub" x="49" y="286" fill="var(--route)" letter-spacing=".14em">ROUTER</text>
+
+          <path id="xw-groq" class="wire" d="M 100 226 C 160 190 190 140 250 132"/>
+          <path id="xw-olla" class="wire" d="M 100 254 C 160 290 190 340 250 348"/>
+
+          <g id="xg-groq">
+            <rect class="nodebox" id="xb-groq" x="250" y="106" width="140" height="50" rx="9"/>
+            <rect class="rail" id="xr-groq" x="250" y="106" width="2.5" height="50" fill="var(--ok)"/>
+            <text class="nlabel" x="268" y="127">anthropic</text>
+            <text class="nsub" id="xs-groq" x="268" y="144" fill="var(--ok)">SERVING</text>
+          </g>
+          <path id="xw-groq-m" class="wire" d="M 390 132 H 438"/>
+          <g id="xg-groq-m">
+            <rect class="nodebox" id="xb-groq-m" x="438" y="112" width="196" height="40" rx="8"/>
+            <rect class="rail" id="xr-groq-m" x="438" y="112" width="2.5" height="40" fill="var(--model)"/>
+            <text x="454" y="130" font-size="10" fill="var(--txt)">claude-sonnet-4-6</text>
+            <text class="nsub" id="xs-groq-m" x="454" y="145" fill="var(--txt-4)">OK</text>
+          </g>
+
+          <g id="xg-olla">
+            <rect class="nodebox" x="250" y="322" width="140" height="50" rx="9"/>
+            <rect class="rail" id="xr-olla" x="250" y="322" width="2.5" height="50" fill="#2a3140"/>
+            <text class="nlabel" x="268" y="343">openai</text>
+            <text class="nsub" id="xs-olla" x="268" y="360" fill="var(--txt-4)">STANDBY</text>
+          </g>
+          <path id="xw-olla-m" class="wire" d="M 390 348 H 438"/>
+          <g>
+            <rect class="nodebox" x="438" y="328" width="196" height="40" rx="8"/>
+            <rect class="rail" id="xr-olla-m" x="438" y="328" width="2.5" height="40" fill="#2a3140"/>
+            <text x="454" y="346" font-size="10" fill="var(--txt)">gpt-4o</text>
+            <text class="nsub" x="454" y="361" fill="var(--txt-4)">READY</text>
+          </g>
+
+          <!-- lock badge -->
+          <g id="xlock" opacity="0">
+            <rect x="438" y="160" width="150" height="24" rx="6" fill="rgba(61,28,31,.92)" stroke="rgba(248,113,113,.5)"/>
+            <text x="450" y="176" font-size="9.5" fill="var(--bad)" letter-spacing=".08em">429 · MODEL LOCKED 60s</text>
+          </g>
+          <!-- reroute badge -->
+          <g id="xreroute" opacity="0">
+            <rect x="250" y="290" width="128" height="22" rx="6" fill="rgba(22,52,31,.92)" stroke="rgba(126,231,135,.45)"/>
+            <text x="262" y="305" font-size="9.5" fill="var(--ok)" letter-spacing=".08em">TRAFFIC RE-ROUTED</text>
+          </g>
+          <!-- event caption -->
+          <text class="nsub" id="xcaption" x="26" y="452" fill="var(--txt-3)" font-size="10">ALL LANES NOMINAL</text>
+
+          <g id="resParticles" class="particle"></g>
+        </svg>
+        <span class="frame-note">model ⊂ connection ⊂ provider · smallest scope wins</span>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= HOW IT WORKS ======================= -->
+<section id="how" class="band">
+  <div class="band-in">
+    <div class="rv" style="max-width:640px">
+      <p class="kicker">HOW IT WORKS</p>
+      <h2 class="display">Four stages. One&nbsp;system.</h2>
+    </div>
+    <div class="how-stage rv">
+      <div class="how-track"><span class="pulse"></span></div>
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-num">01</div>
+          <div class="how-title">Connect</div>
+          <p class="how-body">Point any OpenAI-compatible client at one local endpoint: <code>/v1/chat/completions</code>. No SDK, no rewrite.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-num">02</div>
+          <div class="how-title">Configure</div>
+          <p class="how-body">Declare providers, models, budget caps and routing combos, live from the control panel. No restart.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-num">03</div>
+          <div class="how-title">Route</div>
+          <p class="how-body">Every request is ordered across all lanes with fallback built in: <code>auto</code>, one of 19 strategies, or a tiered combo.</p>
+        </div>
+        <div class="how-card">
+          <div class="how-num">04</div>
+          <div class="how-title">Observe</div>
+          <p class="how-body">Traffic, latency, tokens and cost land in the ledger and the control center: per request, per lane, per month.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= DEVELOPER ======================= -->
+<section id="developers" class="band">
+  <div class="band-in">
+    <div class="dev-grid">
+      <div class="rv">
+        <p class="kicker">DEVELOPER EXPERIENCE</p>
+        <h2 class="display">One request. Full&nbsp;disclosure.</h2>
+        <p class="lede">The wire format is the one your tools already speak. The difference
+          is the response: headers that tell you <b>which lane served</b>, <b>how many
+          attempts</b> it took, and <b>what tier</b> answered. Routing is never a black box.</p>
+        <div class="dev-feats">
+          <div class="dev-feat"><span class="df-k">auto</span><span class="df-v">priority order, or your default combo</span></div>
+          <div class="dev-feat"><span class="df-k">auto/&lt;strategy&gt;</span><span class="df-v">one of 19: <code>cheapest</code>, <code>fastest</code>, <code>local-first</code>, <code>quota-headroom</code>…</span></div>
+          <div class="dev-feat"><span class="df-k">combo/&lt;name&gt;</span><span class="df-v">tiered chains: <code>free-first</code>, <code>private</code>, <code>resilient</code>…</span></div>
+          <div class="dev-feat"><span class="df-k">provider/model</span><span class="df-v">explicit lane, no fallback</span></div>
+        </div>
+      </div>
+      <div class="rv">
+        <div class="console">
+          <div class="console-bar">
+            <span class="cdots"><i></i><i></i><i></i></span>
+            <span class="ctitle">request · any OpenAI-compatible client</span>
+            <button class="copybtn" id="copyReq" type="button">Copy</button>
+          </div>
+          <pre id="codeReq"><span class="cl"><span class="ln">1</span><span class="cc"><span class="tok-cmd">curl</span> <span class="tok-url">http://localhost:20128/v1/chat/completions</span> <span class="tok-punc">\</span></span></span
+><span class="cl"><span class="ln">2</span><span class="cc">  <span class="tok-flag">-H</span> <span class="tok-str">"Content-Type: application/json"</span> <span class="tok-punc">\</span></span></span
+><span class="cl"><span class="ln">3</span><span class="cc">  <span class="tok-flag">-d</span> <span class="tok-punc">'{</span></span></span
+><span class="cl"><span class="ln">4</span><span class="cc">    <span class="tok-key">"model"</span><span class="tok-punc">:</span> <span class="tok-str">"auto"</span><span class="tok-punc">,</span>  <span class="tok-comment"># or auto/cheapest · combo/free-first</span></span></span
+><span class="cl"><span class="ln">5</span><span class="cc">    <span class="tok-key">"messages"</span><span class="tok-punc">:</span> <span class="tok-punc">[{</span><span class="tok-key">"role"</span><span class="tok-punc">:</span> <span class="tok-str">"user"</span><span class="tok-punc">,</span> <span class="tok-key">"content"</span><span class="tok-punc">:</span> <span class="tok-str">"Hello!"</span><span class="tok-punc">}]</span></span></span
+><span class="cl"><span class="ln">6</span><span class="cc">  <span class="tok-punc">}'</span></span></span></pre>
+        </div>
+        <div class="console dev-headers">
+          <div class="console-bar">
+            <span class="cdots"><i></i><i></i><i></i></span>
+            <span class="ctitle">response headers · what actually happened</span>
+          </div>
+          <pre><span class="cl"><span class="ln">1</span><span class="cc"><span class="tok-hdr">X-Tollpike-Provider:</span> anthropic</span></span
+><span class="cl"><span class="ln">2</span><span class="cc"><span class="tok-hdr">X-Tollpike-Attempts:</span> 1</span></span
+><span class="cl"><span class="ln">3</span><span class="cc"><span class="tok-hdr">X-Tollpike-Routing-Tier:</span> 1</span></span
+><span class="cl"><span class="ln">4</span><span class="cc"><span class="tok-hdr">X-Tollpike-Routing-Strategy:</span> quality-first</span></span
+><span class="cl"><span class="ln">5</span><span class="cc"><span class="tok-hdr">X-Tollpike-Cache:</span> MISS</span></span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= OBSERVABILITY ======================= -->
+<section id="observability" class="band">
+  <div class="band-in">
+    <div class="rv" style="max-width:700px">
+      <p class="kicker sc-m">OBSERVABILITY</p>
+      <h2 class="display">Stop guessing what your AI stack is&nbsp;doing.</h2>
+      <p class="lede">Every crossing lands in an append-only ledger and surfaces as
+        instruments: requests, latency, tokens, cost, lane health. Every number says
+        where it came from, provider-reported or locally estimated.</p>
+    </div>
+    <div class="obs-grid rv">
+      <div class="obs-cell c3">
+        <div class="obs-k"><span class="dot ok beat"></span>Crossings</div>
+        <div class="obs-v" id="obsCross">4,218,930</div>
+        <div class="obs-s">THIS MONTH · 42 LANES SERVING</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k">Spend · MTD</div>
+        <div class="obs-v" style="color:var(--ok)" id="obsSpend">$48,290.14</div>
+        <div class="obs-s">PROVIDER-REPORTED · LIVE</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k">Avg latency</div>
+        <div class="obs-v" style="color:var(--model)">486ms</div>
+        <div class="obs-s">FULL STREAM DURATION</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k">Active lanes</div>
+        <div class="obs-v">42<span style="font-size:13px;color:var(--txt-4)"> / 46</span></div>
+        <div class="lanestrip" id="laneStrip"></div>
+      </div>
+      <div class="obs-cell c6">
+        <div class="obs-k"><span class="dot model"></span>Latency · recent crossings</div>
+        <svg id="sparkLat" viewBox="0 0 520 90" preserveAspectRatio="none" style="width:100%;height:90px;margin-top:14px" role="img" aria-label="Sparkline of recent request latencies"></svg>
+      </div>
+      <div class="obs-cell c6">
+        <div class="obs-k"><span class="dot ok"></span>Event stream</div>
+        <div id="obsStream" style="margin-top:10px"></div>
+        <div class="obs-s" style="margin-top:12px">STREAMING FROM THE REQUEST LEDGER</div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= DASHBOARD ======================= -->
+<section id="dashboard" class="band gridpaper">
+  <span class="ghostlabel" aria-hidden="true">CONTROL</span>
+  <div class="band-in">
+    <div class="rv" style="max-width:660px; text-align:left">
+      <p class="kicker">THE CONTROL CENTER</p>
+      <h2 class="display">See everything the system is&nbsp;doing.</h2>
+      <p class="lede">The landing page is the introduction. This is the operating environment:
+        live routing topology, decision gates, breaker state, budgets, and the request
+        ledger, all on one screen over the whole gateway.</p>
+    </div>
+
+    <div class="dash-wrap rv">
+      <div class="dash-glow"></div>
+      <div class="dash-anno" style="top:-13px; left:6%"><i style="background:var(--route)"></i>LIVE ROUTING</div>
+      <div class="dash-anno" style="top:-13px; right:8%"><i style="background:var(--ok)"></i>PROVIDER HEALTH</div>
+      <div class="dash-anno" style="bottom:-13px; left:10%"><i style="background:var(--model)"></i>TRAFFIC TELEMETRY</div>
+      <div class="dash-anno" style="bottom:-13px; right:6%"><i style="background:var(--conn)"></i>COST + BUDGETS</div>
+
+      <div class="dash-frame">
+        <div class="dash-titlebar">
+          <span class="cdots" style="display:flex;gap:5px"><i style="width:8px;height:8px;border-radius:50%;background:var(--surface-3);border:1px solid var(--line-2)"></i><i style="width:8px;height:8px;border-radius:50%;background:var(--surface-3);border:1px solid var(--line-2)"></i><i style="width:8px;height:8px;border-radius:50%;background:var(--surface-3);border:1px solid var(--line-2)"></i></span>
+          <span class="urlchip">localhost:20128<span style="color:var(--route)">/panel</span></span>
+        </div>
+        <div class="dash-topbar">
+          <div class="dt-id">
+            <span class="brand-mark tile" style="width:24px;height:24px;flex-basis:24px"><svg><use href="#tp-mark"/></svg></span>
+            <span><span class="t">tollpike</span><br/><span class="s">Routing control center</span></span>
+          </div>
+          <div class="dash-rail">
+            <div class="dash-cell"><span class="k">State</span><span class="v ok">LIVE</span></div>
+            <div class="dash-cell"><span class="k">Lanes</span><span class="v">42 <span style="color:var(--txt-4);font-size:10px">/ 46</span></span></div>
+            <div class="dash-cell"><span class="k">Crossings</span><span class="v">4.2M</span></div>
+            <div class="dash-cell"><span class="k">Avg latency</span><span class="v">486ms</span></div>
+            <div class="dash-cell"><span class="k">Spend MTD</span><span class="v">$48,290</span></div>
+          </div>
+        </div>
+        <div class="dash-main">
+          <div class="dash-side">
+            <div class="ds-h">Routing engine</div>
+            <div class="dash-strategy">combo/<span style="color:var(--route)">quality-first</span><small>19 STRATEGIES · 8 COMBOS · RESOLVED LIVE</small></div>
+            <div class="dash-gates">
+              <div class="dash-gate"><span class="dot route"></span>POLICY<span class="val route">combo</span></div>
+              <div class="dash-gate"><span class="dot ok"></span>QUOTA<span class="val">11 / 13</span></div>
+              <div class="dash-gate"><span class="dot model"></span>HEALTH<span class="val ok">closed</span></div>
+              <div class="dash-gate"><span class="dot model"></span>LATENCY<span class="val">486ms</span></div>
+              <div class="dash-gate"><span class="dot ok"></span>COST<span class="val ok">36% left</span></div>
+            </div>
+          </div>
+          <div class="dash-topo">
+            <div class="dt-head"><span>Live routing topology</span><span>4.2M crossings this month</span></div>
+            <svg id="dashSvg" viewBox="0 0 780 300" role="img" aria-label="Miniature of the control panel's live routing topology: ingress engine, provider lanes with health rails, models and response node.">
+              <path class="wire hot" d="M 96 150 C 160 150 170 66 236 66"/>
+              <path class="wire hot-ok" d="M 96 150 C 160 150 170 126 236 126"/>
+              <path class="wire" d="M 96 150 C 160 150 170 186 236 186"/>
+              <path class="wire" d="M 96 150 C 160 150 170 246 236 246"/>
+              <circle cx="72" cy="150" r="24" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)"/>
+              <circle cx="72" cy="150" r="16" fill="none" stroke="rgba(167,139,250,.5)" stroke-dasharray="4 5"/>
+              <circle cx="72" cy="150" r="5.5" fill="var(--route-deep)"/>
+              <g>
+                <rect class="nodebox" x="236" y="44" width="128" height="42" rx="8"/>
+                <rect x="236" y="44" width="2.5" height="42" fill="var(--ok)"/>
+                <text x="252" y="62" font-size="10" fill="var(--txt)">anthropic</text>
+                <text class="nsub" x="252" y="77" fill="var(--ok)">SERVING · 1.2M</text>
+              </g>
+              <g>
+                <rect class="nodebox" x="236" y="104" width="128" height="42" rx="8"/>
+                <rect x="236" y="104" width="2.5" height="42" fill="var(--ok)"/>
+                <text x="252" y="122" font-size="10" fill="var(--txt)">openai</text>
+                <text class="nsub" x="252" y="137" fill="var(--ok)">SERVING · 1.1M</text>
+              </g>
+              <g>
+                <rect class="nodebox" x="236" y="164" width="128" height="42" rx="8"/>
+                <rect x="236" y="164" width="2.5" height="42" fill="var(--ok)"/>
+                <text x="252" y="182" font-size="10" fill="var(--txt)">gemini</text>
+                <text class="nsub" x="252" y="197" fill="var(--ok)">SERVING · 860K</text>
+              </g>
+              <g>
+                <rect class="nodebox" x="236" y="224" width="128" height="42" rx="8"/>
+                <rect x="236" y="224" width="2.5" height="42" fill="var(--ok)"/>
+                <text x="252" y="242" font-size="10" fill="var(--txt)">xai</text>
+                <text class="nsub" x="252" y="257" fill="var(--ok)">SERVING · 420K</text>
+              </g>
+              <path class="wire hot-cyan" d="M 364 66 H 420"/>
+              <path class="wire hot-cyan" d="M 364 126 H 420"/>
+              <g>
+                <rect class="nodebox" x="420" y="48" width="170" height="36" rx="7"/>
+                <rect x="420" y="48" width="2.5" height="36" fill="var(--model)"/>
+                <text x="434" y="70" font-size="9.5" fill="var(--txt)">claude-sonnet-4-6</text>
+              </g>
+              <g>
+                <rect class="nodebox" x="420" y="108" width="170" height="36" rx="7"/>
+                <rect x="420" y="108" width="2.5" height="36" fill="var(--model)"/>
+                <text x="434" y="130" font-size="9.5" fill="var(--txt)">gpt-4o</text>
+              </g>
+              <path class="wire" d="M 590 66 C 650 66 660 120 700 138"/>
+              <path class="wire" d="M 590 126 C 650 126 660 136 700 144"/>
+              <g>
+                <rect class="nodebox" x="668" y="130" width="96" height="52" rx="9" style="stroke:rgba(126,231,135,.45)"/>
+                <text x="682" y="150" font-size="9" fill="var(--ok)">● RESPONSE</text>
+                <text x="682" y="166" font-size="10" fill="var(--txt)">9.8B tok</text>
+                <text class="nsub" x="682" y="178" fill="var(--txt-4)">$48,290</text>
+              </g>
+              <g id="dashParticles" class="particle"></g>
+            </svg>
+          </div>
+        </div>
+        <div class="dash-instr">
+          <div class="di"><span class="k">Spend · month to date</span><br/><span class="v ok">$48,290</span></div>
+          <div class="di"><span class="k">Figures backed by provider</span><br/><span class="v ok">100%</span></div>
+          <div class="di"><span class="k">Price table verified</span><br/><span class="v">40 <span style="color:var(--txt-4);font-size:11px">/ 40</span></span></div>
+          <div class="di"><span class="k">Active lanes</span><br/><span class="v">42 <span style="color:var(--txt-4);font-size:11px">/ 46</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="dash-cta rv">
+      <a class="btn primary" href="/panel">Open the control center</a>
+      <a class="btn" href="#developers">Read the docs</a>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= DIFFERENTIATION ======================= -->
+<section id="diff" class="band">
+  <div class="band-in tight">
+    <div class="rv" style="max-width:640px">
+      <p class="kicker">THE DIFFERENCE</p>
+      <h2 class="display">Same providers. One&nbsp;seam.</h2>
+    </div>
+    <div class="diff-grid rv">
+      <div class="diff-cell without">
+        <h3><span class="dot"></span>WITHOUT A CONTROL LAYER</h3>
+        <svg viewBox="0 0 480 240" role="img" aria-label="Application wired separately to each provider and model.">
+          <rect class="nodebox" x="20" y="98" width="120" height="42" rx="8"/>
+          <text x="36" y="123" font-size="10" fill="var(--txt)">APPLICATION</text>
+          <path class="wire" d="M 140 108 C 220 60 280 44 340 40"/>
+          <path class="wire" d="M 140 114 C 220 92 280 84 340 82"/>
+          <path class="wire" d="M 140 120 C 220 124 280 124 340 124"/>
+          <path class="wire" d="M 140 126 C 220 156 280 164 340 166"/>
+          <path class="wire dead" d="M 140 132 C 220 190 280 204 340 208"/>
+          <g font-size="9.5" fill="var(--txt-3)">
+            <text x="352" y="44">provider a · key · price</text>
+            <text x="352" y="86">provider b · key · price</text>
+            <text x="352" y="128">model a · quota</text>
+            <text x="352" y="170">model b · quota</text>
+            <text x="352" y="212" fill="var(--bad)">429 · handled where?</text>
+          </g>
+        </svg>
+      </div>
+      <div class="diff-cell with">
+        <h3><span class="dot route"></span>WITH TOLLPIKE</h3>
+        <svg viewBox="0 0 480 240" role="img" aria-label="Application connects once to Tollpike, which manages providers and models beneath it.">
+          <rect class="nodebox" x="20" y="98" width="120" height="42" rx="8"/>
+          <text x="36" y="123" font-size="10" fill="var(--txt)">APPLICATION</text>
+          <path class="wire hot" d="M 140 119 H 216"/>
+          <circle cx="248" cy="119" r="26" fill="var(--bg-deep)" stroke="rgba(167,139,250,.45)"/>
+          <circle cx="248" cy="119" r="18" fill="none" stroke="rgba(167,139,250,.5)" stroke-dasharray="4 5"/>
+          <circle cx="248" cy="119" r="5.5" fill="var(--route-deep)"/>
+          <path class="wire hot-ok" d="M 274 108 C 310 84 330 66 360 60"/>
+          <path class="wire hot-ok" d="M 276 119 C 312 119 330 110 360 108"/>
+          <path class="wire" d="M 274 130 C 310 152 330 168 360 172"/>
+          <g font-size="9.5" fill="var(--txt-2)">
+            <text x="372" y="64">providers · priced</text>
+            <text x="372" y="112">models · allowlisted</text>
+            <text x="372" y="176" fill="var(--txt-4)">fallback · ordered</text>
+          </g>
+          <text x="212" y="180" font-size="9" fill="var(--route)" letter-spacing=".14em">TOLLPIKE</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= FINAL CTA ======================= -->
+<section id="cta" class="band final">
+  <svg class="final-bg" viewBox="0 0 1400 520" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <g id="ctaWires"></g>
+    <g id="ctaParticles" class="particle"></g>
+  </svg>
+  <div class="band-in">
+    <p class="kicker" style="justify-content:center">START ROUTING</p>
+    <h2 class="display" style="max-width:820px;margin:0 auto">Put a router between your app and the model&nbsp;ecosystem.</h2>
+    <p class="lede" style="margin:24px auto 0">One endpoint. Every model that matters. Full command of cost, latency, and traffic.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="#developers">Get started</a>
+      <a class="btn" href="/panel">Open the control center</a>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FOOTER ======================= -->
+<footer>
+  <div class="foot-in">
+    <div class="foot-grid">
+      <div class="foot-col">
+        <a class="brand" href="#hero" aria-label="Tollpike">
+          <span class="brand-mark"><svg><use href="#tp-mark"/></svg></span>
+          <span>
+            <span class="brand-name">tollpike</span><br/>
+            <span class="brand-ver">v0.1.0</span>
+          </span>
+        </a>
+        <p class="foot-tag">Routing infrastructure for AI.<br/>One endpoint. Every lane behind it.</p>
+      </div>
+      <div class="foot-col">
+        <h4>Product</h4>
+        <a href="/panel">Control center</a>
+        <a href="#providers">Providers</a>
+        <a href="#routing">Routing</a>
+        <a href="#cost">Budgets</a>
+        <a href="#resilience">Resilience</a>
+      </div>
+      <div class="foot-col">
+        <h4>Developers</h4>
+        <a href="#developers">Documentation</a>
+        <a href="#developers">GitHub</a>
+        <a href="#developers">API · /v1</a>
+      </div>
+      <div class="foot-col">
+        <h4>Protocols</h4>
+        <a href="#developers">MCP · 104 tools</a>
+        <a href="#developers">A2A · 6 skills</a>
+        <a href="#developers">OpenAI-compatible</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>tollpike · v0.1.0</span>
+      <span class="status"><span class="dot ok beat"></span>SYSTEM STATUS · OPERATIONAL</span>
+    </div>
+  </div>
+</footer>
+
+<script src="landing.js" defer></script>
+</body>
+</html>

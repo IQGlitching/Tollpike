@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**36 providers** (6 local runtimes) · **350 tests** · **19 routing
+**36 providers** (6 local runtimes) · **498 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -23,15 +23,36 @@ share is provider-reported versus locally estimated, free-quota readings say
 they are observation-only, savings state the baseline they are measured
 against, and anything unverified is labelled unverified.
 
-## Quick start
+## Install
 
-### Option A: Docker (recommended for anything long-running)
+Node 18 or newer. Node 22.5+ additionally enables the SQLite-backed half of
+memory recall; below that it falls back to an in-process index and says so.
+
+### Option A: run it without installing anything
 
 ```bash
-cp .env.example .env   # add at least one provider API key
-npm run docker:up      # builds the image and starts it, detached
-npm run docker:logs    # follow logs
-npm run docker:down    # stop
+npx tollpike
+```
+
+### Option B: install the CLI globally
+
+```bash
+npm install -g tollpike
+tollpike
+```
+
+State lives in `~/.tollpike` when you install this way, so an upgrade never
+throws away your usage ledger, budget caps or provider toggles.
+
+### Option C: Docker (recommended for anything long-running)
+
+```bash
+git clone https://github.com/openevent/Tollpike.git
+cd Tollpike
+cp .env.example .env    # optional, add at least one provider API key
+npm run docker:up       # builds the image and starts it, detached
+npm run docker:logs     # follow logs
+npm run docker:down     # stop
 ```
 
 This uses `docker-compose.yml`: a named volume (`tollpike-data`) persists
@@ -40,15 +61,16 @@ caps, gateway key) across restarts and rebuilds, a healthcheck hits
 `/health` every 30s, and `restart: unless-stopped` brings it back after a
 host reboot or crash. Runs as a non-root user inside the container.
 
-### Option B: bare Node
+### Option D: from source
 
 ```bash
+git clone https://github.com/openevent/Tollpike.git
+cd Tollpike
 npm install
-cp .env.example .env
 npm start
 ```
 
-### Option C: systemd (bare-metal, no Docker, survives reboots)
+### Option E: systemd (bare-metal, no Docker, survives reboots)
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin tollpike
@@ -63,22 +85,241 @@ sudo systemctl enable --now tollpike
 Edit the `User=` and `WorkingDirectory=` lines in `deploy/tollpike.service`
 first if you're installing somewhere other than `/opt/tollpike`.
 
-Open the control panel: **http://localhost:20128/panel**
+## First run
 
-Point any OpenAI-compatible client at `http://localhost:20128/v1`:
+**1. Start it.** It binds loopback only, so nothing is exposed to your
+network until you deliberately change `BIND_HOST`.
 
 ```bash
-curl http://localhost:20128/v1/chat/completions \
+tollpike
+```
+
+```
+tollpike listening on http://127.0.0.1:20128
+  API base:      http://127.0.0.1:20128/v1
+  control panel: http://127.0.0.1:20128/panel
+```
+
+**2. Open the control panel.** <http://127.0.0.1:20128/panel>
+
+It boots with zero keys configured. Every provider shows as `NO KEY` and the
+router has nowhere to send traffic yet, which is the expected first state.
+
+**3. Add a provider key.** Either put it in the protected env file, which is
+outside the source tree on purpose:
+
+```bash
+mkdir -p ~/.tollpike
+printf 'GROQ_API_KEY=your_key_here\n' >> ~/.tollpike/.env
+```
+
+or export it for a single run:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... tollpike
+```
+
+Multiple keys for one provider are a comma-separated list, and each becomes
+an independently cooled-down connection:
+
+```bash
+GROQ_API_KEY=key_one,key_two,key_three
+```
+
+Restart after editing the file. The Providers page will show the lane turn
+green, and the sidebar lane count goes up.
+
+**4. Send your first request.**
+
+```bash
+curl http://127.0.0.1:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-For streaming, add `"stream": true` — the response comes back as standard
-OpenAI-style SSE (`data: {...}\n\n`, terminated by `data: [DONE]`).
+`"model": "auto"` means "walk the fallback chain in priority order". The
+response headers tell you what actually happened:
+
+```
+X-Tollpike-Provider: groq
+X-Tollpike-Attempts: 1
+X-Tollpike-Routing-Tier: 1
+X-Tollpike-Routing-Strategy: priority
+X-Tollpike-Cache: MISS
+```
+
+## Point your existing tools at it
+
+Anything that speaks the OpenAI chat-completions format works by changing
+the base URL. No SDK swap, no code rewrite.
+
+**Node, official OpenAI SDK**
+
+```js
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "http://127.0.0.1:20128/v1",
+  apiKey: "unused"            // or your gateway key, if you set one
+});
+
+const res = await client.chat.completions.create({
+  model: "auto/cheapest",
+  messages: [{ role: "user", content: "Hello!" }]
+});
+console.log(res.choices[0].message.content);
+```
+
+**Python, official OpenAI SDK**
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:20128/v1", api_key="unused")
+
+res = client.chat.completions.create(
+    model="combo/free-first",
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(res.choices[0].message.content)
+```
+
+**Streaming.** Add `"stream": true`. The response is standard OpenAI-style
+SSE (`data: {...}\n\n`, terminated by `data: [DONE]`), including for
+Anthropic and Gemini lanes, whose native event shapes are translated so your
+client only ever parses one format.
+
+**Environment-variable drop-in.** Most tools read these, so exporting them
+is often the whole integration:
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:20128/v1
+export OPENAI_API_KEY=unused
+```
+
+## Choosing a route
+
+The `model` field is the routing instruction. Four forms:
+
+```jsonc
+{ "model": "anthropic/claude-sonnet-4-6" }  // explicit lane, no fallback
+{ "model": "auto" }                         // priority order, or your default combo
+{ "model": "auto/cheapest" }                // one of 19 strategies
+{ "model": "combo/free-first" }             // a tiered chain
+```
+
+Preview what a route resolves to before spending anything:
+
+```bash
+curl -X POST http://127.0.0.1:20128/api/panel/routing/preview \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto/cheapest"}'
+```
+
+Two request-level flags: `"stream": true` for SSE, and `"cache": false` to
+bypass the response cache for one request.
+
+## The control panel
+
+<http://127.0.0.1:20128/panel>. Twenty pages over one gateway.
+
+| Page | What it is for |
+|---|---|
+| Control center | Live routing topology, decision gates, traffic telemetry, spend |
+| Providers | Every lane, its models, keys, health and per-provider budget cap |
+| Routing | The 19 strategies, live ordering, and why a lane ranks where it does |
+| Budgets | Monthly caps, enforced at routing time rather than after the fact |
+| Ledger | Every request: provider, model, tokens, cost, latency |
+| Resilience | Breaker state, cooling keys, locked models, manual reset |
+| Combos | Build and preview tiered fallback chains |
+| Free quota | Per-provider free allowances, counted with shared pools deduplicated |
+| Cache | Hit rate, TTL, LRU capacity, clear |
+| Compression | Preview RTK and Caveman against your own text before enabling |
+| Memory | Recall mode, embedding provider, what is actually stored |
+| Knowledge | Notion and Obsidian as read-only context |
+| Protocols | The MCP and A2A surfaces and how to connect to them |
+| Cloud agents | Codex, Cursor, Devin, Jules behind one interface |
+| Services | Bifrost, 9Router, CLIProxy as supervised sidecars |
+| Guards | PII redaction, prompt-injection mode, rate limit |
+| Access | The gateway key, and what each control actually covers |
+| Proxy | Per-provider and global egress proxy |
+| Endpoints | Every route this gateway serves |
+| Achievements | Streaks and savings, derived from the ledger |
+
+The test console on the Control center sends a real request and animates the
+actual `attempts` array that came back, so the chain you watch is the chain
+that ran.
+
+## Locking it down
+
+The panel API is unauthenticated until you set a gateway key. Set one from
+the Access page, or:
+
+```bash
+curl -X POST http://127.0.0.1:20128/api/panel/auth/key \
+  -H "Content-Type: application/json" \
+  -d '{"key":"a-long-random-string"}'
+```
+
+After that, every `/v1/*` and `/api/*` call needs `Authorization: Bearer
+<key>`. To encrypt that key at rest rather than storing it as honest
+plaintext, set `TOLLPIKE_SECRET` before starting:
+
+```bash
+TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
+```
+
+## CLI reference
+
+```bash
+tollpike                 # start the gateway and control panel
+tollpike start           # the same thing, explicitly
+tollpike where           # print resolved paths, ports and URLs
+tollpike --version
+tollpike --help
+```
+
+From a checkout, the npm scripts are the equivalent:
+
+```bash
+npm start                # start
+npm run dev              # start with --watch
+npm test                 # 498 tests
+npm run verify           # check provider endpoints against vendor docs
+npm run verify-pricing   # check price tables against published rates
+npm run docker:up        # build and start the container, detached
+npm run docker:logs      # follow container logs
+npm run docker:down      # stop the container
+```
+
+## Configuration
+
+Everything is optional. Tollpike boots with nothing set.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `PORT` | `20128` | Listen port |
+| `BIND_HOST` | `127.0.0.1` | Listen address. Anything non-loopback prints a warning if no gateway key is set |
+| `TOLLPIKE_ENV_FILE` | unset | Read credentials from this file and nothing else. Suppresses both defaults |
+| `TOLLPIKE_DATA_DIR` | `./data`, or `~/.tollpike/data` via the CLI | Where `usage.jsonl` and `settings.json` live |
+| `TOLLPIKE_SECRET` | unset | Enables AES-256-GCM encryption of the stored gateway key |
+| `TOLLPIKE_ALLOWED_HOSTS` | unset | Extra hostnames the host-header guard accepts |
+| `ALLOW_UNLISTED_MODELS` | `false` | Allow models not listed for a provider in `config/providers.json` |
+| `UPSTREAM_TIMEOUT_MS` | see `src/providers/http.js` | Per-request deadline |
+| `UPSTREAM_STALL_TIMEOUT_MS` | see `src/providers/http.js` | Per-chunk stall watchdog for streams |
+| `MCP_READ_ONLY` | `false` | Hide and refuse every mutating MCP tool |
+| `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` | unset | Egress proxy, overridden by per-provider settings |
+| `<PROVIDER>_API_KEY` | unset | Credentials. Comma-separate for multiple keys per provider |
+
+Credentials resolve in this order, first match per variable winning:
+`TOLLPIKE_ENV_FILE` if set (and then nothing else), otherwise
+`~/.tollpike/.env` and then `./.env`. A variable already present in the real
+environment beats every file, which is what keeps `docker run -e` and
+systemd's `EnvironmentFile` working.
 
 ## Security
 
-The guardrails below are off by default and opt-in — see the Security
+The guardrails below are off by default and opt-in. See the Security
 section of the control panel. The network posture is on by default.
 
 **Always on**
@@ -110,7 +351,7 @@ section of the control panel. The network posture is on by default.
 - **Encryption at rest (AES-256-GCM).** Set `TOLLPIKE_SECRET` and the
   stored gateway key is encrypted with a key derived via scrypt from a
   per-install random salt. If the secret isn't set, it's stored as honest
-  plaintext rather than being fake-encrypted with a hardcoded key — the
+  plaintext rather than being fake-encrypted with a hardcoded key. The
   appearance of encryption with none of the protection is worse than
   plaintext you know about. The panel reports whether the key is *actually*
   encrypted on disk, not merely whether a secret is configured.
@@ -121,25 +362,25 @@ section of the control panel. The network posture is on by default.
   response timing.)
 - **Rate limiting.** Token bucket per client, keyed on an HMAC of the
   gateway key (under a per-process random key) or on source IP. It runs
-  *after* authentication — the other order let an unauthenticated caller
+  *after* authentication. The other order let an unauthenticated caller
   name someone else's bucket and drain it. Mounted on `/v1` only, so the
   request that disables it can never be rate-limited itself. The failure
   mode this actually protects against on a personal gateway is a runaway
   agent loop burning paid quota in seconds.
 - **PII redaction.** Strips emails, Luhn-valid card numbers, IBANs, common
   API-key shapes, JWTs and private-key blocks before anything is sent
-  upstream — in plain string content and in multimodal content parts.
+  upstream, in plain string content and in multimodal content parts.
 - **Prompt-injection guard.** Heuristic scan of `user` **and `tool`** turns
   in `off` / `flag` / `block` modes. Tool results carry text from web pages,
   files and APIs you don't control, which makes them the primary indirect-
-  injection vector. `system` and `assistant` turns are never scanned —
+  injection vector. `system` and `assistant` turns are never scanned:
   those are the operator's own text.
 - **Random key generation.** The panel can generate a
   `crypto.randomBytes`-backed gateway key so you're not tempted to type
   `password123`. Keys shorter than 16 characters are rejected.
 
 **What these are not.** PII redaction is pattern matching, not a DLP
-product — it will miss unusual formats, names, addresses and anything
+product: it will miss unusual formats, names, addresses and anything
 contextual. Prompt-injection detection is a known-unsolved problem; these
 patterns catch low-effort attempts and will not stop a determined
 adversary. Both are defence-in-depth that reduce accidental leakage, not
@@ -175,44 +416,44 @@ cooling down.
 
 A dark, terminal-styled dashboard at `/panel`, backed by `/api/panel/*`:
 
-- **Routing chain** — every configured provider as a node, ordered by
+- **Routing chain**: every configured provider as a node, ordered by
   priority. Circuit-breaker state shown live (green dot = healthy, red =
   open). Click a node to expand its settings.
-- **Per-provider toggle** — disable a provider without touching `.env` or
+- **Per-provider toggle**: disable a provider without touching `.env` or
   restarting. Disabled providers are removed from `auto` candidate pools
   entirely (not just skipped-and-logged).
-- **Per-provider budget caps** — set a monthly USD cap; once current-month
+- **Per-provider budget caps**: set a monthly USD cap; once current-month
   spend (tracked from the real usage log) meets or exceeds it, the router
   treats that provider as unavailable until next month, same as a tripped
   circuit breaker.
-- **Test console** — send a real request through the router and watch the
+- **Test console**: send a real request through the router and watch the
   routing chain animate live: each candidate node pulses blue while being
   tried, then turns green (answered) or red (failed → fell through to the
   next one). This is the actual `attempts` array from a real router call,
   not a simulation.
-- **Recent requests table** — provider, model, tokens, cost, latency per
+- **Recent requests table**: provider, model, tokens, cost, latency per
   request, newest first.
-- **Cost chart** — a compact per-request bar chart of the last 20 calls
+- **Cost chart**: a compact per-request bar chart of the last 20 calls
   (pure CSS/DOM, no charting library), plus an overall avg-latency stat
   and per-provider avg latency shown right on each routing-chain node.
-- **Security controls** — toggle PII redaction, set the injection-guard
+- **Security controls**: toggle PII redaction, set the injection-guard
   mode, configure the rate limit, and see whether at-rest encryption is
   active.
-- **Gateway access** — optionally require `Authorization: Bearer <key>` on
+- **Gateway access**: optionally require `Authorization: Bearer <key>` on
   every `/v1/*` and `/api/*` call. The key lives in `data/settings.json` on
-  the server and in your browser's `localStorage` — nowhere else. If you
+  the server and in your browser's `localStorage`. Nowhere else. If you
   lose it, recovery is deleting/editing `gatewayApiKey` in
-  `data/settings.json` directly (there's no key-recovery flow by design —
+  `data/settings.json` directly (there's no key-recovery flow by design:
   it's a local personal-use lock, not a real auth system).
 
 ## How routing works
 
 Four route forms:
 
-- `"model": "provider/model"` — explicit, no fallback (e.g. `"anthropic/claude-sonnet-4-6"`)
-- `"model": "auto"` — priority order, or your default combo if you've set one
-- `"model": "auto/<strategy>"` — one of the 19 strategies below
-- `"model": "combo/<name>"` — a tiered chain
+- `"model": "provider/model"`: explicit, no fallback (e.g. `"anthropic/claude-sonnet-4-6"`)
+- `"model": "auto"`: priority order, or your default combo if you've set one
+- `"model": "auto/<strategy>"`: one of the 19 strategies below
+- `"model": "combo/<name>"`: a tiered chain
 
 ### Strategies
 
@@ -242,7 +483,7 @@ live; `auto/cheap`, `auto/fastest` and `auto/roundrobin` still work as aliases.
 | `cost-ceiling` | anything at or under a tier's `maxCostPer1m` first |
 
 **Every strategy is a total order, never a filter.** `cheapest` means cheapest
-*first* and most expensive *last* — not "only the cheap ones". A strategy that
+*first* and most expensive *last*, not "only the cheap ones". A strategy that
 dropped candidates would silently shorten the fallback chain, so a request
 would fail with "all providers unavailable" while a lane that could have served
 it was never tried. Filtering is a tier's job.
@@ -256,7 +497,7 @@ limits nobody configured isn't quota you can drain.
 A combo stacks up to 4 tiers, each `{ strategy, filter }`. Tiers concatenate,
 a provider is never placed twice, and unmatched lanes are appended in priority
 order so a filter typo degrades the route instead of causing an outage. A combo
-marked `strict` (like `private`) has no such tail — failing is the correct
+marked `strict` (like `private`) has no such tail. Failing is the correct
 outcome when the promise is "nothing leaves this machine".
 
 Eight built in: `free-first`, `paid-for-it`, `cost-floor`, `quality-first`,
@@ -268,8 +509,8 @@ Filters: `providers`, `exclude`, `categories`, `billing`, `freeOnly`,
 `verifiedPricingOnly`, `maxCostPer1m`, `minContextWindow`, `withQuotaRemaining`.
 
 Two request-level flags:
-- `"stream": true` — SSE streaming (see above)
-- `"cache": false` — bypass the response cache for this request
+- `"stream": true`: SSE streaming (see above)
+- `"cache": false`: bypass the response cache for this request
 
 Response headers show what actually happened, rather than asking you to trust
 it: `X-Tollpike-Provider`, `X-Tollpike-Attempts`, `X-Tollpike-Routing-Tier`,
@@ -291,18 +532,18 @@ declares a `quotaPool`; entries sharing one share a counter, and the snapshot
 reports `dedupedAway` so the deduplication is visible rather than implied.
 Pools we haven't confirmed are marked `assumed`.
 
-**Window semantics.** Requests use a real sliding window — a counter that
+**Window semantics.** Requests use a real sliding window. A counter that
 resets on the wall-clock minute lets a caller spend 2× the limit either side of
 the boundary. Daily limits use the vendor's own reset time where it's known.
 
 **Failed requests still count.** A 500 consumed rate-limit budget at
 essentially every vendor. Only requests that never left this process are free.
 
-What it does *not* do is read your remaining quota from the vendor — almost
+What it does *not* do is read your remaining quota from the vendor. Almost
 none expose it. Every reading carries `observedOnly: true`: usage of the same
 key from another client is invisible here, so real remaining quota is always
 this or less, never more. 13 free tiers are declared, all with
-`limitsVerified: false` — published shapes, not numbers checked against an
+`limitsVerified: false`. Published shapes, not numbers checked against an
 account.
 
 ## Memory
@@ -317,14 +558,14 @@ prompt the model sees.
   OpenAI-compatible `/embeddings` provider you name.
 - **Fusion:** Reciprocal Rank Fusion, K=60. BM25 scores and cosine
   similarities aren't on the same scale, so adding them lets whichever half
-  produces bigger numbers dominate — and that shifts as the store grows, making
+  produces bigger numbers dominate, and that shifts as the store grows, making
   recall quality drift for no visible reason. RRF reads only *rank*, so a
   document found by both halves outranks one found first by only one.
 
 There is deliberately **no fallback embedder**. A hash-based "embedding"
 clusters on spelling rather than meaning, and vector search over those returns
 confident nonsense. With no embedding provider configured, recall degrades to
-keyword-only and *says so* — `effectiveMode` reports what recall can actually
+keyword-only and *says so*: `effectiveMode` reports what recall can actually
 do, not what it's set to.
 
 Memory is caller-partitioned like the response cache. Recalled text is scanned
@@ -333,7 +574,7 @@ for injection at hydrate time and dropped if it trips: it gets injected as a
 skips on the grounds that the system prompt is the operator's own text. Memory
 breaks that assumption, so the guard moves to where it still holds.
 
-Only `user` and `assistant` turns are stored — never system prompts (they'd
+Only `user` and `assistant` turns are stored, never system prompts (they'd
 dominate every recall) and never tool output (the primary indirect-injection
 vector, which must not gain persistence across conversations).
 
@@ -347,14 +588,14 @@ on.
 |---|---|---|
 | base | whitespace, consecutive duplicate lines | 5–15% |
 | **RTK** | tabularize uniform JSON, collapse runs keeping the count, elide blobs with a visible marker | 40–95% on tool output |
-| **Caveman** | lossy prose compression — drops grammar the model re-infers | 20–50% on old assistant text |
+| **Caveman** | lossy prose compression: drops grammar the model re-infers | 20–50% on old assistant text |
 
 Plus history truncation, which isn't compression so much as forgetting, and is
 usually the largest single saving.
 
 **Scope is the whole safety argument for the lossy layer.** Caveman never
 touches your system prompt, and by default never touches the newest user turn
-either — those are the two places exact wording matters. Words whose removal
+either. Those are the two places exact wording matters. Words whose removal
 *inverts* meaning (`not`, `never`, `without`, `unless`, `except`) are never
 dropped at any level; dropping "not" from "do not delete the table" isn't a
 compression bug, it's a destroyed instruction. Fenced code, inline code, URLs,
@@ -366,7 +607,7 @@ Preview it against your own text on the Compression page before enabling it.
 
 The gateway exposes *itself*, so an agent can operate it.
 
-### MCP — 104 tools across 31 scopes
+### MCP: 104 tools across 31 scopes
 
 Over **stdio** (`node src/mcp/server.js`), **Streamable HTTP** (`POST /mcp`)
 and **SSE** (`GET /mcp/sse`). Scopes: gateway, providers, models, routing,
@@ -379,7 +620,7 @@ Two rules the surface is built on:
 
 - **Mutations are marked.** Every tool carries `mutates`, surfaced in its
   description, so a model can tell reading state from spending money.
-  `MCP_READ_ONLY=true` hides *and refuses* them — hiding without refusing
+  `MCP_READ_ONLY=true` hides *and refuses* them. Hiding without refusing
   leaves them reachable by name for any client that remembers them.
 - **No credential crosses the boundary.** Not in a response, not in an error.
   `settings_get` reduces the gateway key to `<set>`, `settings_patch` can't
@@ -388,17 +629,17 @@ Two rules the surface is built on:
   only. A test plants a canary key and scans every read-only tool's output
   for it.
 
-### A2A — 6 skills over JSON-RPC 2.0
+### A2A: 6 skills over JSON-RPC 2.0
 
 `POST /a2a`, Agent Card at `/.well-known/agent-card.json` (unauthenticated by
-design — a peer has to read *how* to authenticate before it can). Skills:
+design. A peer has to read *how* to authenticate before it can). Skills:
 `smart-routing`, `quota-report`, `discovery`, `cost-analysis`, `health-report`,
 `memory-recall`. Coarse-grained on purpose: MCP is for a model driving this
 gateway step by step, A2A is for a peer agent that wants an outcome.
 
 `message/stream` is **not** implemented and the card reports
 `streaming: false` to match. Advertising a capability that returns one chunk at
-the end is worse than not advertising it — a peer builds an incremental UI on
+the end is worse than not advertising it. A peer builds an incremental UI on
 that flag. A failing skill returns a **failed Task**, not a JSON-RPC error, so a
 peer can tell "your request was malformed" from "the work was attempted and
 didn't succeed".
@@ -411,7 +652,7 @@ control that stops a runaway agent loop.
 
 Codex, Cursor, Devin and Jules behind one interface: `createTask`, `getTask`,
 `listTasks`, `approvePlan`, `cancelTask`. A capability a vendor doesn't have is
-reported as unsupported rather than emulated — a fake approval step that
+reported as unsupported rather than emulated. A fake approval step that
 returns success without approving anything is worse than a missing one.
 
 **Every driver is unverified.** Endpoint paths and payload shapes follow vendor
@@ -420,14 +661,14 @@ documentation; none has been exercised against a live account, and all carry
 
 ## Embedded services
 
-Supervises Bifrost, 9Router and CLIProxy as managed sidecars — start, stop,
+Supervises Bifrost, 9Router and CLIProxy as managed sidecars. Start, stop,
 health, logs, plus cluster profiles. **It never installs anything:** each
 binary must already be on your PATH. Downloading and executing a binary on your
 behalf is a supply-chain decision, and a dashboard button is not consent.
 
 No shell, ever: every spawn is an argv array with `shell: false`. The service
 list is a closed set in code, because an arbitrary-command supervisor reachable
-from the control panel is a remote shell. Children are killed on gateway exit —
+from the control panel is a remote shell. Children are killed on gateway exit:
 an orphan holding a port is worse than no supervisor, since the next start
 fails against a process you can't see.
 
@@ -439,21 +680,21 @@ indirect-injection vector, and a writable knowledge source is one an injected
 instruction can use to edit your notes.
 
 The Obsidian containment rule: every path is realpath-resolved and must remain
-inside the vault root. Screening for `..` isn't enough — a symlink inside the
+inside the vault root. Screening for `..` isn't enough. A symlink inside the
 vault pointing at `~/.ssh` contains no `..` at all and resolves straight out of
 the tree.
 
 ## Gamification
 
 Streaks, achievements and live savings, derived entirely from data the gateway
-already records — it stores nothing of its own, so it can't disagree with the
+already records. It stores nothing of its own, so it can't disagree with the
 ledger.
 
 Savings are a **counterfactual against a stated baseline**: the same tokens
 priced at the most expensive lane *with verified pricing*. Most dashboards show
 a savings figure without ever saying what they compared against, which makes
 the number unfalsifiable. Verified-price only, because a baseline built on an
-unchecked table has that table's error bars — unbounded in the flattering
+unchecked table has that table's error bars. Unbounded in the flattering
 direction. With no verified lane, savings report as unavailable rather than
 being computed against a guess.
 
@@ -531,26 +772,26 @@ variant), following the pattern in `anthropic.js` / `gemini.js`.
   (their SSE format already matches what the gateway emits); Anthropic and
   Gemini events are translated into OpenAI-shaped delta chunks so every
   client only ever needs to parse one format. Fallback works up through
-  connection-open time — a bad key or 5xx before any bytes stream moves to
+  connection-open time. A bad key or 5xx before any bytes stream moves to
   the next candidate with nothing sent to the client yet. Once tokens start
   flowing, the gateway commits to that provider (switching mid-stream isn't
   something a client could sanely consume anyway).
 - Real cost tracking per request, aggregated per provider and per calendar
-  month, logged to `data/usage.jsonl` — inspect via `GET /dashboard/usage`
+  month, logged to `data/usage.jsonl`. Inspect via `GET /dashboard/usage`
   or the control panel
-- Real per-provider budget caps enforced at routing time — a provider over
+- Real per-provider budget caps enforced at routing time. A provider over
   its monthly cap is skipped exactly like a tripped circuit breaker
 - Real runtime provider enable/disable, no restart needed
 - A real control panel: live circuit/budget state, a test console whose
   chain animation reflects an actual `attempts` array from a real router
   call (not a canned demo), and optional gateway-wide auth
 - Exact-match response caching with TTL + LRU eviction. Deliberately NOT
-  semantic/fuzzy matching — returning a "close enough" answer to a
+  semantic/fuzzy matching. Returning a "close enough" answer to a
   different question is a correctness bug, not a feature. Only
   byte-identical requests hit, and only deterministic ones
   (`temperature` unset or 0) are cached at all, since `temperature > 0`
   means the caller explicitly wants variation. The cache key excludes the
-  provider, so an answer from any backend is reusable — which is exactly
+  provider, so an answer from any backend is reusable, which is exactly
   what makes caching valuable in a *multi-provider* gateway. Responses
   carry `X-Tollpike-Cache: HIT|MISS|BYPASS`.
 - Retry-with-backoff on the *same* provider before falling through to the
@@ -563,17 +804,17 @@ variant), following the pattern in `anthropic.js` / `gemini.js`.
 - Real (if modest) compression: whitespace collapse, duplicate-line dedup,
   and conversation-history truncation. Typically saves 10-30% on tool-heavy
   sessions full of repeated log/output noise. This is NOT semantic
-  compression (no LLMLingua-style token pruning) — that's a real
+  compression (no LLMLingua-style token pruning). That's a real
   follow-up if you want it, behind the same `compressMessages()` interface.
 - MCP server for introspection (providers, usage, resilience state) via stdio
 
-- Tool-calling translation for Anthropic — OpenAI's `tools`/`tool_choice`/
+- Tool-calling translation for Anthropic: OpenAI's `tools`/`tool_choice`/
   `tool_calls` format is translated to and from Anthropic's `input_schema`/
   `tool_use`/`tool_result` shape, for both buffered and streaming calls.
   Handles the edge case where consecutive tool-result messages need
   merging to satisfy Anthropic's strict user/assistant alternation
   requirement.
-- Tool-calling translation for Gemini — OpenAI's format is translated to
+- Tool-calling translation for Gemini: OpenAI's format is translated to
   and from Gemini's `functionDeclarations`/`functionCall`/`functionResponse`
   shape, buffered and streaming. Gemini supplies no tool-call IDs, so the
   adapter maps OpenAI's `tool_call_id` back to the function *name* when
@@ -586,9 +827,9 @@ variant), following the pattern in `anthropic.js` / `gemini.js`.
 **Doesn't yet:**
 - A time-series view of cost/latency (the chart shows the last 20 raw
   requests, not cost-per-day or cost-per-hour aggregation)
-- Multi-user accounts — the gateway key is a single shared lock, not
+- Multi-user accounts. The gateway key is a single shared lock, not
   per-user auth with separate quotas
-- Real request-body validation beyond "model and messages are present" —
+- Real request-body validation beyond "model and messages are present":
   malformed `tools`/`tool_choice` will surface as a raw provider error,
   not a clean 400
 
@@ -605,7 +846,7 @@ Every module was exercised directly while building this, in three passes:
   and reports *why* each was skipped, rather than swallowing the reason
 - MCP server: verified it loads and registers handlers against the
   installed SDK version (the schema-registration API changed between SDK
-  versions — this uses the current one, `ListToolsRequestSchema` /
+  versions. This uses the current one, `ListToolsRequestSchema` /
   `CallToolRequestSchema` objects, not string method names)
 
 **Control panel + routing features:**
@@ -618,13 +859,13 @@ Every module was exercised directly while building this, in three passes:
 - Confirmed the full gateway-auth lifecycle: set key → unauthenticated
   request 401s → wrong key 401s → correct key 200s → panel static assets
   stay reachable unauthenticated → clearing the key requires the key
-  itself (by design — see Control Panel section above for the recovery path)
+  itself (by design: see Control Panel section above for the recovery path)
 - Confirmed the streaming endpoint fails cleanly with a structured JSON
   error (full per-provider attempt list) when no keys are configured,
   rather than hanging or crashing the process
 - Confirmed `avgLatencyMs` aggregation math against injected usage entries,
   both per-provider and overall-weighted
-- `panel.js` passes `node --check`; `index.html` div tags balance (25/25) —
+- `panel.js` passes `node --check`; `index.html` div tags balance (25/25):
   not a substitute for opening it in a browser, but catches syntax breaks
 
 **Anthropic tool-calling (this round's main addition):**
@@ -637,20 +878,20 @@ Every module was exercised directly while building this, in three passes:
   messages (e.g. answering two parallel tool calls) produced two
   consecutive `user`-role messages, which violates Anthropic's strict
   role-alternation requirement and would have caused a 400 from the real
-  API. Added a merge step and verified the fix against that exact scenario
-  — confirmed strictly-alternating roles afterward.
+  API. Added a merge step and verified the fix against that exact scenario,
+  confirming strictly-alternating roles afterward.
 - Verified the streaming tool-call path against a fake local Anthropic SSE
   server (real HTTP, real SSE framing, no live API key involved): the
   `content_block_start` → `input_json_delta` → `content_block_stop`
   sequence correctly produces OpenAI-style incremental `tool_calls` deltas
   whose `arguments` fragments concatenate to valid JSON
-- Verified the buffered tool-calling path the same way — confirmed both
+- Verified the buffered tool-calling path the same way. Confirmed both
   the outbound request shape (tools converted to `input_schema`) and the
   inbound response shape (`tool_use` converted to `tool_calls`,
   `finish_reason: "tool_calls"`) against a fake server
 - Caught and fixed a duplicate-import bug introduced while wiring the new
   translation module into `anthropic.js` (would have been a hard crash on
-  boot) — the fake-server test caught it immediately
+  boot). The fake-server test caught it immediately
 
 **Gemini tool-calling, caching, retry, latency routing (this round):**
 - Unit-tested all Gemini translation functions with no network: tools →
@@ -659,7 +900,7 @@ Every module was exercised directly while building this, in three passes:
   no call IDs of its own), consecutive-tool-result merging for role
   alternation, and non-JSON tool output wrapping instead of throwing
 - Verified the Gemini adapter end-to-end against a fake local server for
-  both buffered and streaming tool calls — confirmed the outbound
+  both buffered and streaming tool calls. Confirmed the outbound
   `functionDeclarations` shape and the inbound `functionCall` →
   OpenAI `tool_calls` conversion with `finish_reason: "tool_calls"`
 - Cache: unit-tested key determinism, that differing messages produce
@@ -667,7 +908,7 @@ Every module was exercised directly while building this, in three passes:
   (verified a 50ms entry is gone at 80ms), and LRU eviction at capacity
   (inserted 505 entries into a 500-cap store; confirmed the oldest was
   evicted and the newest retained)
-- Retry: verified against a fake server that 429s twice then succeeds —
+- Retry: verified against a fake server that 429s twice then succeeds:
   confirmed 3 total upstream requests, success on attempt 2, and ~805ms
   elapsed matching the expected 250ms + 500ms exponential backoff plus
   jitter. Separately confirmed a 401 is flagged non-retryable so it falls
@@ -691,7 +932,7 @@ Every module was exercised directly while building this, in three passes:
   is never scanned (it's the operator's own text)
 - Rate limiter: verified a capacity-3 bucket allows exactly 3 then 429s
   with a `Retry-After`, and that disabling it passes traffic through
-- Resilience: verified all six behaviors — 401 cools only the connection
+- Resilience: verified all six behaviors: 401 cools only the connection
   (provider stays up, other keys keep serving), 429 locks only the model
   (other models keep serving), 5xx trips the provider breaker at threshold,
   404 produces a 30-min model lockout, success clears every layer on that
@@ -706,15 +947,15 @@ Every module was exercised directly while building this, in three passes:
 Not yet tested: a live round-trip against a real provider, for either
 buffered or streaming calls (needs a real API key, which isn't something
 to put in a shared build environment). Before relying on this, run one
-real request per provider you intend to use — buffered and streamed — and
+real request per provider you intend to use, buffered and streamed, and
 confirm the response content and `usage` numbers look right. The adapters
 are straightforward but unverified against live traffic.
 
 **Deployment (Docker/systemd):** this sandbox has no Docker daemon, so the
 image was never actually built or run as a container. What *was* verified:
 `docker-compose.yml` parses as valid YAML, every path the `Dockerfile`
-`COPY`s exists in the repo, and `npm ci --omit=dev` — the exact command the
-image build runs — succeeds against the checked-in lockfile. The app's own
+`COPY`s exists in the repo, and `npm ci --omit=dev`, the exact command the
+image build runs, succeeds against the checked-in lockfile. The app's own
 boot sequence and `/health` response were confirmed separately outside a
 container. Run `npm run docker:up` yourself and confirm the container
 reaches "healthy" before depending on it; if it doesn't, `npm run
@@ -726,13 +967,13 @@ Four commitments that shaped every decision in here, worth stating because
 they're what you'd change if you disagreed:
 
 **1. Spend control is the primary feature.** Most gateways optimize for
-reach — most providers, most free tiers. Tollpike optimizes for knowing and
+reach: most providers, most free tiers. Tollpike optimizes for knowing and
 capping what you spend: per-provider monthly caps enforced at routing time,
 cross-provider response caching, and cost- and latency-aware routing.
 
 **2. Fail at the smallest scope.** A rate-limited model shouldn't disable a
 key. A rejected key shouldn't disable a provider. See the resilience
-section — this is the difference between losing one model for 60 seconds
+section. This is the difference between losing one model for 60 seconds
 and losing a third of your capacity.
 
 **3. Correctness over apparent capability.** The response cache is
@@ -768,7 +1009,7 @@ Resolution order, most specific first: per-provider → global (`"*"`) →
 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY` → direct.
 
 **If a proxy is configured but can't be used, the request fails.** It will
-not quietly fall back to a direct connection — silently bypassing a proxy
+not quietly fall back to a direct connection. Silently bypassing a proxy
 someone configured on purpose is the kind of "helpful" behavior that leaks
 traffic they expected to be routed. Verified by test: a dead proxy errors
 and the request never reaches the origin.
@@ -780,7 +1021,7 @@ See below.
 
 **TLS fingerprint impersonation.** Some gateways spoof JA3/JA4 handshakes so
 traffic looks like an official first-party CLI. That exists to defeat
-providers' own anti-abuse detection — making a third-party client
+providers' own anti-abuse detection. Making a third-party client
 indistinguishable from an authorized one is circumventing an access control,
 not protecting privacy, and it's what gets accounts terminated. That position
 hasn't changed.
@@ -788,12 +1029,12 @@ hasn't changed.
 What *was* added is **TLS handshake shaping** (`src/routing/tls.js`), and the
 distinction is the whole point:
 
-- It changes what this process's own ClientHello contains — cipher suite list
+- It changes what this process's own ClientHello contains. Cipher suite list
   and order, signature algorithms, curve preference, TLS version floor, ALPN
   order. That does change the JA3 fingerprint.
 - It **cannot** pass as a browser, and the profiles are named `chrome-like`,
   not `chrome`, for that reason. Real Chrome mimicry needs GREASE values,
-  exact TLS extension ordering and extension padding — none of which Node
+  exact TLS extension ordering and extension padding, none of which Node
   exposes, because they're OpenSSL internals. Tools that do this properly ship
   a patched TLS stack. A strict JA3 allowlist will still tell this apart.
 - It is `default` unless you change it, and the caveat is on the API response
@@ -811,7 +1052,7 @@ says so permanently. A gateway that MITMs its upstreams holds every key and
 every prompt in cleartext at a hop nobody audited.
 
 **Cookie / OAuth provider auth.** Still not built. "Drain subscription" is
-implemented as *operator-declared* coverage — you mark which lanes a plan you
+implemented as *operator-declared* coverage. You mark which lanes a plan you
 already pay for covers, and `drain-subscription` puts them first. Nothing in a
 provider's API reports "this key is included in a subscription you bought", so
 it cannot be detected, and scraping session cookies out of a first-party client
@@ -830,7 +1071,7 @@ clothes.
    buffered and one streamed request through it and confirm the content and
    the `usage` numbers.
 2. **Verify the free-tier limits.** All 13 declared tiers carry
-   `limitsVerified: false` — they're the vendors' published shapes, not
+   `limitsVerified: false`. They're the vendors' published shapes, not
    figures checked against a real account. A headroom number computed from a
    wrong limit is confidently wrong. Check the ones you actually route to.
 3. **Verify a cloud-agent driver.** All four carry `verified: false`. Vendor
@@ -839,12 +1080,12 @@ clothes.
 4. **Exercise the vector half of memory.** Keyword recall is tested; the
    Qdrant path has no live Qdrant behind it in CI, so `upsert` and `search`
    are verified only against their documented request shapes.
-5. Persistent/shared response cache (in-memory per process today — restarting
+5. Persistent/shared response cache (in-memory per process today: restarting
    drops it, and two containers wouldn't share it). Keys are already
    partitioned by caller, so this is safe to share once per-user auth lands.
 6. Per-user auth with separate quotas, replacing the single shared gateway key
 7. Real request-body validation for `tools`/`tool_choice` shape
-8. Log rotation for `data/usage.jsonl` — aggregates are incremental and
+8. Log rotation for `data/usage.jsonl`. Aggregates are incremental and
    in-memory, so the file only costs startup time, but it still grows forever
 9. More free providers. The quota machinery scales to any number of lanes;
    reaching a much larger pool is config work, and every added `baseURL` must
@@ -860,7 +1101,7 @@ position:
 - When a provider reports `usage`, those numbers are used directly.
 - When it doesn't, tokens are estimated at ~4 chars/token and the row is
   marked estimated (`~` in the panel, `usage_source: "estimated"` in the
-  response). Estimates are approximate — treat a cap as a strong guardrail,
+  response). Estimates are approximate. Treat a cap as a strong guardrail,
   not an accounting guarantee.
 - Streaming reads a usage frame when the provider volunteers one
   (Anthropic and Gemini always do); otherwise it estimates. Usage is

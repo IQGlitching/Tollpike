@@ -174,7 +174,7 @@ export const STRATEGIES = {
   "drain-subscription": {
     label: "Drain subscription",
     description:
-      "Burn the quota you already paid for — subscription-covered and local lanes before anything metered.",
+      "Burn the quota you already paid for: subscription-covered and local lanes before anything metered.",
     order: (pool, ctx) =>
       sortBy(pool, (p) => {
         const billing = billingOf(p, ctx.subscriptionProviders);
