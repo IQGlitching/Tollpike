@@ -1135,6 +1135,10 @@ function paintInstruments(s) {
   const lockedModels = Object.keys(s.resilience?.models || {}).length;
 
   const cache = s.cache || { hits: 0, misses: 0, entries: 0, hitRatePct: 0 };
+  // A hit rate needs a denominator. With nothing looked up, "0%" reads as a
+  // cache that is failing rather than one that has not been asked anything.
+  // The Cache page already showed a no-reading glyph here; this matches it.
+  const cacheLookups = (cache.hits || 0) + (cache.misses || 0);
   const quota = s.quota || {};
   const qt = quota.totals || {};
 
@@ -1202,9 +1206,11 @@ function paintInstruments(s) {
 
     <div class="icell">
       <div class="ik">RESPONSE CACHE</div>
-      <div class="iv">${esc(cache.hitRatePct)}<span class="u">%</span></div>
-      ${ringGauge(cache.hitRatePct, cache.hitRatePct >= 40 ? SCOPE.ok : cache.hitRatePct > 0 ? SCOPE.model : SCOPE.dim)}
-      <div class="is"><em>${esc(cache.entries)}</em> ENTRIES &#183; ${esc(cache.hits)} HIT / ${esc(cache.misses)} MISS</div>
+      <div class="iv">${cacheLookups ? esc(cache.hitRatePct) + "<span class=\"u\">%</span>" : "&mdash;"}</div>
+      ${ringGauge(cacheLookups ? cache.hitRatePct : 0, cache.hitRatePct >= 40 ? SCOPE.ok : cache.hitRatePct > 0 ? SCOPE.model : SCOPE.dim)}
+      <div class="is">${cacheLookups
+        ? `<em>${esc(cache.entries)}</em> ENTRIES &#183; ${esc(cache.hits)} HIT / ${esc(cache.misses)} MISS`
+        : "NOTHING LOOKED UP YET"}</div>
     </div>
 
     <div class="icell">
