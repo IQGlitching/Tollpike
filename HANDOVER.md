@@ -63,7 +63,7 @@ npm install
 cp .env.example .env      # add at least one provider key
 npm start                 # http://127.0.0.1:20128 · panel at /panel
 
-npm test                  # 518 tests, node:test, no test framework dep
+npm test                  # 563 tests, node:test, no test framework dep
 npm run test:watch
 npm run verify            # probes every configured provider baseURL for real
 npm run verify-pricing    # diffs config prices vs upstream; exit 1 on drift
@@ -120,7 +120,7 @@ POST /v1/chat/completions
         reserveSpend()    holds an estimate against the cap while in flight
         retry loop        2 retries, exponential backoff + jitter, transient only
         adapter call      providers/{openaiCompatible,anthropic,gemini}.js
-                          via providers/http.js — deadline + stall watchdog
+                          via providers/http.js, deadline + stall watchdog
         on failure → resilience.classifyAndRecord() picks which layer to trip
   ↓ cache store + usage log (storage/costTracker.js → data/usage.jsonl)
   ↓ recordFreeUsage     storage/quotaTracker.js   counts failures too
@@ -500,14 +500,14 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
 
 10. **All 13 free-tier declarations carry `limitsVerified: false`.** They are the
     vendors' published shapes, not figures confirmed against an account. A
-    headroom figure computed from a wrong limit is confidently wrong — and it is
+    headroom figure computed from a wrong limit is confidently wrong, and it is
     wrong in the *dangerous* direction if the vendor's real limit is lower,
     because the drain strategies will keep choosing a lane that is already
     exhausted. Verify the ones you actually route to; `config/providers.json` is
     the only place to change.
 11. **No two shipped entries are known to share a free-quota pool**, so
-    `dedupedAway` reports 0 today. The dedup machinery is real and tested —
-    `test/quota.test.mjs` declares a shared pool to exercise it — but if you add
+    `dedupedAway` reports 0 today. The dedup machinery is real and tested,
+    `test/quota.test.mjs` declares a shared pool to exercise it, but if you add
     an entry that fronts an allowance another entry already draws on, you must
     set the same `quotaPool` on both or the counter reports twice the quota you
     have. Seven pools are marked `poolConfidence: "assumed"`.
@@ -530,7 +530,7 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
     is not. `serviceHealth` assumes each exposes the `healthPath` declared in
     `SERVICE_DEFINITIONS`.
 16. **Notion is untested against a real workspace.** Block-text extraction covers
-    the documented text-bearing block types, and only top-level blocks —
+    the documented text-bearing block types, and only top-level blocks,
     `hasMore` says so rather than presenting a partial page as complete.
 17. **TLS profiles change the fingerprint but are not verified to *achieve*
     anything.** Nobody has checked what any provider does differently in
@@ -546,7 +546,7 @@ already uses: a `*Verified: false` stamp that a human clears after a real call.
     stateful, and its sessions do not survive a restart; a stale `sessionId`
     returns a 404 telling the client to reopen the stream.
 20. **`STRATEGY_IDS.length` is 19, not 18.** Nothing hardcodes a count. The
-    panel, the README table and `/api/panel/strategies` all read the registry —
+    panel, the README table and `/api/panel/strategies` all read the registry,
     so adding or removing a strategy leaves no stale number to chase.
 21. **The Obsidian symlink-escape test skips on Windows** without the privilege
     to create symlinks. The containment code is platform-independent (realpath on

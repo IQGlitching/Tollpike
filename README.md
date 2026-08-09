@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **518 tests** · **19 routing
+**46 providers** (6 local runtimes) · **563 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -223,6 +223,13 @@ curl -X POST http://127.0.0.1:20128/api/panel/routing/preview \
   -d '{"model":"auto/cheapest"}'
 ```
 
+Each hop reports `wouldBeContacted`, and a `skip` reason when it would not be:
+the answer runs through the same `skipReason` the router dispatches through,
+so a lane with an open breaker, a locked model, every key cooling down or
+spend past its cap shows up as skipped here rather than looking ready to
+serve. Asking does not consume the single probe a recovering provider is
+allowed per cooldown window.
+
 Two request-level flags: `"stream": true` for SSE, and `"cache": false` to
 bypass the response cache for one request.
 
@@ -281,6 +288,7 @@ TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
 ```bash
 tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
+tollpike mcp             # serve the 104 MCP tools over stdio
 tollpike where           # print resolved paths, ports and URLs
 tollpike --version
 tollpike --help
@@ -291,7 +299,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 518 tests
+npm test                 # 563 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -408,7 +416,12 @@ model  ⊂  connection  ⊂  provider
 - **404 (unknown model)** → lock that model for 30 min; retrying won't make
   it appear.
 - **5xx / network / 408** → count toward the *provider* circuit breaker;
-  opens after 3 failures for 30s, then half-open probe.
+  opens after 3 failures for 30s, then half-open probe. Exactly one request
+  is admitted per cooldown window, not one per caller: the whole point is
+  that a burst arriving the moment the window opens does not all pile onto a
+  provider still known to be down. If that probe never reports back, the
+  next window admits another, so a dropped request cannot bench a lane
+  permanently.
 - **Any other 4xx (400, 413, 422)** → the *request* was wrong, not the lane.
   The candidate still fails and the walk moves on, but nothing is recorded
   against the provider. Otherwise one caller sending malformed requests
@@ -620,7 +633,8 @@ The gateway exposes *itself*, so an agent can operate it.
 
 ### MCP: 104 tools across 31 scopes
 
-Over **stdio** (`node src/mcp/server.js`), **Streamable HTTP** (`POST /mcp`)
+Over **stdio** (`tollpike mcp`, or `node src/mcp/server.js` from a checkout),
+**Streamable HTTP** (`POST /mcp`)
 and **SSE** (`GET /mcp/sse`). Scopes: gateway, providers, models, routing,
 combos, completions, quota, budgets, cost, cache, resilience, compression,
 memory, notion, obsidian, guards, proxy, tls, auth, services, cloud_agents,
@@ -639,6 +653,25 @@ Two rules the surface is built on:
   it, could disable auth), and `diagnostics_environment` reports presence
   only. A test plants a canary key and scans every read-only tool's output
   for it.
+
+Wiring it into a client that spawns a subprocess:
+
+```json
+{
+  "mcpServers": {
+    "tollpike": {
+      "command": "tollpike",
+      "args": ["mcp"],
+      "env": { "MCP_READ_ONLY": "true" }
+    }
+  }
+}
+```
+
+Drop the `env` block to let the agent spend money and change settings. From a
+checkout, use `"command": "node"` with `"args": ["src/mcp/server.js"]` and set
+`cwd` to the checkout. On this transport stdout carries the JSON-RPC frames
+themselves, so every log the server writes goes to stderr.
 
 ### A2A: 6 skills over JSON-RPC 2.0
 
@@ -721,13 +754,13 @@ src/
     registry.js          # loads config/providers.json, tracks which have keys,
                           # enforces the per-provider model allowlist
     openaiCompatible.js  # ONE adapter covers OpenAI, DeepSeek, Groq, Together,
-                          # Fireworks, Mistral, Cerebras, OpenRouter, xAI —
+                          # Fireworks, Mistral, Cerebras, OpenRouter, xAI,
                           # they all speak the same wire format. Includes both
                           # buffered (callOpenAICompatible) and streaming
                           # (streamOpenAICompatible) variants.
     anthropic.js          # translates to/from the Messages API, buffered + streaming
     anthropicTranslate.js # pure functions: OpenAI tools/tool_calls <-> Anthropic
-                           # tool_use/tool_result shape. No I/O — unit-tested directly.
+                           # tool_use/tool_result shape. No I/O, so it is unit-tested directly.
     geminiTranslate.js    # same idea for Gemini's functionDeclarations/
                            # functionCall/functionResponse shape
     gemini.js             # translates to/from generateContent, buffered + streaming
@@ -747,7 +780,7 @@ src/
                              # calendar-month spend lookup (for budget caps)
     responseCache.js         # exact-match TTL+LRU cache, hit/miss stats
     settings.js              # runtime state: disabled providers, budget caps,
-                               # gateway API key — persisted to data/settings.json,
+                               # gateway API key, persisted to data/settings.json,
                                # editable live from the control panel
   security/
     crypto.js                 # AES-256-GCM at rest, scrypt KDF, timing-safe compare
@@ -761,7 +794,7 @@ src/
   server.js                    # Express app: REST API, SSE streaming, control
                                 # panel API, static panel assets
 public/
-  index.html, panel.js          # the control panel — vanilla HTML/CSS/JS,
+  index.html, panel.js          # the control panel, vanilla HTML/CSS/JS,
                                  # no build step, served directly by Express
 Dockerfile, docker-compose.yml   # multi-stage build, non-root user, healthcheck,
                                   # persistent named volume for data/
@@ -840,6 +873,25 @@ variant), following the pattern in `anthropic.js` / `gemini.js`.
 - Per-provider and overall average latency, tracked from real request
   timing (including full stream duration for streamed calls, not just
   time-to-first-byte) and surfaced in the control panel
+- Sampling parameters are carried through to the provider: `top_p`,
+  `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `logit_bias`
+  and `response_format` (JSON mode). Only the ones a caller actually sends
+  are forwarded, so a request that uses none of them produces exactly the
+  body it did before, which matters because strict providers reject
+  unknown fields. They are part of the cache key too, so a request asking
+  for JSON never receives a cached prose answer to the same question. The
+  inbound dialects map their own spellings: Anthropic's `stop_sequences`
+  and `top_p`, Ollama's `options.stop`, `options.top_p`, `options.seed`
+  and `format: "json"`.
+  **Two honest limits.** The Anthropic Messages API has no
+  `response_format`, `seed`, `logit_bias` or penalty parameters, so a
+  request that uses them and routes to the Anthropic adapter gets the
+  two that do exist (`top_p`, `stop_sequences`) and nothing invented for
+  the rest; the way to get JSON out of Claude is a tool with the schema
+  you want. And `n > 1` is rejected with a 400 rather than accepted,
+  because every response this gateway builds carries a single choice, so
+  honouring it halfway would return one completion for a request billed
+  as several.
 
 **Doesn't yet:**
 - A time-series view of cost/latency (the chart shows the last 20 raw
