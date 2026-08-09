@@ -1,6 +1,20 @@
-import { test, describe, before, beforeEach } from "node:test";
+import { test, describe, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import * as r from "../src/routing/resilience.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+// Before importing anything that reads settings. Without this the suite loads
+// the developer's real data/settings.json, and the preview tests below write
+// to it: that is how a run of `npm test` on this machine overwrote a live
+// gateway key with null. Every test file that can reach updateSettings needs
+// its own data directory.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-resilience-"));
+process.env.TOLLPIKE_DATA_DIR = tmp;
+
+const r = await import("../src/routing/resilience.js");
+
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 beforeEach(() => r.reset());
 

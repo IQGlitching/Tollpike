@@ -488,3 +488,86 @@ describe("rate limiter: identity is the authenticated caller", () => {
     assert.equal(rl.stats().trackedClients, 0, "a 401 must not cost a bucket");
   });
 });
+
+// An encrypted gatewayApiKey that cannot be decrypted this boot used to decode
+// to null, and null is indistinguishable from "no key was ever set". Two
+// consequences, both severe: auth served every request unauthenticated, and the
+// next settings write of any kind replaced the ciphertext with that null, so
+// the key was gone even to someone holding the correct secret.
+describe("settings: an unreadable gateway key fails closed and survives", () => {
+  const SECRET = "the-secret-it-was-written-with";
+  const KEY = "tpk_the_operators_real_key";
+  let dir;
+
+  let execFileSync;
+
+  // A child process per case, because the secret is read from the environment
+  // at decrypt time and these cases differ only by that variable.
+  const inDir = (env, body) =>
+    execFileSync(process.execPath, ["--input-type=module", "-e", body], {
+      env: { ...process.env, TOLLPIKE_DATA_DIR: dir, TOLLPIKE_ENV_FILE: "/nonexistent", ...env },
+      encoding: "utf8"
+    }).trim();
+
+  before(async () => {
+    ({ execFileSync } = await import("node:child_process"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-secret-"));
+    inDir({ TOLLPIKE_SECRET: SECRET }, `
+      const s = await import(${JSON.stringify(new URL("../src/storage/settings.js", import.meta.url).href)});
+      s.updateSettings({ gatewayApiKey: ${JSON.stringify(KEY)}, budgetCapsUsd: { groq: 5 } });
+      console.log("ok");
+    `);
+  });
+
+  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  test("it is stored encrypted, not in plain text", () => {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
+    assert.equal(raw.gatewayApiKey.encrypted, true);
+    assert.ok(!JSON.stringify(raw).includes(KEY), "the key must not appear in the file");
+  });
+
+  test("without the secret, requests are refused rather than served", () => {
+    const out = inDir({}, `
+      const auth = await import(${JSON.stringify(new URL("../src/middleware/auth.js", import.meta.url).href)});
+      let allowed = false, status = 0;
+      const res = { status(c) { status = c; return { json() {} }; }, json() {} };
+      auth.requireGatewayKey({ headers: {}, ip: "1.2.3.4" }, res, () => { allowed = true; });
+      console.log(JSON.stringify({ allowed, status }));
+    `);
+    const r = JSON.parse(out.split("\n").pop());
+    assert.equal(r.allowed, false, "an unreadable key must never read as 'no auth configured'");
+    assert.equal(r.status, 503);
+  });
+
+  test("an unrelated settings write does not destroy the ciphertext", () => {
+    inDir({}, `
+      const s = await import(${JSON.stringify(new URL("../src/storage/settings.js", import.meta.url).href)});
+      s.updateSettings({ budgetCapsUsd: { groq: 9 } });
+      console.log("written");
+    `);
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
+    assert.equal(raw.gatewayApiKey?.encrypted, true, "the ciphertext must be written back untouched");
+    assert.deepEqual(raw.budgetCapsUsd, { groq: 9 }, "the actual change must still persist");
+  });
+
+  test("the correct secret still recovers the key afterwards", () => {
+    const out = inDir({ TOLLPIKE_SECRET: SECRET }, `
+      const s = await import(${JSON.stringify(new URL("../src/storage/settings.js", import.meta.url).href)});
+      console.log(JSON.stringify(s.getSettings().gatewayApiKey));
+    `);
+    assert.equal(JSON.parse(out.split("\n").pop()), KEY);
+  });
+
+  test("explicitly setting the field still replaces it", () => {
+    // Preserving the old ciphertext must not become a trap that stops an
+    // operator clearing a key whose secret they have lost.
+    inDir({}, `
+      const s = await import(${JSON.stringify(new URL("../src/storage/settings.js", import.meta.url).href)});
+      s.updateSettings({ gatewayApiKey: null });
+      console.log("cleared");
+    `);
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8"));
+    assert.equal(raw.gatewayApiKey, null);
+  });
+});

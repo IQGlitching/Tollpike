@@ -435,3 +435,43 @@ describe("invariants: the routing preview previews the real decision", () => {
     }
   });
 });
+
+describe("invariants: the test suite never writes to a real data directory", () => {
+  // A run of `npm test` on a developer machine overwrote a live encrypted
+  // gateway key with null, because a test file that called updateSettings had
+  // not set TOLLPIKE_DATA_DIR and so loaded the operator's own settings.json.
+  // The product bugs that made it destructive are fixed and covered elsewhere;
+  // this stops the suite reaching real state in the first place.
+  const testDir = import.meta.dirname;
+  const files = fs.readdirSync(testDir).filter((f) => f.endsWith(".test.mjs"));
+
+  test("every file that can mutate persisted state isolates its data dir", () => {
+    const offenders = [];
+    for (const file of files) {
+      const source = fs.readFileSync(path.join(testDir, file), "utf-8");
+      const mutates = /\bupdateSettings\(|\brecordUsage\(|\brecordFreeUsage\(|\breserveSpend\(/.test(source);
+      if (!mutates) continue;
+      // Assigned before the first import that could read it, which is why the
+      // files doing this use a dynamic import for the module under test.
+      if (!source.includes("process.env.TOLLPIKE_DATA_DIR =")) offenders.push(file);
+    }
+    assert.deepEqual(offenders, [],
+      `these tests can write to the developer's real data dir: ${offenders.join(", ")}`);
+  });
+
+  test("no test file hardcodes the repo's own data directory", () => {
+    for (const file of files) {
+      // Code lines only. The comments in these files name the real path
+      // precisely because they are explaining this hazard, and matching them
+      // is how a structural assertion fails against correct code.
+      const code = fs.readFileSync(path.join(testDir, file), "utf-8")
+        .split("\n")
+        .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+        .join("\n");
+      assert.ok(
+        !/["'`]\.\.?\/data["'`]|data\/settings\.json/.test(code),
+        `${file} points at the real data directory`
+      );
+    }
+  });
+});

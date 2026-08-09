@@ -1,4 +1,4 @@
-import { getSettings } from "../storage/settings.js";
+import { getSettings, isKeyUnreadable } from "../storage/settings.js";
 import { safeCompare, fingerprint } from "../security/crypto.js";
 
 // No-op until you set a key from the control panel or settings.json.
@@ -10,6 +10,19 @@ export function requireGatewayKey(req, res, next) {
   const { gatewayApiKey } = getSettings();
 
   if (!gatewayApiKey) {
+    // "Cannot read the key" is not "no key was set". An undecryptable key
+    // decodes to null, which used to land here and open the gateway to
+    // everyone, silently, at exactly the moment its protection was needed.
+    // Refuse instead, and say what to do: the ciphertext is still on disk, so
+    // restoring TOLLPIKE_SECRET restores access, and the README documents
+    // clearing gatewayApiKey by hand for an operator who lost the secret.
+    if (isKeyUnreadable()) {
+      return res.status(503).json({
+        error:
+          "Gateway key cannot be decrypted. Set TOLLPIKE_SECRET to the value used when it was " +
+          "written, or clear gatewayApiKey in data/settings.json to disable auth deliberately."
+      });
+    }
     req.callerId = "anonymous";
     return next();
   }

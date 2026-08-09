@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **568 tests** · **19 routing
+**46 providers** (6 local runtimes) · **575 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -299,7 +299,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 568 tests
+npm test                 # 575 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -370,6 +370,15 @@ section of the control panel. The network posture is on by default.
   appearance of encryption with none of the protection is worse than
   plaintext you know about. The panel reports whether the key is *actually*
   encrypted on disk, not merely whether a secret is configured.
+  **If the secret goes missing, the gateway refuses rather than opens.** A key
+  that cannot be decrypted used to decode to `null`, which is exactly what "no
+  key was ever configured" looks like, so a gateway set up to require a key
+  served every request unauthenticated the moment `TOLLPIKE_SECRET` went
+  missing from a unit file or a container. It now answers `503` and says what
+  to do. The ciphertext is also preserved across unrelated settings writes:
+  that `null` used to be written back over it by the next provider toggle or
+  budget-cap change, destroying the key beyond recovery even for someone
+  holding the correct secret.
 - **Constant-time auth comparison.** The gateway key check uses
   `crypto.timingSafeEqual` over hashed inputs. (This was a real bug in an
   earlier version of this project: a plain `!==` returns as soon as it hits

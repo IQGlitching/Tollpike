@@ -133,10 +133,12 @@ function decodeStored(onDisk) {
       try {
         out[field] = decrypt(v);
       } catch (err) {
-        // Wrong or missing TOLLPIKE_SECRET. Failing closed here would lock
-        // the operator out permanently with no way back in; failing open
-        // would silently disable auth. Surface it loudly and treat the
-        // gateway as locked with an unusable key.
+        // Wrong or missing TOLLPIKE_SECRET. The value is unusable this boot,
+        // but it is NOT absent: see isKeyUnreadable, which auth consults so
+        // that "cannot read the key" refuses requests instead of reading as
+        // "no key configured" and serving everyone. encodeForDisk also has to
+        // put the original ciphertext back, or the first unrelated settings
+        // write replaces it with this null and the key is gone for good.
         console.error(`[settings] cannot decrypt ${field}: ${err.message}`);
         out[field] = null;
       }
@@ -145,13 +147,31 @@ function decodeStored(onDisk) {
   return out;
 }
 
-function encodeForDisk(value) {
+/**
+ * @param {string[]} explicit
+ *   Fields the caller actually named in its patch. Everything else is being
+ *   carried along by the read-modify-write in updateSettings, and a field
+ *   nobody asked to change must come out of here exactly as it went in.
+ */
+function encodeForDisk(value, { explicit = [] } = {}) {
   const out = { ...value };
+  const onDisk = readRaw();
   for (const field of ENCRYPTED_FIELDS) {
     const v = out[field];
     if (typeof v === "string" && v.length > 0 && isEncryptionAvailable()) {
       out[field] = encrypt(v);
+      continue;
     }
+    // A field that failed to decrypt this boot reads back as null, and
+    // updateSettings would then write that null straight over the ciphertext.
+    // One unrelated settings change, a provider toggle or a budget cap, was
+    // enough to destroy an encrypted gateway key permanently: not even the
+    // correct TOLLPIKE_SECRET could recover it afterwards, because the
+    // ciphertext itself was gone. Put it back untouched unless the caller
+    // explicitly asked to change this field.
+    const stored = onDisk[field];
+    const wasUnreadable = v == null && stored && typeof stored === "object" && stored.encrypted === true;
+    if (wasUnreadable && !explicit.includes(field)) out[field] = stored;
   }
   return out;
 }
@@ -181,8 +201,32 @@ export function getSettings() {
 
 export function updateSettings(patch) {
   const next = { ...getSettings(), ...patch };
-  writeAtomic(encodeForDisk(next));
+  writeAtomic(encodeForDisk(next, { explicit: Object.keys(patch || {}) }));
   return next;
+}
+
+/**
+ * A gateway key exists on disk but cannot be read this boot.
+ *
+ * Distinct from "no key configured", which is the ordinary open state. This
+ * one used to be indistinguishable from it: decryption failure produced null,
+ * and auth reads null as "nobody set a key", so a gateway that was configured
+ * to require a key served every request unauthenticated the moment
+ * TOLLPIKE_SECRET went missing. A systemd unit or container that lost the
+ * variable is all it takes.
+ *
+ * Only reached when the decoded key is falsy, so the decrypt attempt here does
+ * not run on the normal request path.
+ */
+export function isKeyUnreadable() {
+  const stored = readRaw().gatewayApiKey;
+  if (!(stored && typeof stored === "object" && stored.encrypted === true)) return false;
+  try {
+    decrypt(stored);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 // True only when the stored key is actually encrypted on disk, so the panel

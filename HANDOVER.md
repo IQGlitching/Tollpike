@@ -63,7 +63,7 @@ npm install
 cp .env.example .env      # add at least one provider key
 npm start                 # http://127.0.0.1:20128 · panel at /panel
 
-npm test                  # 568 tests, node:test, no test framework dep
+npm test                  # 575 tests, node:test, no test framework dep
 npm run test:watch
 npm run verify            # probes every configured provider baseURL for real
 npm run verify-pricing    # diffs config prices vs upstream; exit 1 on drift
