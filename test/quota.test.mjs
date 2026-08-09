@@ -33,6 +33,33 @@ describe("free quota: declarations", () => {
     assert.equal(quota.isFreeTier(registry.getProvider("anthropic")), false);
   });
 
+  test("a free tier declaring no limits is not a declaration", () => {
+    // The half-filled block you write first from the vendor's docs. It is not
+    // the legacy boolean, so the typeof guard passed it, every limit came out
+    // null, `declared` was empty and headroom fell back to 1.0: the lane
+    // advertised completely unused free capacity that nobody could count, and
+    // quota-headroom and drain-free would route to it preferentially.
+    const halfFilled = { id: "probe", freeTier: { pool: "probe-free", poolConfidence: "known" } };
+    assert.equal(quota.freeTierOf(halfFilled), null, "no limits means no declaration");
+    assert.equal(quota.isFreeTier(halfFilled), false);
+  });
+
+  test("undeclaredFreeTiers reports every shape freeTierOf refused", () => {
+    // Derived from freeTierOf rather than re-testing the shape, so the two
+    // cannot drift. They did: the limitless-object case was missing from this
+    // list while simultaneously reporting full headroom.
+    const undeclared = quota.undeclaredFreeTiers();
+    for (const p of registry.providers) {
+      if (!p.freeTier) continue;
+      const refused = quota.freeTierOf(p) === null;
+      assert.equal(
+        undeclared.includes(p.id),
+        refused,
+        `${p.id}: refused=${refused} but listed=${undeclared.includes(p.id)}`
+      );
+    }
+  });
+
   test("every shipped free tier is marked unverified", () => {
     // Same discipline as pricingVerified. A published limit nobody checked
     // against a real account must never present itself as confirmed.

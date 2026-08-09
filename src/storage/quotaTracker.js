@@ -125,6 +125,24 @@ export function freeTierOf(provider) {
   // information rather than discarding it.
   if (typeof tier !== "object") return null;
 
+  // The same reasoning applies to an object that declares no limits at all,
+  // which is the shape you get part-way through filling a block in from the
+  // vendor's docs: `{ "pool": "x-free", "poolConfidence": "known" }`. It is
+  // not the legacy boolean, so the check above let it through, and every
+  // limit then came out null, `declared` was empty, and headroom fell back to
+  // 1.0. That is the imaginary-headroom reading this function exists to
+  // prevent, arriving by a different door: the quota-headroom and drain-free
+  // strategies would rank the lane as completely unused free capacity, and
+  // undeclaredFreeTiers() would not warn because it also only tested the
+  // boolean. A quota with no limits cannot be counted, so it is not a
+  // declaration regardless of which shape it arrives in.
+  const hasAnyLimit =
+    tier.requestsPerMinute != null ||
+    tier.requestsPerDay != null ||
+    tier.tokensPerMinute != null ||
+    tier.tokensPerDay != null;
+  if (!hasAnyLimit) return null;
+
   return {
     pool: tier.pool || provider.id,
     poolConfidence: tier.poolConfidence === "known" ? "known" : "assumed",
@@ -151,7 +169,12 @@ export function isFreeTier(provider) {
 // Reported so the gap is visible and fixable — each is a `freeTier` block
 // waiting to be filled in from the vendor's docs.
 export function undeclaredFreeTiers() {
-  return providers.filter((p) => p.freeTier && typeof p.freeTier !== "object").map((p) => p.id);
+  // Anything the config says has a free tier that freeTierOf refused to treat
+  // as one. Deriving it from freeTierOf rather than re-testing the shape here
+  // is what keeps the two in step: the previous version tested only for the
+  // legacy boolean, so a limitless object was silently absent from this list
+  // while also reporting full headroom.
+  return providers.filter((p) => p.freeTier && freeTierOf(p) === null).map((p) => p.id);
 }
 
 // Everything sharing this pool. Used by the panel to explain *why* two
