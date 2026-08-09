@@ -19,7 +19,7 @@
 // error is unbounded in the flattering direction. If no verified lane exists,
 // savings are reported as unavailable rather than computed against a guess.
 
-import { getUsageSummary, getUsageSeries } from "./costTracker.js";
+import { getUsageSummary, getUsageSeries, TOKENS_PER_PRICE_UNIT } from "./costTracker.js";
 import { providers, priceFor, isPricingVerified } from "../providers/registry.js";
 import { quotaSnapshot } from "./quotaTracker.js";
 
@@ -62,7 +62,13 @@ export function savings() {
   // Tokens are counted, not split in:out, because usage.jsonl aggregates them.
   // Applying the blended rate to the total is therefore an approximation, and a
   // mildly conservative one at the 1:3 assumption used everywhere else.
-  const blendedPerToken = baseline.blended / 4 / 1_000_000;
+  // /(1 + OUTPUT_WEIGHT), not /4. `blended` is one input part plus
+  // OUTPUT_WEIGHT output parts, so averaging it back to a per-token rate
+  // divides by the number of parts. Written as a literal 4 it silently
+  // depended on OUTPUT_WEIGHT still being 3: changing the weight to 4 left
+  // the divisor behind and overstated the baseline, and therefore the
+  // reported savings, by 25%.
+  const blendedPerToken = baseline.blended / (1 + OUTPUT_WEIGHT) / TOKENS_PER_PRICE_UNIT;
   const baselineCost = usage.totalTokens * blendedPerToken;
   const actualCost = usage.totalCostUsd;
   const savedUsd = Math.max(0, baselineCost - actualCost);

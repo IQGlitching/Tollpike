@@ -282,3 +282,55 @@ describe("invariants: every non-streaming dialect shares one cache", () => {
     }
   });
 });
+
+describe("invariants: one fact, one derivation", () => {
+  // Four separate bugs in this codebase have had the same shape: two places
+  // deriving the same fact independently, and one of them drifting. freeTierOf
+  // and undeclaredFreeTiers each tested the tier shape; the guardrail policy
+  // was resolved per surface and one surface never resolved it; the cap and
+  // the ledger each computed the current month; and the savings baseline
+  // re-encoded OUTPUT_WEIGHT as a bare divisor. These pin the fixes.
+  test("the price unit is defined once and imported, never re-typed", () => {
+    const cost = src("storage/costTracker.js");
+    const gam = src("storage/gamification.js");
+    assert.match(cost, /export const TOKENS_PER_PRICE_UNIT/, "the divisor is exported from one place");
+    assert.ok(gam.includes("TOKENS_PER_PRICE_UNIT"), "gamification imports it rather than re-typing 1_000_000");
+    assert.ok(
+      !/blended\s*\/\s*\d/.test(gam),
+      "the blended rate must divide by (1 + OUTPUT_WEIGHT), not a literal that silently tracks it"
+    );
+  });
+
+  test("the month is derived from one UTC function", () => {
+    const cost = src("storage/costTracker.js");
+    assert.match(cost, /export function monthKeyOfDate/);
+    assert.ok(
+      !/now\.getFullYear\(\)|now\.getMonth\(\)/.test(cost),
+      "local-time month arithmetic disagrees with the UTC timestamps in the ledger"
+    );
+  });
+
+  test("no local-time date arithmetic anywhere in src", () => {
+    // getUTC* is the rule. A bare getFullYear/getMonth/getDate means some
+    // reading now depends on the machine's timezone, and the bug it causes is
+    // invisible in CI, which runs in UTC.
+    const root = path.join(import.meta.dirname, "..", "src");
+    const offenders = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (entry.name.endsWith(".js")) {
+          for (const [i, line] of fs.readFileSync(p, "utf-8").split("\n").entries()) {
+            if (line.trim().startsWith("//") || line.trim().startsWith("*")) continue;
+            if (/\.get(FullYear|Month|Date|Hours)\(\)/.test(line) && !/getUTC/.test(line)) {
+              offenders.push(`${entry.name}:${i + 1}`);
+            }
+          }
+        }
+      }
+    };
+    walk(root);
+    assert.deepEqual(offenders, [], `local-time date arithmetic found at: ${offenders.join(", ")}`);
+  });
+});

@@ -19,7 +19,10 @@ const RECENT_LIMIT = 20;
 // The field name now matches the unit, so config values can be copied
 // straight off a vendor pricing page with no conversion step — which is
 // the conversion that silently went missing.
-const TOKENS_PER_PRICE_UNIT = 1_000_000;
+// Prices are quoted per million tokens. Exported because gamification
+// builds its baseline from the same rates, and a second copy of this divisor
+// is a second thing to get wrong.
+export const TOKENS_PER_PRICE_UNIT = 1_000_000;
 
 // Aggregates are maintained incrementally in memory rather than recomputed
 // by re-reading the whole log on every call. The old version re-read and
