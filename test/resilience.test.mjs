@@ -94,3 +94,33 @@ describe("resilience: snapshot", () => {
     assert.ok(serialized.includes("groq#0"), "tracks by connection id, not key");
   });
 });
+
+describe("resilience: a caller's bad request is not a provider's fault", () => {
+  // The fall-through used to catch every status it had not already named, so a
+  // 400, 413 or 422 was booked as provider ill-health. Three malformed
+  // requests from one caller opened the breaker on a lane that was answering
+  // everyone else, and removed it for thirty seconds. The comment always said
+  // "5xx / network / timeout"; the code did not.
+  for (const [status, label] of [[400, "malformed"], [413, "payload too large"], [422, "unprocessable"]]) {
+    test(`${status} (${label}) does not count against provider health`, () => {
+      r.reset();
+      const layer = r.classifyAndRecord("p", "p#0", "m", { status });
+      assert.equal(layer, "request", "the caller's request is the smallest scope that explains this");
+      assert.equal(r.snapshot().providers.p?.failures ?? 0, 0, "provider health untouched");
+    });
+  }
+
+  test("three malformed requests leave a healthy breaker closed", () => {
+    r.reset();
+    for (let i = 0; i < 3; i++) r.classifyAndRecord("p", "p#0", "m", { status: 400 });
+    assert.equal(r.isProviderAvailable("p"), true, "a healthy lane must survive a caller sending rubbish");
+  });
+
+  test("408 and 5xx still open it, because those are the provider", () => {
+    for (const status of [408, 500, 502, 503]) {
+      r.reset();
+      for (let i = 0; i < 3; i++) r.classifyAndRecord("p", "p#0", "m", { status });
+      assert.equal(r.isProviderAvailable("p"), false, `${status} must still trip the breaker`);
+    }
+  });
+});

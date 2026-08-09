@@ -150,7 +150,24 @@ export function classifyAndRecord(providerId, keyId, model, error) {
     return "model";
   }
 
-  // 5xx / network / timeout -> the provider itself is unhealthy.
+  // Any other 4xx is the caller's request being wrong, not the provider being
+  // unhealthy: 400 malformed, 413 too large, 422 unprocessable. The comment
+  // below always said "5xx / network / timeout", but the fall-through caught
+  // every status it had not already named, so a caller sending requests a
+  // provider rejects could open the breaker on a lane that was answering
+  // everyone else perfectly. Three bad requests removed a healthy provider for
+  // thirty seconds, for every caller, and the sender saw only a generic
+  // failure. 408 is excluded because a request timeout genuinely is the
+  // provider being slow.
+  //
+  // Nothing is recorded here. The candidate still fails and the walk still
+  // moves on, so a lane that cannot serve this particular request is not
+  // retried pointlessly, but its health is left alone.
+  if (status >= 400 && status < 500 && status !== 408) {
+    return "request";
+  }
+
+  // 5xx / network / timeout / 408 -> the provider itself is unhealthy.
   recordProviderFailure(providerId);
   return "provider";
 }

@@ -21,6 +21,7 @@
 
 import { getSettings } from "../storage/settings.js";
 import { applyGuardrails } from "./guardrails.js";
+import { validateMessages } from "../inbound/validate.js";
 
 /**
  * Apply the operator's configured guardrails to messages about to be routed.
@@ -30,6 +31,19 @@ import { applyGuardrails } from "./guardrails.js";
  * "log and send it regardless".
  */
 export function guardRouted(messages) {
+  // Shape first, because a malformed array is not a security question and must
+  // never reach an adapter. validateMessages guards the four HTTP dialects but
+  // was never applied to MCP or A2A, so `messages: [null]` from an agent sailed
+  // through to the provider adapters, where toAnthropicMessages and
+  // toGeminiContents both throw on a null entry. The router catches that throw
+  // per candidate and hands it to classifyAndRecord, which sees no HTTP status
+  // and books it as a provider failure. Three such calls open the circuit
+  // breaker on a completely healthy lane and take it out of rotation for
+  // everyone. A caller's bad JSON must cost that caller a 400, never a
+  // provider's availability.
+  const shape = validateMessages(messages);
+  if (!shape.ok) throw Object.assign(new Error(shape.error), { status: 400 });
+
   const settings = getSettings();
   return applyGuardrails(messages, {
     redactPii: settings.redactPii === true,

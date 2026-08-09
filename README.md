@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **512 tests** · **19 routing
+**46 providers** (6 local runtimes) · **517 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -291,7 +291,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 512 tests
+npm test                 # 517 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -407,10 +407,14 @@ model  ⊂  connection  ⊂  provider
   Other keys for the same provider keep serving.
 - **404 (unknown model)** → lock that model for 30 min; retrying won't make
   it appear.
-- **5xx / network** → count toward the *provider* circuit breaker; opens
-  after 3 failures for 30s, then half-open probe.
+- **5xx / network / 408** → count toward the *provider* circuit breaker;
+  opens after 3 failures for 30s, then half-open probe.
+- **Any other 4xx (400, 413, 422)** → the *request* was wrong, not the lane.
+  The candidate still fails and the walk moves on, but nothing is recorded
+  against the provider. Otherwise one caller sending malformed requests
+  opens the breaker on a lane that is answering everyone else.
 
-A flat provider-only breaker treats all four identically and disables far
+A flat provider-only breaker treats all of these identically and disables far
 more capacity than necessary. Recovery is lazy (checked on access), so
 there are no background timers to leak.
 
