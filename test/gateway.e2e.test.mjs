@@ -148,6 +148,28 @@ describe("gateway: core endpoints", () => {
     const r = await api("/v1/chat/completions", { method: "POST", body: "{}" });
     assert.equal(r.status, 400);
   });
+
+  // Every response this gateway builds carries one choice, so accepting n > 1
+  // would return a single completion for a request billed as several. Saying
+  // no is the honest answer; a 200 that ignores the parameter is not.
+  test("rejects n > 1 rather than silently returning one choice", async () => {
+    const r = await api("/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "auto", messages: [{ role: "user", content: "hi" }], n: 3 })
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.json.error, /n > 1 is not supported/);
+  });
+
+  test("n omitted or n = 1 is not disturbed", async () => {
+    for (const n of [undefined, 1]) {
+      const body = { model: "definitely-not-a-real-model", messages: [{ role: "user", content: "hi" }] };
+      if (n !== undefined) body.n = n;
+      const r = await api("/v1/chat/completions", { method: "POST", body: JSON.stringify(body) });
+      // Whatever it fails on, it must not be the n check.
+      if (r.json?.error) assert.doesNotMatch(String(r.json.error), /n > 1/);
+    }
+  });
 });
 
 describe("gateway: routing modes", () => {
