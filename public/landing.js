@@ -21,6 +21,17 @@ if (TSPATIAL) document.documentElement.classList.add('spatial-t');
 /* shared state between the story modules and the spatial engine */
 const S = { routeP: (SPATIAL || TSPATIAL) ? 0 : 1, setResPhase: null };
 
+/* This page ships to two places. The gateway serves it at /panel/landing.html,
+   where /panel is a real running control panel. The public site serves it where
+   there is no gateway at all, so those links have to go somewhere that exists:
+   the install instructions. One file, correct in both contexts. */
+if (!location.pathname.startsWith('/panel')) {
+  for (const a of $$('a[href="/panel"]')) {
+    a.href = 'https://github.com/IQGlitching/Tollpike#install';
+    a.rel = 'noopener';
+  }
+}
+
 /* nav opacity on scroll */
 const nav = $('#nav');
 addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 24), { passive: true });

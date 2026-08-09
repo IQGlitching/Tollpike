@@ -1,0 +1,66 @@
+name: Deploy landing page
+
+# Publishes public/landing.html to GitHub Pages, which is free and served from
+# a CDN. The page is written as a single self-contained file plus one script and
+# one icon, so there is nothing to build: the job just assembles the three files
+# and hands them to Pages.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/landing.html"
+      - "public/landing.js"
+      - "public/favicon.svg"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time. Never cancel a run that is mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp public/landing.html _site/index.html
+          cp public/landing.js  _site/landing.js
+          cp public/favicon.svg _site/favicon.svg
+          # Pages runs Jekyll unless told not to, and Jekyll ignores files it
+          # does not recognise. This is a plain static site.
+          touch _site/.nojekyll
+          echo "Assembled:"; ls -la _site
+
+      - name: Check nothing but the page shipped
+        run: |
+          node -e '
+            const fs = require("fs");
+            const allowed = new Set(["index.html", "landing.js", "favicon.svg", ".nojekyll"]);
+            const extra = fs.readdirSync("_site").filter(f => !allowed.has(f));
+            if (extra.length) { console.error("Unexpected files in _site: " + extra.join(", ")); process.exit(1); }
+            const html = fs.readFileSync("_site/index.html", "utf8");
+            if (!html.includes("landing.js")) { console.error("index.html lost its script reference"); process.exit(1); }
+            console.log("Site is exactly the landing page.");
+          '
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
