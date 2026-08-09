@@ -23,7 +23,14 @@ const models = new Map(); // providerId::model -> { until, reason }
 const PROVIDER_FAILURE_THRESHOLD = 3;
 const PROVIDER_COOLDOWN_MS = 30_000;
 const CONNECTION_COOLDOWN_MS = 60_000;
-const MODEL_LOCKOUT_MS = 5 * 60_000;
+// The two durations that actually run, named rather than inline at the call
+// sites. The old default of 5 minutes was never used by either path, but it
+// was still what snapshot().policy advertised as "the model lockout rule",
+// so the panel and every MCP client reading that block were told a number
+// that describes nothing. A 429 benches a model for a minute; a 404 means the
+// model is not there and a retry will not conjure it, so it sits out longer.
+const MODEL_LOCKOUT_MS = 60_000;
+const MODEL_NOT_FOUND_LOCKOUT_MS = 30 * 60_000;
 
 // --- Layer 1: provider circuit breaker ----------------------------------
 
@@ -132,14 +139,14 @@ export function classifyAndRecord(providerId, keyId, model, error) {
   // 429 -> a quota/rate limit. Usually model- or key-scoped, not a
   // provider outage. Lock the model rather than nuking the whole provider.
   if (status === 429) {
-    lockOutModel(providerId, model, "rate_limit", 60_000);
+    lockOutModel(providerId, model, "rate_limit", MODEL_LOCKOUT_MS);
     return "model";
   }
 
   // 404 on a model path -> that model doesn't exist here. Long lockout,
   // since retrying won't make it appear.
   if (status === 404) {
-    lockOutModel(providerId, model, "not_found", 30 * 60_000);
+    lockOutModel(providerId, model, "not_found", MODEL_NOT_FOUND_LOCKOUT_MS);
     return "model";
   }
 
@@ -188,7 +195,8 @@ export function snapshot() {
       providerFailureThreshold: PROVIDER_FAILURE_THRESHOLD,
       providerCooldownSec: PROVIDER_COOLDOWN_MS / 1000,
       connectionCooldownSec: CONNECTION_COOLDOWN_MS / 1000,
-      modelLockoutSec: MODEL_LOCKOUT_MS / 1000
+      modelLockoutSec: MODEL_LOCKOUT_MS / 1000,
+      modelNotFoundLockoutSec: MODEL_NOT_FOUND_LOCKOUT_MS / 1000
     }
   };
 }

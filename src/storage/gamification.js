@@ -87,10 +87,15 @@ export function savings() {
     },
     // Repeated at the point of consumption. Someone reading a savings figure off
     // a dashboard will not have read the module comment.
+    // reportedPct is null until something has actually been measured, and
+    // interpolating that straight into prose produced "null% of recorded
+    // spend". Say what is true instead: there is nothing to qualify yet.
     caveat:
       "A counterfactual against the stated baseline, not money that was in an account. " +
-      `Accuracy also depends on token accounting: ${usage.confidence.reportedPct}% of recorded spend ` +
-      "is backed by the provider's own usage numbers, the rest is estimated."
+      (usage.confidence.reportedPct === null
+        ? "No spend has been recorded yet, so there is nothing to qualify."
+        : `Accuracy also depends on token accounting: ${usage.confidence.reportedPct}% of recorded spend ` +
+          "is backed by the provider's own usage numbers, the rest is estimated.")
   };
 }
 

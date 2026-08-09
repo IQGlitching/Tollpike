@@ -53,6 +53,12 @@ describe("resilience: recovery", () => {
 
   test("model lockout expires lazily", async () => {
     r.lockOutModel("p", "m", "test", 40);
+    // The advertised policy must be a rule that actually runs. modelLockoutSec
+    // was 300 while neither path used 300: a 429 benches for 60s and a 404 for
+    // 1800s, so the block described nothing, and MCP clients read it as fact.
+    const pol = r.snapshot().policy;
+    assert.equal(pol.modelLockoutSec, 60, "advertised model lockout must match the 429 path");
+    assert.equal(pol.modelNotFoundLockoutSec, 1800, "advertised 404 lockout must match the 404 path");
     assert.equal(r.isModelAvailable("p", "m"), false);
     await new Promise((res) => setTimeout(res, 70));
     assert.equal(r.isModelAvailable("p", "m"), true);

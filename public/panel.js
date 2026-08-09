@@ -3265,7 +3265,7 @@ function paintTrust(l) {
 // is still serving inside it.
 // =========================================================================
 
-const RES_POLICY = { providerFailureThreshold: 3, providerCooldownSec: 30, connectionCooldownSec: 60, modelLockoutSec: 300 };
+const RES_POLICY = { providerFailureThreshold: 3, providerCooldownSec: 30, connectionCooldownSec: 60, modelLockoutSec: 60, modelNotFoundLockoutSec: 1800 };
 const resPolicy = (s) => ({ ...RES_POLICY, ...(s.resilience?.policy || {}) });
 
 // Both maps are keyed "provider::rest". Splitting on the first separator
