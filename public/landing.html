@@ -240,12 +240,14 @@ section.band { border-bottom: 1px solid var(--line); position: relative; }
   overflow: hidden;
 }
 .netcanvas svg { display: block; width: 100%; height: auto; }
-/* On small screens the diagrams stay readable and pan inside their own
-   frame; the page body never scrolls horizontally. */
+/* On a phone the diagrams scale to fit the screen instead of panning inside
+   their frame. They were pinned to a 640px minimum and dragged left/right to
+   read, which is worse than a smaller diagram you can see whole at a glance.
+   The SVGs are viewBox-based, so width:100% shrinks the whole thing to the
+   viewport; the body still never scrolls horizontally. */
 @media (max-width: 720px) {
-  .netcanvas { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .netcanvas svg { min-width: 640px; }
-  .netcanvas .frame-note { position: sticky; left: 12px; display: inline-block; }
+  .netcanvas { overflow-x: hidden; }
+  .netcanvas svg { min-width: 0; }
 }
 /* grid items must never inherit the diagrams' intrinsic min width */
 .hero-grid > *, .pos-grid > *, .route-grid > *, .topo-wrap > *,
