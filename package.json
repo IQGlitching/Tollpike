@@ -53,11 +53,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openevent/Tollpike.git"
+    "url": "git+https://github.com/IQGlitching/Tollpike.git"
   },
-  "homepage": "https://github.com/openevent/Tollpike#readme",
+  "homepage": "https://github.com/IQGlitching/Tollpike#readme",
   "bugs": {
-    "url": "https://github.com/openevent/Tollpike/issues"
+    "url": "https://github.com/IQGlitching/Tollpike/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",

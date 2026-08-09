@@ -47,7 +47,7 @@ throws away your usage ledger, budget caps or provider toggles.
 ### Option C: Docker (recommended for anything long-running)
 
 ```bash
-git clone https://github.com/openevent/Tollpike.git
+git clone https://github.com/IQGlitching/Tollpike.git
 cd Tollpike
 cp .env.example .env    # optional, add at least one provider API key
 npm run docker:up       # builds the image and starts it, detached
@@ -64,7 +64,7 @@ host reboot or crash. Runs as a non-root user inside the container.
 ### Option D: from source
 
 ```bash
-git clone https://github.com/openevent/Tollpike.git
+git clone https://github.com/IQGlitching/Tollpike.git
 cd Tollpike
 npm install
 npm start
