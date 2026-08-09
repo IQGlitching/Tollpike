@@ -70,3 +70,66 @@ describe("responseCache: storage behavior", () => {
     assert.equal(s.hitRatePct, 50);
   });
 });
+
+// The cache key and the adapters read one shared list of sampling parameters.
+// If they ever drift, the symptom is a caller asking for JSON and being handed
+// a cached prose answer to the same question.
+describe("responseCache: sampling parameters are part of the key", () => {
+  const base = { model: "m", messages: [{ role: "user", content: "hi" }] };
+  const key = (extra) => cache.cacheKey({ ...base, ...extra }, "caller");
+
+  test("a request asking for JSON never collides with the plain one", () => {
+    assert.notEqual(key({}), key({ response_format: { type: "json_object" } }));
+    assert.notEqual(
+      key({ response_format: { type: "json_object" } }),
+      key({ response_format: { type: "json_schema", json_schema: { schema: {} } } })
+    );
+  });
+
+  test("every carried parameter changes the key", () => {
+    const cases = [
+      ["top_p", 0.5], ["stop", ["x"]], ["seed", 7],
+      ["frequency_penalty", 0.5], ["presence_penalty", 0.5], ["logit_bias", { 1: 1 }]
+    ];
+    for (const [param, value] of cases) {
+      assert.notEqual(key({}), key({ [param]: value }), `${param} must change the key`);
+    }
+  });
+
+  test("not sending a parameter is not a difference", () => {
+    // Otherwise every plain request would miss against every other plain one.
+    assert.equal(key({}), key({ seed: undefined, stop: null }));
+  });
+
+  test("the key list is the list the adapters forward", async () => {
+    const { SAMPLING_PARAMS } = await import("../src/routing/sampling.js");
+    for (const param of SAMPLING_PARAMS) {
+      const value = param === "response_format" ? { type: "json_object" } : "v";
+      assert.notEqual(key({}), key({ [param]: value }),
+        `${param} is forwarded to providers but absent from the cache key`);
+    }
+  });
+});
+
+describe("responseCache: the hit rate does not overstate its inputs", () => {
+  test("no lookups reads as no measurement, not as 0%", () => {
+    const s = cache.stats();
+    assert.equal(s.hits, 0);
+    assert.equal(s.misses, 0);
+    // "0% of lookups hit" describes a cache that is failing. Nothing has been
+    // asked of it. Callers render null as the no-reading glyph.
+    assert.equal(s.hitRatePct, null);
+  });
+
+  test("a real miss is a real reading of 0%", () => {
+    cache.get("nothing-is-stored-under-this-key");
+    assert.equal(cache.stats().hitRatePct, 0);
+  });
+
+  test("a hit moves it off zero", () => {
+    const key = cache.cacheKey({ model: "m", messages: [] }, "caller");
+    cache.set(key, { provider: "p", choices: [] });
+    cache.get(key);
+    assert.ok(cache.stats().hitRatePct > 0);
+  });
+});

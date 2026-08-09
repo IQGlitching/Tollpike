@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { pickSampling } from "../routing/sampling.js";
 
 // Exact-match response cache. Deliberately NOT semantic/fuzzy matching:
 // returning a "similar enough" answer to a different question is a
@@ -30,13 +31,20 @@ export function cacheKey(request, callerId = "anonymous") {
   // quotas — and on the day that lands, an unpartitioned cache would start
   // serving one user's response to another user's identical prompt. Cheaper
   // to bind it now than to remember later.
+  //
+  // The sampling parameters come from the same list the adapters forward, so
+  // anything that can change the answer changes the key. Keeping a second
+  // hand-written list here is what would let the two drift apart, and the
+  // symptom of that drift is a caller asking for JSON and being served a
+  // cached prose answer to the same question.
   const payload = JSON.stringify({
     caller: callerId,
     model: request.model,
     messages: request.messages,
     tools: request.tools,
     tool_choice: request.tool_choice,
-    max_tokens: request.max_tokens
+    max_tokens: request.max_tokens,
+    sampling: pickSampling(request)
   });
   return crypto.createHash("sha256").update(payload).digest("hex");
 }
@@ -82,7 +90,13 @@ export function stats() {
     entries: store.size,
     hits,
     misses,
-    hitRatePct: total > 0 ? Math.round((hits / total) * 100) : 0,
+    // null, not 0, when nothing has been looked up yet. Same call this file's
+    // sibling already makes for reportedPct: "0% of lookups hit" reads as a
+    // cache that is not working, when the truth is that no question has been
+    // asked of it. The panel guarded on the lookup count in two of its four
+    // widgets and the API and MCP surfaces never did, so the honest value
+    // belongs here rather than in each caller.
+    hitRatePct: total > 0 ? Math.round((hits / total) * 100) : null,
     // The two limits that decide what survives. Reported rather than left for
     // the panel to hard-code, so the ceiling on screen is the real ceiling.
     maxEntries: MAX_ENTRIES,
