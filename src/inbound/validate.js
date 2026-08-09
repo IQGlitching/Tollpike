@@ -27,6 +27,17 @@ export function validateMessages(messages) {
   if (!Array.isArray(messages)) {
     return { ok: false, error: "messages must be an array" };
   }
+  if (messages.length === 0) {
+    // Structure, not content, so it belongs here: there is no such thing as a
+    // completion with nothing to complete, and every vendor rejects it. Left
+    // permitted, an empty array walked the whole candidate list making real
+    // upstream calls that could never succeed, and the caller was told "All
+    // candidate providers failed or were unavailable" — the upstream blamed
+    // for a request that never had a chance. /v1/responses reached it most
+    // easily, since `input: null` converts to no messages and its route guard
+    // only rejects `undefined`.
+    return { ok: false, error: "messages must not be empty" };
+  }
   if (messages.length > MAX_MESSAGES) {
     return { ok: false, error: `messages must contain at most ${MAX_MESSAGES} entries` };
   }

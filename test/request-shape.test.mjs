@@ -56,8 +56,21 @@ describe("request shape: message elements are validated, not just the array", ()
     assert.match(validateMessages([{ role: "user" }, { role: "user" }, null]).error, /messages\[2\]/);
   });
 
+  test("an empty array is refused, because there is nothing to complete", () => {
+    // This used to assert ok:true, grouped with "unusual but valid content".
+    // It is not content, it is structure, and permitting it defeated the
+    // stated purpose of this module: to produce a 400 naming what was wrong
+    // before any work is done. An empty array instead walked the whole
+    // candidate list, made real upstream calls that could not succeed, and
+    // answered the caller with "All candidate providers failed or were
+    // unavailable" — blaming the upstream for a request that never had a
+    // chance. /v1/responses reached it with `input: null`, which converts to
+    // no messages and whose route guard only rejects `undefined`.
+    assert.equal(validateMessages([]).ok, false);
+    assert.match(validateMessages([]).error, /empty/);
+  });
+
   test("legitimate messages pass, including unusual but valid content", () => {
-    assert.equal(validateMessages([]).ok, true);
     assert.equal(validateMessages([{ role: "user", content: "hi" }]).ok, true);
     assert.equal(validateMessages([{ role: "tool", content: null }]).ok, true, "null content is legal");
     assert.equal(validateMessages([{ role: "user" }]).ok, true, "absent content is legal");

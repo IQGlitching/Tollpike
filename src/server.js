@@ -882,12 +882,11 @@ app.post("/api/panel/compression", (req, res) => {
 // lossy pass nobody should enable.
 app.post("/api/panel/compression/preview", (req, res) => {
   const { messages } = req.body || {};
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: "messages must be a non-empty array" });
-  }
-  if (messages.some((m) => !m || typeof m.role !== "string")) {
-    return res.status(400).json({ error: "each message needs a role" });
-  }
+  // Same validator the routed dialects use. This endpoint re-implemented the
+  // array, non-empty and has-a-role checks by hand, which is three chances for
+  // the preview to disagree with what routing would actually accept.
+  const shape = validateMessages(messages);
+  if (!shape.ok) return res.status(400).json({ error: shape.error });
   const result = compressMessagesWithStats(messages, getSettings().compression);
   res.json({ stats: result.stats, messages: result.messages });
 });
