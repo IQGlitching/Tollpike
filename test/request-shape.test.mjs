@@ -135,16 +135,36 @@ describe("request shape: async handler rejections cannot kill the process", () =
   });
 
   test("the wrapper is installed before any route is registered", () => {
-    const wrapAt = server.indexOf('for (const method of ["get", "post", "put", "delete", "patch", "all"])');
+    // Matched on the loop's shape rather than its exact contents: the list of
+    // methods is expected to grow, and pinning the literal made this fail
+    // against a correct change instead of a broken one.
+    const wrapAt = server.search(/for \(const method of \[[^\]]*"get"[^\]]*\]\)/);
     const firstRoute = server.indexOf('app.get("/health"');
     assert.ok(wrapAt !== -1 && firstRoute !== -1);
     assert.ok(wrapAt < firstRoute, "a route registered before the wrapper would be unprotected");
   });
 
+  test("middleware is wrapped too, not just routes", () => {
+    // Every middleware here is synchronous today, so this guards the next
+    // async one somebody adds to app.use rather than a live crash.
+    assert.match(
+      server,
+      /for \(const method of \[[^\]]*"use"[^\]]*\]\)/,
+      "an async app.use middleware would otherwise reinstate the whole-process crash"
+    );
+  });
+
+  test("a Router or sub-app is never wrapped", () => {
+    // Both are 3-argument functions, and wrapping one hides the stack/handle
+    // Express mounts through.
+    assert.match(server, /handler\.stack \|\| handler\.handle/);
+  });
+
   test("Express's settings getter (app.get with no handler) still works", () => {
     // app.get("etag") must not be treated as a route registration.
-    assert.ok(
-      /if \(handlers\.length === 0\) return register\(path\)/.test(server),
+    assert.match(
+      server,
+      /if \(handlers\.length === 0\) \{[\s\S]{0,200}?register\((?:first|path)\)/,
       "app.get('setting') is a getter, not a route"
     );
   });

@@ -188,6 +188,28 @@ describe("security invariants: stored credentials", () => {
     assert.ok(server.includes("keyEncryptedAtRest"),
       "panel state must distinguish 'a secret exists' from 'the key is encrypted'");
   });
+
+  test("no readable proxy surface returns a URL that could carry a password", () => {
+    // An authenticated proxy is configured as http://user:pass@host, so these
+    // are credentials like any other. Dispatch needs the real URL; nothing a
+    // caller can read does.
+    const proxy = src("routing/proxy.js");
+    assert.ok(proxy.includes("export function redactProxyUrl"),
+      "there must be one place a proxy URL is masked, not a mask per call site");
+    for (const field of ["configured: redactMap(", "categories: redactMap(", "envFallback: redactProxyUrl("]) {
+      assert.ok(proxy.includes(field), `proxyStatus must mask its ${field.split(":")[0]} field`);
+    }
+    assert.ok(proxy.includes("proxy: redactProxyUrl(url)"),
+      "proxyPlan must mask the resolved URL it reports");
+
+    // resolveProxy is the dispatch path and returns the URL intact, so any
+    // handler that hands its result to a caller has to mask it first.
+    const scopes = src("mcp/scopes.js");
+    assert.ok(!/\.\.\.resolveProxy\(/.test(scopes),
+      "an MCP tool must not spread resolveProxy() straight into its result");
+    assert.ok(scopes.includes("redactProxyUrl(url)"),
+      "the MCP resolve tool must mask the URL it returns");
+  });
 });
 
 describe("security invariants: every routing surface applies the guardrails", () => {
@@ -271,6 +293,22 @@ describe("invariants: every non-streaming dialect shares one cache", () => {
     assert.ok(stores >= 4, `expected at least 4 cache.set call sites, found ${stores}`);
   });
 
+  test("all four dialects resolve the key through the one helper", () => {
+    // /v1/chat/completions used to repeat `body.cache !== false &&
+    // isCacheable(...)` plus its own cacheKey() call inline. It was identical
+    // to the helper right up until it would not have been, which is the seam
+    // every "one fact, two derivations" bug in this codebase grew from.
+    // Assignments only. The bare name matches `function cacheFor(req, body`
+    // too, which is the same trap the test above already documents.
+    const callSites = (server.match(/= cacheFor\(req, body/g) || []).length;
+    assert.equal(callSites, 4, "each of the four dialects calls cacheFor exactly once");
+    // One derivation, inside the helper, and nowhere else.
+    assert.equal((server.match(/isCacheable\(/g) || []).length, 1,
+      "isCacheable belongs to cacheFor alone");
+    assert.equal((server.match(/cacheKey\(/g) || []).length, 1,
+      "cacheKey belongs to cacheFor alone");
+  });
+
   test("the cache key is built from the routed payload, not the wire format", () => {
     // Keying on the inbound body would give four private caches that never
     // share, which is the thing this is meant to avoid.
@@ -332,5 +370,46 @@ describe("invariants: one fact, one derivation", () => {
     };
     walk(root);
     assert.deepEqual(offenders, [], `local-time date arithmetic found at: ${offenders.join(", ")}`);
+  });
+});
+
+describe("invariants: the routing preview previews the real decision", () => {
+  // "Preview what a route resolves to before spending anything" is a promise
+  // in the README. The endpoint reported only hasKey and enabled, which are
+  // two of the six conditions skipReason applies, so a provider with an open
+  // breaker or spend over its cap previewed exactly like a healthy one.
+  const server = src("server.js");
+  const router = src("routing/router.js");
+  const panel = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "public", "panel.js"), "utf-8"
+  );
+
+  test("the preview resolves through the router's own skipReason", () => {
+    assert.ok(router.includes("export function skipReason"),
+      "the reason a lane is skipped must have one definition, in the router");
+    assert.ok(server.includes("skipReason(c.provider, settings, c.model"),
+      "the preview must ask the router rather than re-deriving the answer");
+  });
+
+  test("previewing does not consume a recovering provider's probe", () => {
+    // The routing gate claims a half-open probe slot as a side effect. Asking
+    // what would happen must not spend the one probe per cooldown window.
+    assert.ok(server.includes("claimProbe: false"),
+      "the preview must read breaker state without moving it");
+    assert.ok(router.includes("resilience.canServe(provider.id)"),
+      "claimProbe: false has to reach the read-only check");
+  });
+
+  test("every skip reason the router can return has a panel label", () => {
+    // The panel keeps short forms for a narrow column. A reason with no label
+    // silently renders as the generic "off", which is how the preview
+    // understated things in the first place.
+    const reasons = [...router.matchAll(/return "([^"]+)";/g)]
+      .map((m) => m[1])
+      .filter((r) => /disabled|API key|circuit|locked|budget|cooling/.test(r));
+    assert.ok(reasons.length >= 6, `expected the six skip reasons, found ${reasons.length}`);
+    for (const reason of reasons) {
+      assert.ok(panel.includes(`"${reason}"`), `panel has no label for skip reason: ${reason}`);
+    }
   });
 });

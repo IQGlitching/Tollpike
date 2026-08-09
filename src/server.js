@@ -10,7 +10,8 @@ import {
   routeChatCompletion,
   routeChatCompletionStream,
   publicAttempts,
-  buildCandidates
+  buildCandidates,
+  skipReason
 } from "./routing/router.js";
 import { compressMessagesWithStats } from "./compression/compress.js";
 import { providers, availableProviders, isPricingVerified, billingOf, applyCredential } from "./providers/registry.js";
@@ -53,6 +54,7 @@ import { applyGuardrails, guardCoverage } from "./security/guardrails.js";
 import * as rateLimiter from "./middleware/rateLimit.js";
 import { generateApiKey, isEncryptionAvailable } from "./security/crypto.js";
 import { proxyStatus, proxyPlan, clearAgentCache, validateProxyUrl } from "./routing/proxy.js";
+import { pickSampling } from "./routing/sampling.js";
 import { TLS_PROFILE_IDS, validateTlsProfile, tlsStatus } from "./routing/tls.js";
 import * as memory from "./memory/index.js";
 import { mountMcpHttp, mcpStatus } from "./mcp/server.js";
@@ -83,25 +85,40 @@ app.set("trust proxy", false); // req.ip must not be spoofable via X-Forwarded-F
 // forgotten. Patching the 20 call sites individually leaves the next route
 // someone adds as the one that brings the crash back — and the failure mode is
 // a total outage, not a bad response, so it is worth the indirection here.
-for (const method of ["get", "post", "put", "delete", "patch", "all"]) {
+// A 4-argument function is Express's error-handler signature, and a
+// non-function is a mount path or a sub-app. Neither is ours to wrap.
+const rejectionSafe = (handler) => {
+  if (typeof handler !== "function" || handler.length >= 4) return handler;
+  // A Router or a mounted sub-app is also a 3-argument function, but wrapping
+  // one hides the `stack`/`handle` that Express mounts and introspects
+  // through. There are none here today; this keeps it that way by accident
+  // rather than by luck.
+  if (handler.stack || handler.handle) return handler;
+  return function rejectionSafeHandler(req, res, next) {
+    try {
+      return Promise.resolve(handler(req, res, next)).catch(next);
+    } catch (err) {
+      return next(err); // a synchronous throw, same destination
+    }
+  };
+};
+
+// `use` is in this list for the same reason the routes are. Every middleware
+// is synchronous today, so nothing is currently crashing through it, but the
+// argument above is that this defence must not be one someone can forget: an
+// async middleware is an ordinary thing to add, and adding one to app.use
+// would quietly reinstate a whole-process crash. Note `use` also accepts a
+// bare function with no mount path, which is why the first argument is
+// wrapped rather than assumed to be a path.
+for (const method of ["get", "post", "put", "delete", "patch", "all", "use"]) {
   const register = app[method].bind(app);
-  app[method] = (path, ...handlers) => {
+  app[method] = (first, ...handlers) => {
     // `app.get("etag")` with no handler is Express's settings getter, not a
     // route registration. Passing it through untouched keeps that working.
-    if (handlers.length === 0) return register(path);
-    return register(
-      path,
-      ...handlers.map((handler) => {
-        if (typeof handler !== "function" || handler.length >= 4) return handler;
-        return function rejectionSafe(req, res, next) {
-          try {
-            return Promise.resolve(handler(req, res, next)).catch(next);
-          } catch (err) {
-            return next(err); // a synchronous throw, same destination
-          }
-        };
-      })
-    );
+    if (handlers.length === 0) {
+      return typeof first === "function" ? register(rejectionSafe(first)) : register(first);
+    }
+    return register(rejectionSafe(first), ...handlers.map(rejectionSafe));
   };
 }
 
@@ -284,7 +301,8 @@ async function prepare(payload, { sessionId = "default" } = {}) {
       temperature: payload.temperature,
       max_tokens: payload.max_tokens,
       tools: payload.tools,
-      tool_choice: payload.tool_choice
+      tool_choice: payload.tool_choice,
+      ...pickSampling(payload)
     }
   };
 }
@@ -319,6 +337,15 @@ app.post("/v1/chat/completions", async (req, res) => {
   // Element shapes, not just the container. `[null]` passed the check above.
   const shape = validateMessages(body.messages);
   if (!shape.ok) return res.status(400).json({ error: shape.error });
+
+  // Every response this gateway builds carries exactly one choice, so n > 1
+  // would return a single completion for a request billed as several. Saying
+  // so beats returning a 200 that quietly ignores the parameter.
+  if (body.n !== undefined && body.n !== null && body.n !== 1) {
+    return res.status(400).json({
+      error: "n > 1 is not supported: this gateway returns a single choice per request"
+    });
+  }
 
   const prepared = await prepare(body, { sessionId: sessionOf(req) });
   const { guard, compression } = prepared;
@@ -369,17 +396,16 @@ app.post("/v1/chat/completions", async (req, res) => {
 
   // Cache lookup happens after compression so the key reflects what
   // would actually be sent upstream, and only for deterministic requests.
-  const cacheEnabled = body.cache !== false && isCacheable(requestPayload);
-  const key = cacheEnabled ? cacheKey(requestPayload, req.callerId) : null;
+  // Same helper as the other three dialects: this route used to repeat the
+  // derivation inline, which is the seam every previous "one fact, two
+  // derivations" bug here grew from.
+  const { key, hit } = cacheFor(req, body, requestPayload);
 
-  if (key) {
-    const cached = cache.get(key);
-    if (cached) {
-      res.set("X-Tollpike-Request-Id", requestId);
-      res.set("X-Tollpike-Provider", cached.provider);
-      res.set("X-Tollpike-Cache", "HIT");
-      return res.json(cached);
-    }
+  if (hit) {
+    res.set("X-Tollpike-Request-Id", requestId);
+    res.set("X-Tollpike-Provider", hit.provider);
+    res.set("X-Tollpike-Cache", "HIT");
+    return res.json(hit);
   }
 
   try {
@@ -979,17 +1005,32 @@ app.post("/api/panel/routing/preview", (req, res) => {
     res.json({
       model,
       chainLength: chain.length,
-      chain: chain.map((c) => ({
-        provider: c.provider.id,
-        name: c.provider.name,
-        model: c.model,
-        tier: c.tier ?? 1,
-        strategy: c.strategy ?? "explicit",
-        billing: billingOf(c.provider, settings.subscriptionProviders),
-        hasKey: c.provider.available,
-        enabled: !settings.disabledProviders.includes(c.provider.id),
-        freeTier: isFreeTier(c.provider)
-      }))
+      chain: chain.map((c) => {
+        // The same function the router dispatches through, so the preview
+        // cannot drift from the decision it is previewing. It used to report
+        // only `hasKey` and `enabled`, which are two of the six conditions
+        // that actually skip a lane: a provider with an open breaker, a locked
+        // model, every key cooling down, or spend over its cap previewed
+        // exactly like a healthy one. "Preview before spending" has to include
+        // "this lane is over its cap", or it is not answering the question.
+        //
+        // claimProbe: false, because asking must not consume the single probe
+        // a recovering provider is allowed per cooldown window.
+        const skip = skipReason(c.provider, settings, c.model, { claimProbe: false });
+        return {
+          provider: c.provider.id,
+          name: c.provider.name,
+          model: c.model,
+          tier: c.tier ?? 1,
+          strategy: c.strategy ?? "explicit",
+          billing: billingOf(c.provider, settings.subscriptionProviders),
+          hasKey: c.provider.available,
+          enabled: !settings.disabledProviders.includes(c.provider.id),
+          freeTier: isFreeTier(c.provider),
+          skip,
+          wouldBeContacted: skip === null
+        };
+      })
     });
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message });

@@ -1134,7 +1134,7 @@ function paintInstruments(s) {
   const coolConn = Object.keys(s.resilience?.connections || {}).length;
   const lockedModels = Object.keys(s.resilience?.models || {}).length;
 
-  const cache = s.cache || { hits: 0, misses: 0, entries: 0, hitRatePct: 0 };
+  const cache = s.cache || { hits: 0, misses: 0, entries: 0, hitRatePct: null };
   // A hit rate needs a denominator. With nothing looked up, "0%" reads as a
   // cache that is failing rather than one that has not been asked anything.
   // The Cache page already showed a no-reading glyph here; this matches it.
@@ -1717,7 +1717,7 @@ function paintPulse(s) {
     { nm: "Router", st: "ok", txt: s.routing?.defaultCombo ? `combo/${s.routing.defaultCombo}` : "priority order", v: `${s.routing?.strategyCount ?? 0} strat`, vc: "" },
     { nm: "Lanes", st: active ? "ok" : "warn", txt: active ? "serving traffic" : "nothing can serve", v: `${active}/${s.providers.length}`, vc: active ? "ok" : "warn" },
     { nm: "Resilience", st: openN ? "bad" : coolConn || lockedModels ? "warn" : "ok", txt: openN ? `${openN} breaker open` : coolConn || lockedModels ? `${coolConn} key cooling · ${lockedModels} model locked` : "no lane isolated", v: openN ? `${openN} open` : "nominal", vc: openN ? "bad" : coolConn || lockedModels ? "warn" : "ok" },
-    { nm: "Cache", st: cache.entries ? "ok" : "", txt: `${cache.entries || 0} entries`, v: `${cache.hitRatePct || 0}%`, vc: "" },
+    { nm: "Cache", st: cache.entries ? "ok" : "", txt: `${cache.entries || 0} entries`, v: cache.hitRatePct == null ? "—" : `${cache.hitRatePct}%`, vc: "" },
     { nm: "Compression", st: comp.enabled ? "ok" : "", txt: comp.enabled ? `rtk ${comp.rtk?.enabled ? "on" : "off"} · caveman ${comp.caveman?.enabled ? comp.caveman.level : "off"}` : "off", v: comp.enabled ? "on" : "off", vc: comp.enabled ? "ok" : "" },
     { nm: "Guards", st: sec.redactPii || (sec.injectionMode && sec.injectionMode !== "off") ? "ok" : "warn", txt: `pii ${sec.redactPii ? "redacted" : "off"} · injection ${sec.injectionMode || "off"}`, v: sec.redactPii ? "armed" : "open", vc: sec.redactPii ? "ok" : "warn" },
     { nm: "Egress", st: "ok", txt: proxyLevels ? `${proxyLevels} proxy rule(s) · tls ${proxy.tls?.profile || "default"}` : "direct · tls not shaped", v: proxyLevels ? "proxied" : "direct", vc: "" },
@@ -4702,6 +4702,17 @@ function textRows(container, items, render) {
 // else on the page below the fold — the useful part is the head of the chain.
 const PREVIEW_ROWS = 14;
 
+// Short forms of the router's skip reasons, for the narrow column on a
+// preview row. The full sentence goes in the row's title attribute.
+const SKIP_LABEL = {
+  "disabled in control panel": "off",
+  "no API key configured": "no key",
+  "circuit open (provider)": "breaker",
+  "model locked out": "locked",
+  "monthly budget cap reached": "capped",
+  "all connections cooling down": "cooling"
+};
+
 function span(className, text) {
   const el = document.createElement("span");
   if (className) el.className = className;
@@ -4857,8 +4868,13 @@ PAGES.combos = (el) =>
         list.className = "pv-list";
         rows.forEach((c, i) => {
           const row = document.createElement("div");
-          row.className = `pv-row${c.hasKey && c.enabled ? "" : " off"}`;
+          // wouldBeContacted, not hasKey && enabled. Those are two of the six
+          // conditions the router skips on, so a lane with an open breaker,
+          // a locked model, every key cooling down or spend over its cap used
+          // to preview as ready to serve.
+          row.className = `pv-row${c.wouldBeContacted ? "" : " off"}`;
           row.setAttribute("data-prov", c.provider);
+          if (c.skip) row.title = c.skip;
           row.appendChild(span("pv-n", String(i + 1).padStart(2, "0")));
           const body = document.createElement("div");
           body.className = "pv-b";
@@ -4866,7 +4882,7 @@ PAGES.combos = (el) =>
           body.appendChild(span("pv-m", c.model));
           row.appendChild(body);
           row.appendChild(span("pv-t", `T${c.tier}`));
-          row.appendChild(span("pv-s", c.hasKey ? (c.enabled ? c.strategy : "off") : "no key"));
+          row.appendChild(span("pv-s", c.wouldBeContacted ? c.strategy : SKIP_LABEL[c.skip] || "off"));
           list.appendChild(row);
         });
         out.appendChild(list);
@@ -6005,7 +6021,7 @@ function railCells(s) {
       ["DEDUPED", String(qt.dedupedAway ?? 0), "", true],
       ["EXHAUSTED", String(qt.exhaustedPools ?? 0), qt.exhaustedPools ? "warn" : "ok"]];
     case "cache": return [
-      ["HIT RATE", `${cache.hitRatePct ?? 0}%`, (cache.hitRatePct ?? 0) >= 40 ? "ok" : ""],
+      ["HIT RATE", cache.hitRatePct == null ? "—" : `${cache.hitRatePct}%`, cache.hitRatePct >= 40 ? "ok" : ""],
       ["ENTRIES", String(cache.entries ?? 0)],
       ["HIT / MISS", `${cache.hits ?? 0} / ${cache.misses ?? 0}`, "", true]];
     case "compression": return [
