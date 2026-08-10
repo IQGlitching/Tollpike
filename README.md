@@ -783,12 +783,17 @@ src/
     router.js             # candidate building (auto/cheap/roundrobin/explicit),
                            # fallback walk, budget-cap + disabled-provider
                            # filtering, plus the streaming variant
+    strategies.js          # 19 strategies, each a total order over the pool
+    sampling.js            # the sampling params carried through to providers
     resilience.js          # 3 layers: model lockout ⊂ connection cooldown ⊂
                             # provider breaker, with failure classification
     proxy.js               # egress proxy resolution + URL validation; refuses
                             # to send direct if a configured proxy is unusable
+    tls.js                 # optional TLS handshake shaping (not impersonation)
   compression/
-    compress.js            # whitespace collapse, dedup, history truncation
+    compress.js            # base pass (whitespace, dedup, truncation) + layers
+    rtk.js                 # tabularises uniform JSON, collapses repeated runs
+    caveman.js             # lossy prose compression; never drops a negation
   storage/
     costTracker.js          # append-only JSONL usage log, aggregation, and
                              # calendar-month spend lookup (for budget caps)
@@ -796,15 +801,35 @@ src/
     settings.js              # runtime state: disabled providers, budget caps,
                                # gateway API key, persisted to data/settings.json,
                                # editable live from the control panel
+    quotaTracker.js          # free-tier quota accounting per provider, UTC windows
+    gamification.js          # savings vs a stated baseline, streaks, achievements
   security/
     crypto.js                 # AES-256-GCM at rest, scrypt KDF, timing-safe compare
     guardrails.js             # PII redaction + prompt-injection heuristics (pure)
+    policy.js                 # one place stored settings become a guardrail decision
+    credentialStore.js        # provider keys, presence reported never the value
   middleware/
     auth.js                   # optional Bearer-key gate, constant-time comparison
     rateLimit.js              # token-bucket limiter per client
+  inbound/
+    validate.js                # request-shape validation shared by every dialect
+    anthropicInbound.js        # /v1/messages   <-> internal (Anthropic Messages)
+    ollamaInbound.js           # /api/chat      <-> internal (Ollama)
+    responsesInbound.js        # /v1/responses  <-> internal (OpenAI Responses)
+  memory/
+    index.js, recall.js        # hybrid recall (keyword + vector), hydrate-time scan
+    store.js, vector.js        # SQLite-backed store + optional Qdrant vectors
+  knowledge/
+    obsidian.js, notion.js     # read-only vault + Notion; keys stay in headers
+  agents/
+    cloud.js                   # Codex / Cursor / Devin / Jules drivers (verified:false)
+  services/
+    embedded.js                # supervises sidecar binaries; shell:false, never installs
+  a2a/
+    server.js, skills.js, card.js  # 6 A2A skills over JSON-RPC + the agent card
   mcp/
-    server.js                  # exposes list_providers / get_usage_stats /
-                                # get_resilience_status as MCP tools (stdio transport)
+    server.js, scopes.js       # 104 tools across 31 scopes over stdio / HTTP / SSE;
+                                # read-only mode hides AND refuses mutations
   server.js                    # Express app: REST API, SSE streaming, control
                                 # panel API, static panel assets
 public/
@@ -1066,9 +1091,12 @@ rather than fake when no secret is set, because the appearance of
 protection is worse than known plaintext. Guardrails are documented as
 heuristics, not boundaries.
 
-**4. Small enough to audit.** Roughly 3,000 lines across 25 source files.
-You can read the whole routing path in one sitting and change it with
-confidence. That's a deliberate ceiling, not a stage it hasn't outgrown.
+**4. Small enough to audit.** About 12,000 lines across 52 source files:
+plain Node, no framework, no microservices, one concern per file. It has
+grown well past where the router started as memory, quota, compression, TLS,
+proxying, A2A, embedded services and the extra dialects were each added, so
+this is not a fixed line ceiling. The discipline is that there is no hidden
+machinery and the whole routing path still reads in one sitting.
 
 ## Proxy support
 
