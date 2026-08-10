@@ -12,6 +12,17 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // 96-bit IV is the GCM standard
 const KEY_LENGTH = 32;
 
+// Persist a random salt so a derived key is stable across restarts but still
+// unique per install (defeats precomputed/rainbow attacks). Shared by every
+// key derived from TOLLPIKE_SECRET, so the salt is written exactly once.
+function loadSalt() {
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+  if (fs.existsSync(saltPath)) return fs.readFileSync(saltPath);
+  const salt = crypto.randomBytes(16);
+  fs.writeFileSync(saltPath, salt, { mode: 0o600 });
+  return salt;
+}
+
 // The master passphrase comes from TOLLPIKE_SECRET. If it isn't set,
 // encryption is DISABLED rather than silently falling back to a hardcoded
 // key — a hardcoded key would give the appearance of encryption with none
@@ -20,21 +31,23 @@ function getMasterKey() {
   const secret = process.env.TOLLPIKE_SECRET;
   if (!secret) return null;
 
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-
-  // Persist a random salt so the derived key is stable across restarts
-  // but still unique per install (defeats precomputed/rainbow attacks).
-  let salt;
-  if (fs.existsSync(saltPath)) {
-    salt = fs.readFileSync(saltPath);
-  } else {
-    salt = crypto.randomBytes(16);
-    fs.writeFileSync(saltPath, salt, { mode: 0o600 });
-  }
-
   // scrypt is deliberately slow/memory-hard, so a stolen data/ directory
   // can't be brute-forced cheaply.
-  return crypto.scryptSync(secret, salt, KEY_LENGTH);
+  return crypto.scryptSync(secret, loadSalt(), KEY_LENGTH);
+}
+
+// A separate key for the usage-ledger hash chain. Derived from the same
+// secret and salt as the AES key above, but domain-separated through an HMAC
+// so the two can never coincide: reusing one key across two primitives is a
+// vulnerability in its own right. Null when no secret is set — the ledger
+// then falls back to an unkeyed SHA-256 chain, which detects accidental
+// corruption and naive edits but not a motivated local editor, and reports
+// `keyed: false` so nothing overclaims tamper-evidence it cannot provide.
+export function ledgerKey() {
+  const secret = process.env.TOLLPIKE_SECRET;
+  if (!secret) return null;
+  const master = crypto.scryptSync(secret, loadSalt(), KEY_LENGTH);
+  return crypto.createHmac("sha256", master).update("tollpike-ledger-chain-v1").digest();
 }
 
 export function isEncryptionAvailable() {

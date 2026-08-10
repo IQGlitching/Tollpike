@@ -380,6 +380,20 @@ function alerts(s) {
   if (s.corruptLogLines > 0) {
     out.push({ level: "warn", title: `${s.corruptLogLines} unreadable line(s) in the usage log`, body: "Skipped. Spend totals exclude them.", action: null });
   }
+  const li = s.ledgerIntegrity;
+  if (li && li.intact === false) {
+    const why = li.truncated
+      ? "recent entries were deleted (the ledger is shorter than its anchor records)"
+      : li.rolledBack
+      ? "the most recent entries were replaced with a different history"
+      : li.anchorOk === false
+      ? "the ledger anchor does not verify"
+      : `${li.brokenLinks} row(s) do not match their hash`;
+    const keyedNote = li.keyed
+      ? "The chain is keyed, so this is not a routine rewrite."
+      : "The chain is unkeyed (no TOLLPIKE_SECRET), so this detects accidental change only.";
+    out.push({ level: "bad", title: "Usage ledger fails its integrity check", body: `${why}. ${keyedNote} Spend and audit figures from before the break cannot be trusted.`, action: null });
+  }
   const openBreakers = s.providers.filter((p) => p.circuit === "OPEN");
   if (openBreakers.length) {
     out.push({ level: "warn", title: `${openBreakers.length} circuit breaker(s) open`, body: openBreakers.map((p) => p.name).join(", "), action: "resilience" });

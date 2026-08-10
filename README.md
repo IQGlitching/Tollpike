@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **575 tests** · **19 routing
+**46 providers** (6 local runtimes) · **593 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -289,6 +289,7 @@ TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
 tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
 tollpike mcp             # serve the 104 MCP tools over stdio
+tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike where           # print resolved paths, ports and URLs
 tollpike --version
 tollpike --help
@@ -299,7 +300,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 575 tests
+npm test                 # 593 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -756,6 +757,41 @@ unchecked table has that table's error bars. Unbounded in the flattering
 direction. With no verified lane, savings report as unavailable rather than
 being computed against a guess.
 
+## Ledger integrity
+
+`data/usage.jsonl` is append-only, and every row appended to it is sealed into
+a hash chain: each entry carries an HMAC over the previous entry's hash and its
+own canonical contents. Editing a figure, reordering rows, inserting a row or
+deleting one from the middle breaks the chain from that point, and the break is
+caught on read. A sidecar, `data/usage.head`, anchors the chain's length and
+final hash, so deleting only the most recent rows (a shorter chain still
+verifies against itself) is caught as well.
+
+The chain is keyed with a subkey derived from `TOLLPIKE_SECRET`, which lives in
+`~/.tollpike/.env`, outside the data directory. Forging a consistent history
+therefore takes more than write access to the ledger file, it takes the secret.
+With no secret set the chain falls back to a bare SHA-256: that still catches
+accidental corruption and naive edits, but it is forgeable by anyone who can
+rewrite the whole file. The verifier reports which mode is in force
+(`keyed: true` or `keyed: false`) rather than claiming a tamper-evidence it
+cannot provide without the key.
+
+This is integrity, not confidentiality. The rows stay plainly readable. What
+the chain protects is the answer to "has any of this changed since it was
+written", which is the question that makes holding the ledger next to a vendor
+invoice worth anything.
+
+Check it any time, without starting the gateway:
+
+```bash
+tollpike verify          # OK, or the rows that fail and why, exit 2 on tamper
+```
+
+The same verdict travels with the numbers wherever they surface. The MCP
+`usage.ledger` tool, the A2A cost skill and the panel's ledger export each carry
+an `integrity` block, and the control panel raises an alert the moment a chain
+stops verifying.
+
 ## Architecture
 
 ```
@@ -795,8 +831,8 @@ src/
     rtk.js                 # tabularises uniform JSON, collapses repeated runs
     caveman.js             # lossy prose compression; never drops a negation
   storage/
-    costTracker.js          # append-only JSONL usage log, aggregation, and
-                             # calendar-month spend lookup (for budget caps)
+    costTracker.js          # append-only JSONL usage log, tamper-evident hash
+                             # chain, aggregation, calendar-month spend lookup
     responseCache.js         # exact-match TTL+LRU cache, hit/miss stats
     settings.js              # runtime state: disabled providers, budget caps,
                                # gateway API key, persisted to data/settings.json,

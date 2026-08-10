@@ -29,6 +29,7 @@ USAGE
   tollpike [start]        start the gateway and the control panel
   tollpike mcp            serve the 104 MCP tools over stdio, for an MCP
                           client that spawns a subprocess
+  tollpike verify         check the usage ledger's tamper-evident hash chain
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
   tollpike --help         this text
@@ -73,6 +74,41 @@ env file      ${process.env.TOLLPIKE_ENV_FILE || path.join(HOME, ".env") + "  th
 control panel http://${host}:${port}/panel
 api base      http://${host}:${port}/v1`);
   process.exit(0);
+}
+
+// Verify the tamper-evident hash chain over the usage ledger without starting
+// the gateway. pathToFileURL, not a bare path: on Windows an absolute path is
+// not a valid ESM specifier and the loader throws (the recurring bug here).
+if (cmd === "verify") {
+  const { verifyLedger } = await import(
+    pathToFileURL(path.join(root, "src", "storage", "costTracker.js")).href
+  );
+  const r = verifyLedger();
+  const dir = process.env.TOLLPIKE_DATA_DIR;
+  console.log(`ledger        ${path.join(dir, "usage.jsonl")}`);
+  console.log(
+    `sealing       ${
+      r.keyed
+        ? "keyed (HMAC-SHA256 under TOLLPIKE_SECRET)"
+        : "unkeyed (SHA-256) — set TOLLPIKE_SECRET for tamper-evidence"
+    }`
+  );
+  console.log(`rows          ${r.total} total, ${r.chained} chained, ${r.unchained} pre-chain`);
+  if (r.chainOk === null) {
+    console.log("status        nothing sealed yet — the chain begins at the next recorded request");
+    process.exit(0);
+  }
+  if (r.intact) {
+    console.log("status        OK — every chained row verifies");
+    process.exit(0);
+  }
+  const problems = [];
+  if (r.brokenLinks > 0) problems.push(`${r.brokenLinks} row(s) altered (index ${r.brokenAt.join(", ")})`);
+  if (r.truncated) problems.push("recent rows deleted (ledger shorter than its anchor)");
+  if (r.rolledBack) problems.push("the tail was replaced with a different history");
+  if (r.anchorOk === false) problems.push("the anchor does not verify");
+  console.log(`status        TAMPERED — ${problems.join("; ")}`);
+  process.exit(2);
 }
 
 // The MCP stdio transport, reachable from an install. The README documented

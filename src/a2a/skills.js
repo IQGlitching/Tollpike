@@ -15,7 +15,7 @@
 import { routeChatCompletion, buildCandidates } from "../routing/router.js";
 import { guardRouted, blockedMessage } from "../security/policy.js";
 import { providers, billingOf, isPricingVerified, priceFor } from "../providers/registry.js";
-import { getUsageSummary, getLedger, getMonthlySpend } from "../storage/costTracker.js";
+import { getUsageSummary, getLedger, getMonthlySpend, verifyLedger } from "../storage/costTracker.js";
 import { quotaSnapshot } from "../storage/quotaTracker.js";
 import { getSettings } from "../storage/settings.js";
 import * as resilience from "../routing/resilience.js";
@@ -156,6 +156,9 @@ export const SKILLS = {
           totals: { costUsd: usage.totalCostUsd, requests: usage.totalRequests, tokens: usage.totalTokens },
           confidence: usage.confidence,
           ledger,
+          // Whether the rows behind these totals still verify against the hash
+          // chain — the same integrity signal the panel and MCP surface.
+          integrity: verifyLedger(),
           caps: Object.entries(settings.budgetCapsUsd || {}).map(([id, cap]) => ({
             provider: id,
             capUsd: cap,

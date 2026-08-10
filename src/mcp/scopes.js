@@ -44,7 +44,8 @@ import {
   getUsageSeries,
   getLedger,
   getMonthlySpend,
-  estimateRequestCost
+  estimateRequestCost,
+  verifyLedger
 } from "../storage/costTracker.js";
 import { quotaSnapshot, quotaStatus, resetQuota, isFreeTier } from "../storage/quotaTracker.js";
 import {
@@ -643,6 +644,10 @@ export const SCOPES = {
           const ledger = getLedger(/^\d{4}-\d{2}$/.test(month || "") ? month : undefined);
           return {
             ...ledger,
+            // Whether the rows behind these figures still verify against the
+            // hash chain. An invoice reconciliation is only worth as much as
+            // the ledger's integrity, so the check travels with the numbers.
+            integrity: verifyLedger(),
             rows: ledger.rows.map((r) => {
               const provider = getProvider(r.providerId);
               return { ...r, trustworthy: provider ? isPricingVerified(provider) : false };

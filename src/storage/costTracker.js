@@ -1,8 +1,21 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { dataDir } from "../paths.js";
+import { ledgerKey } from "../security/crypto.js";
 
 const logPath = path.join(dataDir, "usage.jsonl");
+// Sidecar anchoring the chain's head hash and length. The in-file chain alone
+// cannot catch a truncation — deleting the most recent rows leaves a shorter
+// chain that still verifies against itself. The anchor closes that: on load,
+// a file shorter than the anchor claims is a deletion. In keyed mode the
+// anchor carries its own HMAC tag, so an attacker who truncates the log
+// cannot also forge an anchor that agrees with the shorter file.
+const headPath = path.join(dataDir, "usage.head");
+
+// The fixed value the first row chains from. Public by design: the tamper
+// evidence comes from the key in chainHashWith(), not from hiding this.
+const GENESIS = "tollpike-ledger-v1";
 
 const RECENT_LIMIT = 20;
 
@@ -47,7 +60,13 @@ const agg = {
   reportedRequests: 0,
   estimatedRequests: 0,
   reportedCostUsd: 0,
-  estimatedCostUsd: 0
+  estimatedCostUsd: 0,
+  // Running head of the tamper-evident hash chain: the next appended row is
+  // sealed against this value. Recomputed from disk on load, advanced on each
+  // successful append. `integrity` is the load-time verification snapshot the
+  // panel polls; verifyLedger() re-reads disk for an authoritative check.
+  chainHead: GENESIS,
+  integrity: null
 };
 
 const MAX_HOURLY_BUCKETS = 24 * 60; // ~60 days
@@ -134,14 +153,206 @@ function applyEntry(e) {
   return true;
 }
 
+// ===========================================================================
+// Tamper-evident hash chain over the ledger.
+//
+// Each row carries `h`, an HMAC over the previous row's `h` and this row's
+// canonical payload. Editing, reordering, inserting or deleting any row
+// breaks the chain from that point, and the break is detected on read. Keyed
+// with a secret that lives outside the data directory, so forging a
+// consistent history requires more than write access to usage.jsonl.
+//
+// This is integrity, not confidentiality: the rows stay plainly readable. It
+// is also single-writer — two processes sharing one data dir would interleave
+// appends and corrupt the chain, which is why a second instance must set its
+// own TOLLPIKE_DATA_DIR (the same rule the rest of this module already
+// assumes for its in-memory aggregates).
+// ===========================================================================
+
+// Deterministic serialization of a row's payload, excluding the chain field
+// `h`. Keys are sorted so re-serializing a parsed row reproduces the exact
+// bytes hashed at write time regardless of key order on disk, and
+// undefined-valued fields are dropped to match JSON.stringify — so an absent
+// `estimated` hashes identically whether it was omitted or written.
+function canonicalPayload(row) {
+  const keys = Object.keys(row).filter((k) => k !== "h" && row[k] !== undefined).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + JSON.stringify(row[k])).join(",") + "}";
+}
+
+// h = MAC(prevHead + "\n" + canonicalPayload). HMAC-SHA256 keyed with
+// ledgerKey() when a secret is set; a bare SHA-256 otherwise. The unkeyed
+// form still chains, so a naive edit is caught at the next row, but it is
+// forgeable by anyone who can rewrite the whole tail — which is why the
+// report says `keyed: false` and nothing claims tamper-evidence without it.
+function chainHashWith(key, prevHead, canon) {
+  const input = prevHead + "\n" + canon;
+  return key
+    ? crypto.createHmac("sha256", key).update(input).digest("hex")
+    : crypto.createHash("sha256").update(input).digest("hex");
+}
+
+// Constant-time hex compare. This is MAC verification — the stored value is
+// attacker-controlled and the key is secret — so it gets the same treatment
+// as the gateway-key check. Length or encoding mismatch is a plain false.
+function hexEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) {
+    return false;
+  }
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+function anchorTag(key, count, head) {
+  return crypto.createHmac("sha256", key).update(`${count}:${head}`).digest("hex");
+}
+
+function readAnchor() {
+  try {
+    if (!fs.existsSync(headPath)) return null;
+    const a = JSON.parse(fs.readFileSync(headPath, "utf-8"));
+    if (!a || typeof a.count !== "number" || typeof a.head !== "string") return null;
+    return a;
+  } catch {
+    return null;
+  }
+}
+
+// Written after the row it anchors, never before, so a crash between the two
+// leaves the anchor lagging by a row — a state verification reads as a pending
+// append, never as a truncation. Best-effort: a failed anchor write must not
+// lose the request that triggered it.
+function writeAnchor(count, head) {
+  const key = ledgerKey();
+  const anchor = { v: 1, count, head };
+  if (key) anchor.tag = anchorTag(key, count, head);
+  try {
+    const tmp = headPath + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(anchor), { mode: 0o600 });
+    fs.renameSync(tmp, headPath);
+  } catch (err) {
+    console.error(`[costTracker] failed to write usage head anchor: ${err.message}`);
+  }
+}
+
+// Walk the raw ledger text and verify every chained row. Rows with no `h`
+// that precede the first chained row are the pre-chain prefix (a ledger that
+// predates this feature) and are reported as `unchained`, not as damage. A
+// no-h row appearing *after* the chain has begun is a break — a chained row
+// was removed or replaced. `anchorCount` lets the walk capture the running
+// head at exactly that length for the truncation check.
+function walkChain(rawText, anchorCount) {
+  const key = ledgerKey();
+  let head = GENESIS;
+  let chained = 0;
+  let unchained = 0;
+  let brokenLinks = 0;
+  let started = false;
+  const brokenAt = [];
+  let headAtAnchor = anchorCount === 0 ? GENESIS : null;
+
+  for (const line of rawText.split("\n")) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue; // unparsable lines are counted by the accounting loader, not here
+    }
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+
+    const idx = chained + unchained;
+    if (typeof row.h !== "string") {
+      if (started) {
+        brokenLinks += 1;
+        brokenAt.push(idx);
+      } else {
+        unchained += 1;
+      }
+      continue;
+    }
+
+    started = true;
+    const expected = chainHashWith(key, head, canonicalPayload(row));
+    if (!hexEqual(expected, row.h)) {
+      brokenLinks += 1;
+      brokenAt.push(idx);
+    }
+    // Continue from the stored head, not the recomputed one, so a single
+    // altered row flags only itself (and the row after it) rather than
+    // cascading a break through the entire remaining chain.
+    head = row.h;
+    chained += 1;
+    if (chained === anchorCount) headAtAnchor = head;
+  }
+
+  return { keyed: Boolean(key), head, chained, unchained, brokenLinks, brokenAt, headAtAnchor };
+}
+
+// The single verification derivation, used by both the load-time snapshot and
+// the on-demand verifyLedger(). chainOk is null (not true) when nothing is
+// chained yet, matching the reportedPct precedent: a fresh ledger has nothing
+// to vouch for, and answering "intact" would claim more than the inputs hold.
+function buildReport(rawText) {
+  const anchor = readAnchor();
+  const anchorCount = anchor ? anchor.count : -1; // -1 never equals a real length
+  const walk = walkChain(rawText, anchorCount);
+  const key = ledgerKey();
+
+  let anchored = false;
+  let anchorOk = null;
+  let truncated = false;
+  let rolledBack = false;
+  if (anchor) {
+    anchored = true;
+    if (key) anchorOk = hexEqual(anchorTag(key, anchor.count, anchor.head), anchor.tag || "");
+    if (anchorOk !== false) {
+      if (walk.chained < anchor.count) {
+        truncated = true; // recent rows deleted
+      } else if (walk.headAtAnchor !== null && walk.headAtAnchor !== anchor.head) {
+        rolledBack = true; // tail replaced with a different, self-consistent chain
+      }
+      // chained > anchor.count with a matching head at that point is the
+      // benign lagging-anchor case above, not tamper.
+    }
+  }
+
+  const tamper = walk.brokenLinks > 0 || truncated || rolledBack || anchorOk === false;
+  return {
+    keyed: walk.keyed,
+    algo: walk.keyed ? "hmac-sha256" : "sha256",
+    total: walk.chained + walk.unchained,
+    chained: walk.chained,
+    unchained: walk.unchained,
+    brokenLinks: walk.brokenLinks,
+    brokenAt: walk.brokenAt,
+    anchored,
+    anchorOk,
+    truncated,
+    rolledBack,
+    chainOk: walk.chained === 0 ? null : !tamper,
+    intact: !tamper,
+    head: walk.head
+  };
+}
+
+function finalizeIntegrity(rawText) {
+  const report = buildReport(rawText);
+  agg.chainHead = report.head;
+  agg.integrity = report;
+}
+
 function load() {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   if (!fs.existsSync(logPath)) {
     fs.writeFileSync(logPath, "", { mode: 0o600 });
+    finalizeIntegrity("");
     return;
   }
-  const lines = fs.readFileSync(logPath, "utf-8").split("\n");
-  for (const line of lines) {
+  const raw = fs.readFileSync(logPath, "utf-8");
+  for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     let parsed;
     try {
@@ -152,6 +363,9 @@ function load() {
     }
     if (!applyEntry(parsed)) agg.corruptLines += 1;
   }
+  // Verify the chain from the same bytes we just accounted, so the panel gets
+  // an integrity reading with no second read on the boot path.
+  finalizeIntegrity(raw);
 }
 
 load();
@@ -182,13 +396,41 @@ export function recordUsage({ providerId, model, usage, latencyMs, costPer1mToke
     estimated: usage?.estimated === true ? true : undefined
   };
 
+  // Seal the row into the hash chain before writing. `h` commits to the
+  // previous head and this row's canonical payload. It is written to disk but
+  // kept out of the in-memory accounting entry, which has no use for it.
+  const h = chainHashWith(ledgerKey(), agg.chainHead, canonicalPayload(entry));
+
+  let appended = false;
   try {
-    fs.appendFileSync(logPath, JSON.stringify(entry) + "\n");
+    fs.appendFileSync(logPath, JSON.stringify({ ...entry, h }) + "\n");
+    appended = true;
   } catch (err) {
     // Losing durability must not lose the request. Keep the in-memory
     // accounting correct and surface the problem via stats().
     agg.corruptLines += 1;
     console.error(`[costTracker] failed to append usage log: ${err.message}`);
+  }
+
+  if (appended) {
+    // Advance the chain only once the row is on disk, so the in-memory head
+    // never runs ahead of what a reader would find, and anchor the new head
+    // after the row (never before — see writeAnchor). A row that failed to
+    // write is deliberately not chained: the next row seals against the last
+    // durable head, and verification treats the gap as a lagging anchor.
+    agg.chainHead = h;
+    if (agg.integrity) {
+      agg.integrity.chained += 1;
+      agg.integrity.total += 1;
+      agg.integrity.head = h;
+      if (agg.integrity.chainOk === null) agg.integrity.chainOk = agg.integrity.brokenLinks === 0;
+      agg.integrity.intact =
+        agg.integrity.brokenLinks === 0 &&
+        !agg.integrity.truncated &&
+        !agg.integrity.rolledBack &&
+        agg.integrity.anchorOk !== false;
+      writeAnchor(agg.integrity.chained, h);
+    }
   }
 
   applyEntry(entry);
@@ -217,6 +459,13 @@ export function getUsageSummary() {
     byProvider,
     recent: [...agg.recent].reverse(),
     corruptLines: agg.corruptLines,
+    // Load-time snapshot of the hash-chain verification, cheap for the panel
+    // to poll on every refresh. verifyLedger() re-reads disk for a check that
+    // also catches a file edited while the process is running. Copied out so a
+    // caller cannot mutate the aggregate through the reference.
+    integrity: agg.integrity
+      ? { ...agg.integrity, brokenAt: [...agg.integrity.brokenAt] }
+      : null,
     confidence: {
       reportedRequests: agg.reportedRequests,
       estimatedRequests: agg.estimatedRequests,
@@ -238,6 +487,27 @@ export function getUsageSummary() {
             : null
     }
   };
+}
+
+// Authoritative integrity check: re-reads usage.jsonl and the anchor from
+// disk and verifies the whole chain, so an edit made after boot is caught
+// (the load-time snapshot in getUsageSummary would not see it). Read-only —
+// no writes, no anchor update — so it is safe on the MCP read-only surface.
+//
+// Report fields:
+//   keyed        HMAC-keyed with TOLLPIKE_SECRET (true) or a bare SHA-256 (false)
+//   algo         "hmac-sha256" or "sha256"
+//   chained      rows sealed into the chain
+//   unchained    pre-chain rows that predate this feature (not damage)
+//   brokenLinks  chained rows whose hash does not match; brokenAt lists indices
+//   truncated    fewer chained rows than the anchor recorded (recent rows deleted)
+//   rolledBack   the tail was replaced with a different, self-consistent chain
+//   anchorOk     anchor HMAC verified (keyed only; null when unkeyed or absent)
+//   chainOk      true/false, or null when nothing is chained yet
+//   intact       chainOk with no truncation, rollback or forged anchor
+export function verifyLedger() {
+  const raw = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf-8") : "";
+  return buildReport(raw);
 }
 
 // Time series for the chart. `bucket` is "hour" or "day"; returns oldest
@@ -332,6 +602,8 @@ export function reload() {
   agg.estimatedRequests = 0;
   agg.reportedCostUsd = 0;
   agg.estimatedCostUsd = 0;
+  agg.chainHead = GENESIS;
+  agg.integrity = null;
   reserved.clear();
   load();
 }

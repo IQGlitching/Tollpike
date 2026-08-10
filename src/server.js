@@ -30,7 +30,7 @@ import {
   comboName
 } from "./routing/strategies.js";
 import { quotaSnapshot, resetQuota, isFreeTier } from "./storage/quotaTracker.js";
-import { getUsageSummary, getMonthlySpend, getUsageSeries, getLedger } from "./storage/costTracker.js";
+import { getUsageSummary, getMonthlySpend, getUsageSeries, getLedger, verifyLedger } from "./storage/costTracker.js";
 import * as resilience from "./routing/resilience.js";
 import {
   getSettings,
@@ -731,6 +731,9 @@ app.get("/api/panel/state", (req, res) => {
     },
     recentRequests: usage.recent,
     corruptLogLines: usage.corruptLines,
+    // Load-time hash-chain verification of the usage ledger. Passive: the
+    // ledger page runs an authoritative fresh check via /api/panel/ledger.
+    ledgerIntegrity: usage.integrity,
     cache: cache.stats(),
     // Provider breaker state travels too: a failure count on its own is
     // noise, but next to the threshold it is "one more 5xx opens this lane".
@@ -853,6 +856,10 @@ app.get("/api/panel/ledger", (req, res) => {
   const enriched = {
     ...ledger,
     generatedAt: new Date().toISOString(),
+    // Authoritative, fresh-from-disk chain verification. Reconciling against
+    // an invoice is only meaningful if the rows have not been altered since
+    // they were written, so the answer to that travels with the export.
+    integrity: verifyLedger(),
     rows: ledger.rows.map((r) => {
       const p = providers.find((x) => x.id === r.providerId);
       return {
