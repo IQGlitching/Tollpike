@@ -25,7 +25,7 @@ function loadSalt() {
 
 // The master passphrase comes from TOLLPIKE_SECRET. If it isn't set,
 // encryption is DISABLED rather than silently falling back to a hardcoded
-// key — a hardcoded key would give the appearance of encryption with none
+// key, a hardcoded key would give the appearance of encryption with none
 // of the protection, which is worse than storing plaintext honestly.
 function getMasterKey() {
   const secret = process.env.TOLLPIKE_SECRET;
@@ -39,7 +39,7 @@ function getMasterKey() {
 // A separate key for the usage-ledger hash chain. Derived from the same
 // secret and salt as the AES key above, but domain-separated through an HMAC
 // so the two can never coincide: reusing one key across two primitives is a
-// vulnerability in its own right. Null when no secret is set — the ledger
+// vulnerability in its own right. Null when no secret is set, the ledger
 // then falls back to an unkeyed SHA-256 chain, which detects accidental
 // corruption and naive edits but not a motivated local editor, and reports
 // `keyed: false` so nothing overclaims tamper-evidence it cannot provide.
@@ -76,7 +76,7 @@ export function decrypt(stored) {
   const key = getMasterKey();
   if (!key) {
     throw new Error(
-      "Encrypted value found but TOLLPIKE_SECRET is not set — cannot decrypt. " +
+      "Encrypted value found but TOLLPIKE_SECRET is not set, cannot decrypt. " +
         "Set the same secret you used when the value was written."
     );
   }
@@ -104,7 +104,7 @@ export function safeCompare(a, b) {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   // timingSafeEqual throws on length mismatch, so hash both to a fixed
-  // length first — this compares in constant time regardless of input size.
+  // length first, this compares in constant time regardless of input size.
   const hashA = crypto.createHash("sha256").update(bufA).digest();
   const hashB = crypto.createHash("sha256").update(bufB).digest();
   return crypto.timingSafeEqual(hashA, hashB);
@@ -121,7 +121,7 @@ export function generateApiKey() {
 // process.
 const FINGERPRINT_KEY = crypto.randomBytes(32);
 
-// Stable, non-reversible identifier for a secret — for use as a map key
+// Stable, non-reversible identifier for a secret, for use as a map key
 // where the secret itself must not be stored and must not be guessable.
 //
 // A raw prefix of the token (the previous approach) satisfies "don't store

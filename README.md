@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **593 tests** · **19 routing
+**46 providers** (6 local runtimes) · **597 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -290,6 +290,7 @@ tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
 tollpike mcp             # serve the 104 MCP tools over stdio
 tollpike verify          # check the usage ledger's tamper-evident hash chain
+tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
 tollpike where           # print resolved paths, ports and URLs
 tollpike --version
 tollpike --help
@@ -300,7 +301,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 593 tests
+npm test                 # 597 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -786,6 +787,20 @@ Check it any time, without starting the gateway:
 ```bash
 tollpike verify          # OK, or the rows that fail and why, exit 2 on tamper
 ```
+
+A ledger written before this feature carries rows with no seal. They are
+reported as `unchained` rather than as damage, and the chain simply begins at
+the next recorded request. To bring the older rows under the chain as well,
+seal them once:
+
+```bash
+tollpike verify --seal   # recompute the chain over the whole file, keeping a .pre-seal.bak
+```
+
+Sealing is opt-in because it rewrites real spend history. It refuses if the
+ledger already fails verification (recomputing every hash would overwrite the
+evidence) or contains unparsable lines, and it leaves a backup behind either
+way.
 
 The same verdict travels with the numbers wherever they surface. The MCP
 `usage.ledger` tool, the A2A cost skill and the panel's ledger export each carry

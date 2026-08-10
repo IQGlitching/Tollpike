@@ -56,8 +56,10 @@ const record = (n, provider = "groq") => {
 };
 
 // Fresh ledger + anchor, chosen keying, aggregates rebuilt from the empty file.
+const backupPath = logPath + ".pre-seal.bak";
+
 function reset({ keyed }) {
-  for (const p of [logPath, headPath, headPath + ".tmp"]) {
+  for (const p of [logPath, headPath, headPath + ".tmp", backupPath, logPath + ".seal.tmp"]) {
     if (fs.existsSync(p)) fs.rmSync(p);
   }
   if (keyed) process.env.TOLLPIKE_SECRET = "ledger-test-secret";
@@ -183,7 +185,7 @@ describe("unkeyed chain (no TOLLPIKE_SECRET)", () => {
     assert.equal(ct.verifyLedger().intact, false);
   });
 
-  test("a full re-seal IS undetectable unkeyed — the documented limitation", () => {
+  test("a full re-seal IS undetectable unkeyed, the documented limitation", () => {
     // This is why keyed mode exists. With no secret, the chain function is a
     // plain SHA-256 the attacker can also compute, so re-sealing the whole
     // tail and rewriting the (tag-less) anchor leaves a self-consistent ledger.
@@ -257,5 +259,71 @@ describe("integrity travels through getUsageSummary()", () => {
     first.chained = 999;
     first.brokenAt.push(123);
     assert.equal(ct.getUsageSummary().integrity.chained, 2, "mutating the copy must not corrupt state");
+  });
+});
+
+describe("sealLedger(), the --seal backfill", () => {
+  const legacyRow = (ts) => ({
+    ts, providerId: "groq", model: "m", promptTokens: 5, completionTokens: 1, costUsd: 0.0001, latencyMs: 7
+  });
+
+  beforeEach(() => reset({ keyed: true }));
+
+  test("seals a pre-chain prefix into the chain, preserves payloads, keeps a backup", () => {
+    writeRows([legacyRow("2026-01-01T00:00:00.000Z"), legacyRow("2026-01-01T00:00:01.000Z"), legacyRow("2026-01-01T00:00:02.000Z")]);
+    ct.reload();
+    record(2); // 3 unchained + 2 chained
+    assert.equal(ct.verifyLedger().unchained, 3);
+
+    const preSeal = fs.readFileSync(logPath, "utf-8");
+    const s = ct.sealLedger();
+    assert.equal(s.ok, true);
+    assert.equal(s.sealed, 3);
+    assert.equal(s.total, 5);
+    assert.equal(s.keyed, true);
+
+    const after = ct.verifyLedger();
+    assert.equal(after.unchained, 0, "the prefix is now part of the chain");
+    assert.equal(after.chained, 5);
+    assert.equal(after.intact, true);
+
+    // Payloads survive untouched: only `h` is added.
+    const rows = readRows();
+    assert.equal(rows[0].ts, "2026-01-01T00:00:00.000Z");
+    assert.equal(rows[0].costUsd, 0.0001);
+    assert.ok(typeof rows[0].h === "string");
+
+    assert.ok(fs.existsSync(backupPath), "a backup must be written");
+    assert.equal(fs.readFileSync(backupPath, "utf-8"), preSeal, "the backup is the exact pre-seal file");
+  });
+
+  test("is a no-op when the ledger is already fully chained", () => {
+    record(3);
+    const s = ct.sealLedger();
+    assert.equal(s.ok, true);
+    assert.equal(s.sealed, 0);
+  });
+
+  test("refuses to seal a tampered ledger and leaves the file untouched", () => {
+    record(3);
+    const rows = readRows();
+    rows[1].costUsd = 100;
+    writeRows(rows);
+    const tamperedContent = fs.readFileSync(logPath, "utf-8");
+
+    const s = ct.sealLedger();
+    assert.equal(s.ok, false);
+    assert.equal(s.reason, "verification-failed");
+    assert.equal(fs.readFileSync(logPath, "utf-8"), tamperedContent, "must not rewrite over the evidence");
+    assert.equal(fs.existsSync(backupPath), false, "no backup on a refusal");
+  });
+
+  test("refuses when the ledger has unparsable lines", () => {
+    record(2);
+    fs.appendFileSync(logPath, "this is not json\n");
+    const s = ct.sealLedger();
+    assert.equal(s.ok, false);
+    assert.equal(s.reason, "unparsable-lines");
+    assert.equal(s.unparsable, 1);
   });
 });

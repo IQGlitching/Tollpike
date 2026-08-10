@@ -6,7 +6,7 @@ import { ledgerKey } from "../security/crypto.js";
 
 const logPath = path.join(dataDir, "usage.jsonl");
 // Sidecar anchoring the chain's head hash and length. The in-file chain alone
-// cannot catch a truncation — deleting the most recent rows leaves a shorter
+// cannot catch a truncation, deleting the most recent rows leaves a shorter
 // chain that still verifies against itself. The anchor closes that: on load,
 // a file shorter than the anchor claims is a deletion. In keyed mode the
 // anchor carries its own HMAC tag, so an attacker who truncates the log
@@ -23,14 +23,14 @@ const RECENT_LIMIT = 20;
 // matching how every vendor publishes them.
 //
 // This used to be 1000 while the config field was named `costPer1kTokens`
-// and held per-million values — every recorded cost came out 1000x too
+// and held per-million values, every recorded cost came out 1000x too
 // high. The first live request made it obvious: 75 real tokens on Groq
 // recorded as $0.0046 when the true cost was under $0.000005. Budget caps
 // inherit the error directly, so a $5/month cap behaved like $0.005 and
 // skipped the provider as "over budget" almost immediately.
 //
 // The field name now matches the unit, so config values can be copied
-// straight off a vendor pricing page with no conversion step — which is
+// straight off a vendor pricing page with no conversion step, which is
 // the conversion that silently went missing.
 // Prices are quoted per million tokens. Exported because gamification
 // builds its baseline from the same rates, and a second copy of this divisor
@@ -39,7 +39,7 @@ export const TOKENS_PER_PRICE_UNIT = 1_000_000;
 
 // Aggregates are maintained incrementally in memory rather than recomputed
 // by re-reading the whole log on every call. The old version re-read and
-// re-parsed usage.jsonl once per *candidate provider* per request — up to
+// re-parsed usage.jsonl once per *candidate provider* per request, up to
 // 36 full file reads for a single `auto` request, against a file that only
 // ever grows. Budget enforcement sits on the routing hot path, so that cost
 // was paid on every completion.
@@ -52,7 +52,7 @@ const agg = {
   recent: [], // newest last, capped at RECENT_LIMIT
   corruptLines: 0,
   // Hourly buckets, so the chart can be a real time series instead of the
-  // last 20 raw requests — which told you nothing about rate or trend.
+  // last 20 raw requests, which told you nothing about rate or trend.
   hourly: new Map(), // "YYYY-MM-DDTHH" -> { costUsd, tokens, requests }
   // How much of the recorded spend rests on the provider's own numbers
   // versus a local estimate. Without this the total reads as equally solid
@@ -73,7 +73,7 @@ const MAX_HOURLY_BUCKETS = 24 * 60; // ~60 days
 
 // In-flight spend not yet committed to the log. Without this, N concurrent
 // requests all read the same committed total and all pass a nearly-full cap
-// — the check is only as good as its accounting window.
+//, the check is only as good as its accounting window.
 const reserved = new Map(); // `${providerId}::${YYYY-MM}` -> usd
 
 // The month a spend figure belongs to. UTC, because that is what the ledger
@@ -107,8 +107,8 @@ function providerBucket(providerId) {
   return agg.byProvider.get(providerId);
 }
 
-// A single truncated line — a crash mid-append, a full disk, a killed
-// container — used to throw out of JSON.parse and take down every
+// A single truncated line, a crash mid-append, a full disk, a killed
+// container, used to throw out of JSON.parse and take down every
 // completion request AND the panel with a 500. One bad byte should cost
 // one row of history, not the gateway.
 function applyEntry(e) {
@@ -163,7 +163,7 @@ function applyEntry(e) {
 // consistent history requires more than write access to usage.jsonl.
 //
 // This is integrity, not confidentiality: the rows stay plainly readable. It
-// is also single-writer — two processes sharing one data dir would interleave
+// is also single-writer, two processes sharing one data dir would interleave
 // appends and corrupt the chain, which is why a second instance must set its
 // own TOLLPIKE_DATA_DIR (the same rule the rest of this module already
 // assumes for its in-memory aggregates).
@@ -172,7 +172,7 @@ function applyEntry(e) {
 // Deterministic serialization of a row's payload, excluding the chain field
 // `h`. Keys are sorted so re-serializing a parsed row reproduces the exact
 // bytes hashed at write time regardless of key order on disk, and
-// undefined-valued fields are dropped to match JSON.stringify — so an absent
+// undefined-valued fields are dropped to match JSON.stringify, so an absent
 // `estimated` hashes identically whether it was omitted or written.
 function canonicalPayload(row) {
   const keys = Object.keys(row).filter((k) => k !== "h" && row[k] !== undefined).sort();
@@ -182,7 +182,7 @@ function canonicalPayload(row) {
 // h = MAC(prevHead + "\n" + canonicalPayload). HMAC-SHA256 keyed with
 // ledgerKey() when a secret is set; a bare SHA-256 otherwise. The unkeyed
 // form still chains, so a naive edit is caught at the next row, but it is
-// forgeable by anyone who can rewrite the whole tail — which is why the
+// forgeable by anyone who can rewrite the whole tail, which is why the
 // report says `keyed: false` and nothing claims tamper-evidence without it.
 function chainHashWith(key, prevHead, canon) {
   const input = prevHead + "\n" + canon;
@@ -191,8 +191,8 @@ function chainHashWith(key, prevHead, canon) {
     : crypto.createHash("sha256").update(input).digest("hex");
 }
 
-// Constant-time hex compare. This is MAC verification — the stored value is
-// attacker-controlled and the key is secret — so it gets the same treatment
+// Constant-time hex compare. This is MAC verification, the stored value is
+// attacker-controlled and the key is secret, so it gets the same treatment
 // as the gateway-key check. Length or encoding mismatch is a plain false.
 function hexEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) {
@@ -221,7 +221,7 @@ function readAnchor() {
 }
 
 // Written after the row it anchors, never before, so a crash between the two
-// leaves the anchor lagging by a row — a state verification reads as a pending
+// leaves the anchor lagging by a row, a state verification reads as a pending
 // append, never as a truncation. Best-effort: a failed anchor write must not
 // lose the request that triggered it.
 function writeAnchor(count, head) {
@@ -240,7 +240,7 @@ function writeAnchor(count, head) {
 // Walk the raw ledger text and verify every chained row. Rows with no `h`
 // that precede the first chained row are the pre-chain prefix (a ledger that
 // predates this feature) and are reported as `unchained`, not as damage. A
-// no-h row appearing *after* the chain has begun is a break — a chained row
+// no-h row appearing *after* the chain has begun is a break, a chained row
 // was removed or replaced. `anchorCount` lets the walk capture the running
 // head at exactly that length for the truncation check.
 function walkChain(rawText, anchorCount) {
@@ -415,7 +415,7 @@ export function recordUsage({ providerId, model, usage, latencyMs, costPer1mToke
   if (appended) {
     // Advance the chain only once the row is on disk, so the in-memory head
     // never runs ahead of what a reader would find, and anchor the new head
-    // after the row (never before — see writeAnchor). A row that failed to
+    // after the row (never before, see writeAnchor). A row that failed to
     // write is deliberately not chained: the next row seals against the last
     // durable head, and verification treats the gap as a lagging anchor.
     agg.chainHead = h;
@@ -444,7 +444,7 @@ export function getUsageSummary() {
       requests: b.requests,
       // 8dp throughout. At real per-million rates a whole day of light use
       // can total well under a cent, and 4dp rounded every such figure to
-      // $0.0000 — which reads as "this is free" rather than "this is small",
+      // $0.0000, which reads as "this is free" rather than "this is small",
       // and is exactly the wrong impression for a spend-control tool.
       costUsd: Number(b.costUsd.toFixed(8)),
       tokens: b.tokens,
@@ -491,8 +491,8 @@ export function getUsageSummary() {
 
 // Authoritative integrity check: re-reads usage.jsonl and the anchor from
 // disk and verifies the whole chain, so an edit made after boot is caught
-// (the load-time snapshot in getUsageSummary would not see it). Read-only —
-// no writes, no anchor update — so it is safe on the MCP read-only surface.
+// (the load-time snapshot in getUsageSummary would not see it). Read-only ,
+// no writes, no anchor update, so it is safe on the MCP read-only surface.
 //
 // Report fields:
 //   keyed        HMAC-keyed with TOLLPIKE_SECRET (true) or a bare SHA-256 (false)
@@ -508,6 +508,72 @@ export function getUsageSummary() {
 export function verifyLedger() {
   const raw = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf-8") : "";
   return buildReport(raw);
+}
+
+// Retroactively seal a ledger that predates the hash chain: recompute `h` for
+// every row from GENESIS forward, so a file with a pre-chain prefix becomes
+// one consistent chain. Operator-initiated only (the `--seal` opt-in), because
+// it is a read-modify-write over real spend history, the same class of
+// operation that once wrote null over the gateway key.
+//
+// Refuses in the two cases where sealing would do harm rather than good:
+//   - the ledger already fails verification: resealing recomputes every hash,
+//     which would overwrite the evidence and mint a clean chain over altered
+//     numbers. Investigate first.
+//   - unparsable lines are present: they cannot be sealed, and silently
+//     dropping them would lose data. Fix them first.
+// Writes a .pre-seal.bak alongside the ledger, replaces it atomically, then
+// rebuilds the in-memory aggregates. Returns { ok, ... } rather than throwing.
+export function sealLedger() {
+  const raw = fs.existsSync(logPath) ? fs.readFileSync(logPath, "utf-8") : "";
+
+  const before = buildReport(raw);
+  if (before.intact === false) {
+    return { ok: false, reason: "verification-failed", report: before };
+  }
+
+  const rows = [];
+  let unparsable = 0;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line);
+      if (!row || typeof row !== "object" || Array.isArray(row)) unparsable += 1;
+      else rows.push(row);
+    } catch {
+      unparsable += 1;
+    }
+  }
+  if (unparsable > 0) {
+    return { ok: false, reason: "unparsable-lines", unparsable };
+  }
+
+  const toSeal = rows.filter((r) => typeof r.h !== "string").length;
+  if (toSeal === 0) {
+    return { ok: true, sealed: 0, total: rows.length, note: "already fully sealed" };
+  }
+
+  const key = ledgerKey();
+  let head = GENESIS;
+  const out = rows.map((row) => {
+    const { h, ...payload } = row; // eslint-disable-line no-unused-vars
+    head = chainHashWith(key, head, canonicalPayload(payload));
+    return JSON.stringify({ ...payload, h: head });
+  });
+
+  const backupPath = logPath + ".pre-seal.bak";
+  try {
+    fs.writeFileSync(backupPath, raw, { mode: 0o600 });
+    const tmp = logPath + ".seal.tmp";
+    fs.writeFileSync(tmp, out.join("\n") + "\n", { mode: 0o600 });
+    fs.renameSync(tmp, logPath);
+    writeAnchor(out.length, head);
+  } catch (err) {
+    return { ok: false, reason: "write-failed", error: err.message };
+  }
+
+  reload(); // rebuild aggregates and the integrity snapshot from the sealed file
+  return { ok: true, sealed: toSeal, total: rows.length, keyed: Boolean(key), backup: backupPath };
 }
 
 // Time series for the chart. `bucket` is "hour" or "day"; returns oldest

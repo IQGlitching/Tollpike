@@ -30,6 +30,7 @@ USAGE
   tollpike mcp            serve the 104 MCP tools over stdio, for an MCP
                           client that spawns a subprocess
   tollpike verify         check the usage ledger's tamper-evident hash chain
+  tollpike verify --seal  retro-seal rows that predate the chain (writes a .bak)
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
   tollpike --help         this text
@@ -80,26 +81,55 @@ api base      http://${host}:${port}/v1`);
 // the gateway. pathToFileURL, not a bare path: on Windows an absolute path is
 // not a valid ESM specifier and the loader throws (the recurring bug here).
 if (cmd === "verify") {
-  const { verifyLedger } = await import(
+  const { verifyLedger, sealLedger } = await import(
     pathToFileURL(path.join(root, "src", "storage", "costTracker.js")).href
   );
-  const r = verifyLedger();
   const dir = process.env.TOLLPIKE_DATA_DIR;
+
+  // Opt-in backfill: seal a ledger that predates the chain so its pre-chain
+  // rows become verifiable too. Rewrites real spend history, so it is never
+  // implicit; typing --seal is the confirmation, and it leaves a .bak behind.
+  if (flag("--seal")) {
+    const s = sealLedger();
+    if (!s.ok) {
+      if (s.reason === "verification-failed") {
+        console.error("refusing to seal: the ledger already fails verification.");
+        console.error("run `tollpike verify` to see why. Sealing would overwrite the evidence.");
+        process.exit(2);
+      }
+      if (s.reason === "unparsable-lines") {
+        console.error(`refusing to seal: ${s.unparsable} unparsable line(s) in the ledger. Remove or fix them first.`);
+        process.exit(2);
+      }
+      console.error(`seal failed: ${s.error || s.reason}`);
+      process.exit(1);
+    }
+    if (s.sealed === 0) {
+      console.log(`nothing to seal: all ${s.total} row(s) are already chained.`);
+      process.exit(0);
+    }
+    console.log(`sealed ${s.sealed} previously unchained row(s).`);
+    console.log(`the ledger is now one ${s.keyed ? "keyed" : "unkeyed"} chain of ${s.total} row(s).`);
+    console.log(`backup        ${s.backup}`);
+    process.exit(0);
+  }
+
+  const r = verifyLedger();
   console.log(`ledger        ${path.join(dir, "usage.jsonl")}`);
   console.log(
     `sealing       ${
       r.keyed
         ? "keyed (HMAC-SHA256 under TOLLPIKE_SECRET)"
-        : "unkeyed (SHA-256) — set TOLLPIKE_SECRET for tamper-evidence"
+        : "unkeyed (SHA-256), set TOLLPIKE_SECRET for tamper-evidence"
     }`
   );
   console.log(`rows          ${r.total} total, ${r.chained} chained, ${r.unchained} pre-chain`);
   if (r.chainOk === null) {
-    console.log("status        nothing sealed yet — the chain begins at the next recorded request");
+    console.log("status        nothing sealed yet, the chain begins at the next recorded request");
     process.exit(0);
   }
   if (r.intact) {
-    console.log("status        OK — every chained row verifies");
+    console.log("status        OK, every chained row verifies");
     process.exit(0);
   }
   const problems = [];
@@ -107,7 +137,7 @@ if (cmd === "verify") {
   if (r.truncated) problems.push("recent rows deleted (ledger shorter than its anchor)");
   if (r.rolledBack) problems.push("the tail was replaced with a different history");
   if (r.anchorOk === false) problems.push("the anchor does not verify");
-  console.log(`status        TAMPERED — ${problems.join("; ")}`);
+  console.log(`status        TAMPERED, ${problems.join("; ")}`);
   process.exit(2);
 }
 
