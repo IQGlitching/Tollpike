@@ -1,7 +1,7 @@
 # Sending audit evidence to Vanta and Drata
 
 Tollpike pushes its AI agent audit evidence into the compliance platform
-where your ISO 27001 or SOC 2 programme already runs. An auditor then sees it
+where your ISO 27001, ISO 42001 or SOC 2 programme already runs. An auditor then sees it
 next to the rest of your controls, as a live test and as attached evidence,
 without anyone exporting files by hand.
 
@@ -20,15 +20,15 @@ recorded in the audit chain as `grc.push`. A failed push is flagged for review.
 
 ### The seven tests
 
-| Test | Passes when | Controls |
-|---|---|---|
-| `audit.chain_intact` | the hash chain verifies and the anchor agrees | ISO 8.15, 5.28 · SOC 2 CC7.2 |
-| `audit.chain_keyed` | the chain is keyed with `TOLLPIKE_SECRET` | ISO 8.15 · CC7.2 |
-| `audit.agents_attributed` | every model call in the last 7 days carried an agent key | ISO 5.16, 8.15 · CC6.1 |
-| `audit.review_backlog` | no flagged event has waited longer than `grcReviewDays` (default 7) | ISO 5.25 · CC7.3, CC7.4 |
-| `audit.preexecution` | Claude Code hooks or the MCP proxy reported in the last 7 days | ISO 8.16, 8.18 · CC6.8 |
-| `audit.egress_enforced` | endpoint sensors saw no provider connection bypassing the gateway | ISO 8.20, 5.23 · CC6.6 |
-| `audit.vendor_collection` | every enabled vendor log connector pulled within 48 hours | ISO 5.23, 8.15 · CC7.2 |
+| Test | Passes when | ISO 27001 · SOC 2 | ISO 42001 |
+|---|---|---|---|
+| `audit.chain_intact` | the hash chain verifies and the anchor agrees | 8.15, 5.28 · CC7.2 | A.6.2.8 |
+| `audit.chain_keyed` | the chain is keyed with `TOLLPIKE_SECRET` | 8.15 · CC7.2 | A.6.2.8 |
+| `audit.agents_attributed` | every model call in the last 7 days carried an agent key | 5.16, 8.15 · CC6.1 | A.6.2.8, A.3.2 |
+| `audit.review_backlog` | no flagged event has waited longer than `grcReviewDays` (default 7) | 5.25 · CC7.3, CC7.4 | A.6.2.6 |
+| `audit.preexecution` | Claude Code hooks or the MCP proxy reported in the last 7 days | 8.16, 8.18 · CC6.8 | A.9.2, A.9.4 |
+| `audit.egress_enforced` | endpoint sensors saw no provider connection bypassing the gateway | 8.20, 5.23 · CC6.6 | A.9.4, A.10.3 |
+| `audit.vendor_collection` | every enabled vendor log connector pulled within 48 hours | 5.23, 8.15 · CC7.2 | A.10.3, A.6.2.8 |
 
 A test with nothing to judge, for example no endpoint sensors or no vendor
 connectors, reports **not applicable** instead of passing. A green light with
@@ -83,7 +83,8 @@ tollpike audit grc setup vanta     # prints these steps, with the schema to past
 
 6. **Tests › Create custom test**, choose the Tollpike integration and the
    test resource, set the rule above, and map it to your logging and
-   monitoring controls.
+   monitoring controls. If you run ISO 42001 in Vanta, map it to A.6.2.8 and
+   A.6.2.6 as well.
 
 Vanta notes that Custom Tests may need a plan upgrade or add-on, and that
 access reviews may need Access Management. Vanta allows one live token per
@@ -114,7 +115,8 @@ tollpike audit grc setup drata
    ```
 
 5. **Monitoring › Create test › Custom**, provider Tollpike, condition as
-   above. Publish it and map it to your controls.
+   above. Publish it and map it to your controls, including ISO 42001 A.6.2.8
+   and A.6.2.6 if you run that framework in Drata.
 
 Each push replaces the test and agent datasets atomically through a Drata
 session. The evidence item is created on the first push; later pushes add a

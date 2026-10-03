@@ -2,7 +2,7 @@
 //
 // The other direction from the vendor connectors: those pull hosted agents'
 // logs in, this sends Tollpike's evidence out to where a company runs its ISO
-// 27001 and SOC 2 programme. Three things go:
+// 27001, ISO 42001 and SOC 2 programme. Three things go:
 //
 //   tests     the continuous signals (signals.js): chain intact, agents
 //             attributed, review backlog, egress enforced... each pass, fail

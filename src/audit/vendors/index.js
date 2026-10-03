@@ -103,7 +103,7 @@ export async function pullVendor(id, { maxPages = MAX_PAGES_PER_RUN } = {}) {
       ...counts,
       outcome: error ? "failed" : "ok",
       error: error || undefined,
-      ...(error ? { findings: [{ rule: "vendor.pull_failed", title: "Vendor audit log could not be collected", severity: "medium", mode: "flag", controls: ["ISO27001:8.15", "ISO27001:8.16", "SOC2:CC7.2"], detail: error }], flagged: true, severity: "medium" } : {})
+      ...(error ? { findings: [{ rule: "vendor.pull_failed", title: "Vendor audit log could not be collected", severity: "medium", mode: "flag", controls: ["ISO27001:8.15", "ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.10.3"], detail: error }], flagged: true, severity: "medium" } : {})
     });
     writeState(id, { ...state, lastRecordedRunAt: new Date().toISOString() });
   }

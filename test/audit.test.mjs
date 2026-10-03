@@ -85,8 +85,29 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+)$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2})$/.test(c)), `${r.id}: ${r.controls}`);
     }
+  });
+
+  // The 38 Annex A controls of ISO/IEC 42001:2023. A tag outside this list is a
+  // typo an auditor would catch.
+  const ISO42001_ANNEX_A = new Set([
+    "A.2.2", "A.2.3", "A.2.4", "A.3.2", "A.3.3", "A.4.2", "A.4.3", "A.4.4", "A.4.5", "A.4.6",
+    "A.5.2", "A.5.3", "A.5.4", "A.5.5", "A.6.1.2", "A.6.1.3", "A.6.2.2", "A.6.2.3", "A.6.2.4",
+    "A.6.2.5", "A.6.2.6", "A.6.2.7", "A.6.2.8", "A.7.2", "A.7.3", "A.7.4", "A.7.5", "A.7.6",
+    "A.8.2", "A.8.3", "A.8.4", "A.8.5", "A.9.2", "A.9.3", "A.9.4", "A.10.2", "A.10.3", "A.10.4"
+  ]);
+
+  test("every rule and the control map name real ISO/IEC 42001 Annex A controls", async () => {
+    assert.equal(ISO42001_ANNEX_A.size, 38);
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    const tags = [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("ISO42001:"));
+    for (const r of rules.RULES) assert.ok(r.controls.some((c) => c.startsWith("ISO42001:")), `${r.id} has no ISO 42001 control`);
+    for (const t of tags) assert.ok(ISO42001_ANNEX_A.has(t.slice(9)), t);
+    for (const row of audit.CONTROL_MAP) {
+      for (const id of (row.iso42001 || "").match(/A\.\d+(\.\d+){1,2}/g) || []) assert.ok(ISO42001_ANNEX_A.has(id), `${row.iso}: ${id}`);
+    }
+    assert.ok(audit.CONTROL_MAP.some((c) => c.iso42001.startsWith("A.6.2.8")), "event logging is the core 42001 control");
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -297,6 +318,10 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | Evidence |"));
+    assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
+    assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
+    assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));
     assert.ok(!/\u2014/.test(md), "house style: no em dashes in generated documents");
   });
 });

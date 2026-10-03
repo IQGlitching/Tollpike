@@ -272,7 +272,7 @@ export function recordBlocked(messages, findings = []) {
         guardrailFindings: findings,
         messages: Array.isArray(messages) ? messages.length : undefined
       },
-      [{ rule: "guardrail.injection", title: "Request blocked by the injection guardrail", severity: "high", mode: "flag", controls: ["ISO27001:8.16", "SOC2:CC7.2"], detail: findings.join(", ") || "blocked" }]
+      [{ rule: "guardrail.injection", title: "Request blocked by the injection guardrail", severity: "high", mode: "flag", controls: ["ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.6.2.6"], detail: findings.join(", ") || "blocked" }]
     );
   } catch (err) {
     console.error(`[audit] recordBlocked failed: ${err.message}`);
@@ -751,19 +751,20 @@ export function auditStatus() {
 // What each control is evidenced by in an export. Only controls this layer
 // produces evidence for are listed; the rest of an ISMS is outside a tool.
 export const CONTROL_MAP = [
-  { iso: "8.15 Logging", soc2: "CC7.2", evidence: "hash-chained audit log of every model call, tool call and tool result; chain verification report" },
-  { iso: "8.16 Monitoring activities", soc2: "CC7.2, CC4.1", evidence: "risk rules evaluated on every event; findings by rule" },
-  { iso: "5.25 Assessment and decision on information security events", soc2: "CC7.3, CC7.4", evidence: "flagged events and their review records (reviewer, decision, note)" },
-  { iso: "8.12 Data leakage prevention, 8.11 Data masking", soc2: "C1.1, CC6.7", evidence: "credential and personal-data findings; content stored redacted or as hashes only" },
-  { iso: "5.15 Access control, 5.16 Identity management, 5.18 Access rights", soc2: "CC6.1, CC6.2, CC6.3", evidence: "agent key register (created, revoked), per-agent attribution, unattributed-call count" },
-  { iso: "8.5 Secure authentication", soc2: "CC6.1", evidence: "failed and revoked-key authentication events" },
-  { iso: "8.32 Change management, 8.9 Configuration management", soc2: "CC8.1", evidence: "admin.change events: settings keys changed, agent keys issued and revoked" },
-  { iso: "8.17 Clock synchronization", soc2: "CC7.2 (supporting)", evidence: "UTC timestamps from the host clock; synchronisation is the host's responsibility (NTP) and is not verified by Tollpike" },
-  { iso: "8.18 Use of privileged utility programs, 8.7 Protection against malware", soc2: "CC6.8, CC7.2", evidence: "pre-execution decisions (tool.requested with block or ask) from Claude Code hooks and the MCP proxy, each naming the rule that decided; withheld tool results" },
-  { iso: "8.16 Monitoring activities, 8.15 Logging (endpoint)", soc2: "CC7.2, CC7.3", evidence: "agent processes from OS telemetry matched to audited actions; unexplained agent activity flagged; sensor heartbeats showing monitoring ran" },
-  { iso: "8.20 Networks security, 5.23 Cloud services", soc2: "CC6.6", evidence: "connections to model providers that bypassed the gateway, from endpoint telemetry" },
-  { iso: "5.23 Information security for use of cloud services, 8.15 Logging", soc2: "CC9.2, CC7.2", evidence: "hosted AI services' own audit logs pulled into the chain (vendor.activity), with collection runs recorded (vendor.pull)" },
-  { iso: "5.28 Collection of evidence", soc2: "CC2.1", evidence: "this export: period-bounded events with the chain head that commits to them" }
+  { iso: "8.15 Logging", soc2: "CC7.2", iso42001: "A.6.2.8 AI system recording of event logs", evidence: "hash-chained audit log of every model call, tool call and tool result; chain verification report" },
+  { iso: "8.16 Monitoring activities", soc2: "CC7.2, CC4.1", iso42001: "A.6.2.6 AI system operation and monitoring", evidence: "risk rules evaluated on every event; findings by rule" },
+  { iso: "5.25 Assessment and decision on information security events", soc2: "CC7.3, CC7.4", iso42001: "A.6.2.6 AI system operation and monitoring, A.8.4 Communication of incidents (supporting)", evidence: "flagged events and their review records (reviewer, decision, note)" },
+  { iso: "8.12 Data leakage prevention, 8.11 Data masking", soc2: "C1.1, CC6.7", iso42001: "A.9.2 Processes for responsible use of AI systems", evidence: "credential and personal-data findings; content stored redacted or as hashes only" },
+  { iso: "5.15 Access control, 5.16 Identity management, 5.18 Access rights", soc2: "CC6.1, CC6.2, CC6.3", iso42001: "A.3.2 AI roles and responsibilities (supporting), A.4.2 Resource documentation", evidence: "agent key register (created, revoked), per-agent attribution, unattributed-call count" },
+  { iso: "8.5 Secure authentication", soc2: "CC6.1", iso42001: "", evidence: "failed and revoked-key authentication events" },
+  { iso: "8.32 Change management, 8.9 Configuration management", soc2: "CC8.1", iso42001: "", evidence: "admin.change events: settings keys changed, agent keys issued and revoked" },
+  { iso: "8.17 Clock synchronization", soc2: "CC7.2 (supporting)", iso42001: "", evidence: "UTC timestamps from the host clock; synchronisation is the host's responsibility (NTP) and is not verified by Tollpike" },
+  { iso: "8.18 Use of privileged utility programs, 8.7 Protection against malware", soc2: "CC6.8, CC7.2", iso42001: "A.9.2 Processes for responsible use of AI systems, A.9.4 Intended use of the AI system", evidence: "pre-execution decisions (tool.requested with block or ask) from Claude Code hooks and the MCP proxy, each naming the rule that decided; withheld tool results" },
+  { iso: "8.16 Monitoring activities, 8.15 Logging (endpoint)", soc2: "CC7.2, CC7.3", iso42001: "A.6.2.6 AI system operation and monitoring, A.6.2.8 AI system recording of event logs", evidence: "agent processes from OS telemetry matched to audited actions; unexplained agent activity flagged; sensor heartbeats showing monitoring ran" },
+  { iso: "8.20 Networks security, 5.23 Cloud services", soc2: "CC6.6", iso42001: "A.9.4 Intended use of the AI system, A.4.5 System and computing resources", evidence: "connections to model providers that bypassed the gateway, from endpoint telemetry" },
+  { iso: "5.23 Information security for use of cloud services, 8.15 Logging", soc2: "CC9.2, CC7.2", iso42001: "A.10.3 Suppliers, A.6.2.8 AI system recording of event logs", evidence: "hosted AI services' own audit logs pulled into the chain (vendor.activity), with collection runs recorded (vendor.pull)" },
+  { iso: "5.9 Inventory of information and other associated assets", soc2: "CC6.1 (supporting)", iso42001: "A.4.2 Resource documentation, A.4.4 Tooling resources, A.4.5 System and computing resources", evidence: "AI system inventory: the providers and models each agent used in the period, with call counts" },
+  { iso: "5.28 Collection of evidence", soc2: "CC2.1", iso42001: "Clause 7.5 Documented information, Clause 9.1 Monitoring, measurement, analysis and evaluation", evidence: "this export: period-bounded events with the chain head that commits to them" }
 ];
 
 /** The evidence pack as a document an auditor reads before opening the JSON. */
@@ -797,11 +798,19 @@ export function evidenceMarkdown(pack) {
     "|---|---|---|---|",
     ...(pack.agents.length ? pack.agents.map((a) => `| ${a.name} | ${a.id} | ${a.createdAt} | ${a.revokedAt || "active"} |`) : ["| (none issued) | | | |"]),
     "",
+    "## AI systems in use (ISO/IEC 42001 A.4)",
+    "",
+    "| Agent | Model calls | Provider / model (calls) |",
+    "|---|---|---|",
+    ...((pack.aiInventory || []).length
+      ? pack.aiInventory.map((r) => `| ${r.agent} | ${r.calls} | ${r.systems.map((s) => `${s.system} (${s.calls})`).join(", ")} |`)
+      : ["| (no model calls in the period) | | |"]),
+    "",
     "## Controls this evidence supports",
     "",
-    "| ISO/IEC 27001:2022 Annex A | SOC 2 TSC | Evidence |",
-    "|---|---|---|",
-    ...pack.controls.map((c) => `| ${c.iso} | ${c.soc2} | ${c.evidence} |`),
+    "| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | Evidence |",
+    "|---|---|---|---|",
+    ...pack.controls.map((c) => `| ${c.iso} | ${c.iso42001 || "-"} | ${c.soc2} | ${c.evidence} |`),
     "",
     "## Configuration gaps at export",
     "",
@@ -813,6 +822,24 @@ export function evidenceMarkdown(pack) {
     ""
   ];
   return lines.join("\n");
+}
+
+// The AI systems in use (ISO/IEC 42001 A.4): which providers and models each
+// agent called in the period, from the model.call events themselves.
+function aiInventory(events) {
+  const byAgent = new Map();
+  for (const e of events) {
+    if (e.type !== "model.call") continue;
+    const key = e.agent?.id || "unattributed";
+    if (!byAgent.has(key)) byAgent.set(key, { agent: e.agent?.name || "(no agent identity)", agentId: e.agent?.id || null, calls: 0, systems: new Map() });
+    const row = byAgent.get(key);
+    row.calls++;
+    const sys = `${e.provider || "unknown provider"} / ${e.model || e.modelRequested || "unknown model"}`;
+    row.systems.set(sys, (row.systems.get(sys) || 0) + 1);
+  }
+  return [...byAgent.values()]
+    .map((r) => ({ ...r, systems: [...r.systems].map(([system, calls]) => ({ system, calls })).sort((a, b) => b.calls - a.calls) }))
+    .sort((a, b) => b.calls - a.calls);
 }
 
 export function exportEvidence({ from, to } = {}) {
@@ -831,6 +858,7 @@ export function exportEvidence({ from, to } = {}) {
     status,
     summary: auditSummary({ from, to }),
     agents: listAgents({ includeRevoked: true }),
+    aiInventory: aiInventory(events),
     rules: status.rules,
     controls: CONTROL_MAP,
     adminChanges: events.filter((e) => e.type === "admin.change"),
@@ -839,6 +867,7 @@ export function exportEvidence({ from, to } = {}) {
     events,
     limitations: [
       "Evidence for the technical controls listed only. An ISO 27001 or SOC 2 audit also covers policy, risk assessment, people, suppliers and physical security, which no tool can evidence.",
+      "ISO/IEC 42001 also requires an AI policy (A.2), AI system impact assessments (A.5), governance of data used to develop AI systems (A.7) and information for interested parties (A.8). Those are organisational work this export does not evidence. The AI system inventory covers only model calls that passed through the gateway.",
       "SOC 2 Type II assesses controls over an operating period. This export covers only the period requested, and only while auditing was enabled (see system.start events).",
       ...status.doesNotSee.map((d) => `Not visible to this layer: ${d}.`)
     ]

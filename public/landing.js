@@ -1194,10 +1194,19 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   /* controls and vendor chips light for the event that evidences them */
-  const ctlEls = new Map($$('#auCtl .au-ctl').map(el => [el.dataset.ctl, el]));
+  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl').map(el => [el.dataset.ctl, el]));
   const chipEls = new Map($$('.au-chip').map(el => [el.dataset.v, el]));
+  // The ISO/IEC 42001 controls each ISO 27001 control's evidence also supports,
+  // as in the export's control map.
+  const TO_42001 = {
+    '8.15': ['A.6.2.8'], '8.16': ['A.6.2.6'], '5.25': ['A.6.2.6', 'A.8.4'], '8.12': ['A.9.2'], '8.11': ['A.9.2'],
+    '5.15': ['A.3.2', 'A.4.2'], '8.18': ['A.9.2', 'A.9.4'], '8.20': ['A.9.4', 'A.4.5'], '5.23': ['A.10.3'], '5.28': ['7.5', '9.1']
+  };
   function light(e) {
-    for (const c of [...new Set([...e.ctl, '5.28'])]) {
+    const base = [...e.ctl, '5.28'];
+    const ai = base.flatMap(c => TO_42001[c] || []);
+    if (e.type === 'model.call') ai.push('A.4.4', 'A.4.5');
+    for (const c of [...new Set([...base, ...ai])]) {
       const el = ctlEls.get(c); if (!el) continue;
       el.classList.add('lit');
       clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('lit'), 1700);
@@ -1272,6 +1281,22 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     }
   }), { threshold: 0, rootMargin: '-10% 0px -10% 0px' }).observe(section);
 
+})();
+
+/* ------------------------------------------------------- FRAMEWORK TABS */
+/* ISO/IEC 42001 first: it is the AI management system standard. Both grids
+   keep lighting while hidden, so switching shows the live state. */
+(() => {
+  const tabs = $$('.fw-tab');
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', String(on));
+      const panel = document.getElementById(t.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !on;
+    }
+  }));
 })();
 
 /* ------------------------------------------------------------- GRC PUSH */
