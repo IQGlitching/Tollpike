@@ -75,6 +75,14 @@ ENVIRONMENT
 if (flag("-h", "--help") || cmd === "help") { help(); process.exit(0); }
 if (flag("-v", "--version")) { console.log(pkg.version); process.exit(0); }
 
+// Load ~/.tollpike/.env (or TOLLPIKE_ENV_FILE) before any command, exactly as
+// the gateway does. TOLLPIKE_SECRET usually lives there, and it keys the audit
+// and ledger chains: a CLI command that ran without it would verify a keyed
+// chain as an unkeyed one and call it tampered, and a command that writes
+// (audit review, agents add, grc push) would append rows the gateway's key
+// does not sign, which really would break the chain.
+await import(pathToFileURL(path.join(root, "src", "env.js")).href);
+
 // A globally installed CLI must not write state inside node_modules: that
 // directory is shared between projects and replaced wholesale on upgrade, so
 // the usage ledger and settings would be lost on `npm i -g tollpike@next`.

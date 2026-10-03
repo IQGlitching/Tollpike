@@ -59,7 +59,9 @@ export const loaded = [];
 
 for (const candidate of candidates()) {
   if (!fs.existsSync(candidate.path)) continue;
-  const result = dotenv.config({ path: candidate.path });
+  // quiet: newer dotenv releases log to stdout, which would corrupt the JSON
+  // the hook and MCP stdio commands write there.
+  const result = dotenv.config({ path: candidate.path, quiet: true });
   if (result.error) {
     console.error(`[env] could not read ${candidate.path}: ${result.error.message}`);
     continue;

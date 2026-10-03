@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **763 tests** · **19 routing
+**46 providers** (6 local runtimes) · **764 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -308,7 +308,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 763 tests
+npm test                 # 764 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached

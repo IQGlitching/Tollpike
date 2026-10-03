@@ -210,3 +210,29 @@ describe("env loading: wiring", () => {
     );
   });
 });
+
+describe("env loading: the CLI", () => {
+  // The audit chain is keyed by TOLLPIKE_SECRET, which normally lives in the
+  // protected env file. A CLI command that skipped the file signed and checked
+  // rows without the key: `audit verify` reported a keyed chain as tampered,
+  // and `agents add` appended a row the gateway's key did not sign.
+  test("audit commands load the env file, so the chain is keyed and verifies", () => {
+    const dir = fs.mkdtempSync(path.join(tmp, "cli-"));
+    const envFile = path.join(dir, "test.env");
+    fs.writeFileSync(envFile, `TOLLPIKE_SECRET=${"ab".repeat(32)}\n`);
+    const env = {
+      PATH: process.env.PATH,
+      SystemRoot: process.env.SystemRoot,
+      HOME: dir,
+      USERPROFILE: dir,
+      TOLLPIKE_ENV_FILE: envFile,
+      TOLLPIKE_DATA_DIR: path.join(dir, "data")
+    };
+    const cli = (...args) => execFileSync(process.execPath, [path.join(root, "bin", "tollpike.mjs"), ...args], { cwd: dir, env, encoding: "utf8" });
+    cli("agents", "add", "env-test-bot");
+    cli("agents", "add", "env-test-bot-2");
+    const out = cli("audit", "verify");
+    assert.match(out, /hmac-sha256 \(keyed\)/, out);
+    assert.match(out, /OK, every row verifies/, out);
+  });
+});
