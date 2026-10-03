@@ -85,7 +85,7 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?)$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+)$/.test(c)), `${r.id}: ${r.controls}`);
     }
   });
 
@@ -124,9 +124,32 @@ describe("rules", () => {
     }
     assert.ok(audit.CONTROL_MAP.some((c) => c.euAiAct.startsWith("Art. 12")), "record-keeping is the core EU AI Act match");
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | Evidence |"));
     assert.match(md, /high-risk AI systems/);
     assert.match(md, /Most AI agent use is not high-risk/);
+  });
+
+  // The NIST AI RMF 1.0 subcategories the evidence supports, each checked
+  // against the text on airc.nist.gov. Anything else would be a claim nobody
+  // reviewed.
+  const NIST_AI_RMF = new Set([
+    "GOVERN 1.5", "GOVERN 1.6", "GOVERN 4.3", "GOVERN 6.1", "MAP 3.5",
+    "MEASURE 2.4", "MEASURE 2.7", "MEASURE 2.8", "MEASURE 2.10", "MEASURE 3.1",
+    "MANAGE 2.4", "MANAGE 3.1", "MANAGE 4.1", "MANAGE 4.3"
+  ]);
+
+  test("every rule and test names the NIST AI RMF subcategories it supports, from the reviewed set", async () => {
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    for (const r of rules.RULES) assert.ok(r.controls.some((c) => c.startsWith("NISTAIRMF:")), `${r.id} has no NIST AI RMF subcategory`);
+    for (const t of [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("NISTAIRMF:"))) {
+      assert.ok(NIST_AI_RMF.has(t.slice(10)), t);
+    }
+    for (const row of audit.CONTROL_MAP) {
+      for (const id of (row.nistAiRmf || "").match(/(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+/g) || []) assert.ok(NIST_AI_RMF.has(id), `${row.iso}: ${id}`);
+    }
+    assert.ok(audit.CONTROL_MAP.some((c) => c.nistAiRmf.startsWith("GOVERN 1.6")), "the AI inventory answers GOVERN 1.6");
+    const md = audit.evidenceMarkdown(audit.exportEvidence({}));
+    assert.match(md, /NIST AI RMF 1\.0 \(NIST AI 100-1\) is voluntary/);
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -337,7 +360,7 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | Evidence |"));
     assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
     assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
     assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));

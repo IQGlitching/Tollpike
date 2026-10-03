@@ -997,6 +997,8 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
 .au-ctl-grid[hidden], .au-eu[hidden] { display: none; }
 .fw-eu { border-color: rgba(253,203,110,.4); }
 .fw-eu b { color: var(--conn); }
+.fw-nist { border-color: rgba(0,206,201,.4); }
+.fw-nist b { color: var(--model); }
 .au-eu-note { margin: 10px 2px 0; font-size: 12px; line-height: 1.6; color: var(--txt-4); }
 @media (max-width: 420px) { .fw-tabs { flex-wrap: wrap; } }
 .au-vendors { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 22px; }
@@ -1926,6 +1928,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <span class="fw"><b>ISO/IEC 27001</b><i>Information security</i></span>
           <span class="fw"><b>SOC 2</b><i>Trust services criteria</i></span>
           <span class="fw fw-eu"><b>EU AI Act</b><i>Regulation (EU) 2024/1689</i></span>
+          <span class="fw fw-nist"><b>NIST AI RMF</b><i>AI 100-1 · GenAI profile</i></span>
         </div>
         <p class="lede">Your agents write code, run shells, read files and call models all day.
           Tollpike records every one of those actions from four places at once, checks each
@@ -2052,12 +2055,13 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
         <div class="au-ev-head">
           <p class="kicker sc-g" style="margin:0">EVIDENCE</p>
           <h3 class="au-h3">Controls an auditor can open.</h3>
-          <p class="au-sub">Every finding names the ISO/IEC 42001, ISO/IEC 27001, SOC 2 and EU AI Act requirements it supports. Watch them light as events land.</p>
+          <p class="au-sub">Every finding names the ISO/IEC 42001, ISO/IEC 27001, SOC 2, EU AI Act and NIST AI RMF requirements it supports. Watch them light as events land.</p>
         </div>
         <div class="fw-tabs" role="tablist" aria-label="Control framework">
           <button type="button" class="fw-tab on" role="tab" aria-selected="true" aria-controls="auCtl42" data-fw="42001">ISO/IEC 42001 <span>AI</span></button>
           <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtl" data-fw="27001">ISO/IEC 27001</button>
           <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlEu" data-fw="euaia">EU AI Act</button>
+          <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlNist" data-fw="nist">NIST AI RMF</button>
         </div>
         <div class="au-ctl-grid" id="auCtl42" role="tabpanel">
           <div class="au-ctl" data-ctl="A.6.2.8"><b>A.6.2.8</b><span>AI system recording of event logs</span><i>27001 8.15 · CC7.2</i></div>
@@ -2086,6 +2090,20 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
             <div class="au-ctl" data-ctl="EU6"><b>Art. 6</b><span>Classification</span><i>supporting · AI inventory</i></div>
           </div>
           <p class="au-eu-note">These duties bind high-risk AI systems, from 2 December 2027 for Annex III. For agents that are not high-risk, the same record is good practice.</p>
+        </div>
+        <div class="au-eu" id="auCtlNist" role="tabpanel" hidden>
+          <div class="au-ctl-grid">
+            <div class="au-ctl" data-ctl="NG1.6"><b>GOVERN 1.6</b><span>Inventory of AI systems</span><i>models · providers · agents</i></div>
+            <div class="au-ctl" data-ctl="NMS2.4"><b>MEASURE 2.4</b><span>Monitored in production</span><i>every action checked</i></div>
+            <div class="au-ctl" data-ctl="NMS2.7"><b>MEASURE 2.7</b><span>Security and resilience</span><i>injection · credentials</i></div>
+            <div class="au-ctl" data-ctl="NMS2.8"><b>MEASURE 2.8</b><span>Transparency and accountability</span><i>sealed · attributed</i></div>
+            <div class="au-ctl" data-ctl="NMS3.1"><b>MEASURE 3.1</b><span>Emergent risks tracked</span><i>unexplained activity</i></div>
+            <div class="au-ctl" data-ctl="NMP3.5"><b>MAP 3.5</b><span>Human oversight</span><i>ask · sign-off</i></div>
+            <div class="au-ctl" data-ctl="NMG2.4"><b>MANAGE 2.4</b><span>Supersede or disengage</span><i>block</i></div>
+            <div class="au-ctl" data-ctl="NMG3.1"><b>MANAGE 3.1</b><span>Third-party AI monitored</span><i>hosted AI logs</i></div>
+            <div class="au-ctl" data-ctl="NMG4.3"><b>MANAGE 4.3</b><span>Incidents tracked</span><i>flags · reviews</i></div>
+          </div>
+          <p class="au-eu-note">Voluntary framework. GOVERN and MAP are mostly organisational; Tollpike evidences parts of MEASURE and MANAGE plus the AI inventory.</p>
         </div>
         <div class="au-ctl-grid" id="auCtl" role="tabpanel" hidden>
           <div class="au-ctl" data-ctl="8.15"><b>8.15</b><span>Logging</span><i>CC7.2</i></div>
@@ -2129,7 +2147,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <div class="au-pack-s">## AI systems in use</div>
           <div class="au-pack-l">214 agents · 46 providers · 69 models</div>
           <div class="au-pack-s">## Controls this evidence supports</div>
-          <div class="au-pack-l">14 mappings · ISO/IEC 42001 · ISO/IEC 27001 · SOC 2 · EU AI Act</div>
+          <div class="au-pack-l">14 mappings · ISO/IEC 42001 · ISO/IEC 27001 · SOC 2 · EU AI Act · NIST AI RMF</div>
           <div class="au-pack-s">## Limitations</div>
           <div class="au-pack-l dim">Technical controls only. An AIMS or ISMS also covers policy, impact assessments, people and suppliers.</div>
         </div>

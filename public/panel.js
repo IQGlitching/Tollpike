@@ -6328,7 +6328,7 @@ function paintAudit(root, d) {
 
     <section class="zone auditwide last">
       <div class="pane">
-        <div class="p-head"><span class="p-t">Evidence pack</span><span class="p-s">ISO/IEC 27001 · 42001 · SOC 2 · EU AI Act</span></div>
+        <div class="p-head"><span class="p-t">Evidence pack</span><span class="p-s">ISO 27001 · 42001 · SOC 2 · EU AI Act · NIST AI RMF</span></div>
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <label class="au-lbl">From <input type="date" id="auFrom" value="${esc(auditUi.exportFrom)}" /></label>
           <label class="au-lbl">To <input type="date" id="auTo" value="${esc(auditUi.exportTo)}" /></label>

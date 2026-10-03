@@ -1194,7 +1194,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   /* controls and vendor chips light for the event that evidences them */
-  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl').map(el => [el.dataset.ctl, el]));
+  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl, #auCtlNist .au-ctl').map(el => [el.dataset.ctl, el]));
   const chipEls = new Map($$('.au-chip').map(el => [el.dataset.v, el]));
   // The ISO/IEC 42001 controls each ISO 27001 control's evidence also supports,
   // as in the export's control map.
@@ -1208,12 +1208,19 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     '8.18': ['EU14'], '8.20': ['EU12', 'EU26-5'], '5.23': ['EU26-5'], '5.28': ['EU19', 'EU26-6']
   };
   const EU_BY_RULE = { 'shell.remote_exec': 'EU15-5', 'injection.in_tool_result': 'EU15-5' };
+  // And the NIST AI RMF subcategories.
+  const TO_NIST = {
+    '8.15': ['NMS2.8'], '8.16': ['NMS2.4', 'NMS3.1'], '5.25': ['NMG4.3'], '5.15': ['NMS2.8'], '8.12': ['NMS2.7'],
+    '8.18': ['NMG2.4', 'NMP3.5'], '8.20': ['NG1.6', 'NMS2.8'], '5.23': ['NMG3.1']
+  };
   function light(e) {
     const base = [...e.ctl, '5.28'];
     const ai = base.flatMap(c => TO_42001[c] || []);
     if (e.type === 'model.call') ai.push('A.4.4', 'A.4.5', 'EU6');
     ai.push(...base.flatMap(c => TO_EU[c] || []));
-    if (EU_BY_RULE[e.rule]) ai.push(EU_BY_RULE[e.rule]);
+    if (EU_BY_RULE[e.rule]) ai.push(EU_BY_RULE[e.rule], 'NMS2.7');
+    ai.push(...base.flatMap(c => TO_NIST[c] || []));
+    if (e.type === 'model.call') ai.push('NG1.6');
     for (const c of [...new Set([...base, ...ai])]) {
       const el = ctlEls.get(c); if (!el) continue;
       el.classList.add('lit');
