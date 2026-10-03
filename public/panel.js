@@ -6131,7 +6131,7 @@ async function auditLoad() {
   if (auditUi.severity) q.set("severity", auditUi.severity);
   if (auditUi.agent) q.set("agent", auditUi.agent);
   const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-  const [status, summary, events, queue, agents, vendors, endpoint, hooks] = await Promise.all([
+  const [status, summary, events, queue, agents, vendors, endpoint, hooks, grc] = await Promise.all([
     api("/api/panel/audit/status"),
     api(`/api/panel/audit/summary?from=${weekAgo}`),
     api(`/api/panel/audit/events?${q}`),
@@ -6139,9 +6139,10 @@ async function auditLoad() {
     api("/api/panel/audit/agents"),
     api("/api/panel/audit/vendors"),
     api("/api/panel/audit/endpoint"),
-    api(`/api/panel/audit/claude-code-hooks?mode=${encodeURIComponent(auditUi.hookMode)}`)
+    api(`/api/panel/audit/claude-code-hooks?mode=${encodeURIComponent(auditUi.hookMode)}`),
+    api("/api/panel/audit/grc")
   ]);
-  return { status, summary, events, queue, agents, vendors, endpoint, hooks };
+  return { status, summary, events, queue, agents, vendors, endpoint, hooks, grc };
 }
 
 // The poll calls this every few seconds. A reviewer typing a note, or a key
@@ -6159,7 +6160,7 @@ function auditRender(el, force = false) {
 PAGES.audit = (el) => auditRender(el);
 
 function paintAudit(root, d) {
-  const { status, summary, events, queue, agents, vendors, endpoint, hooks } = d;
+  const { status, summary, events, queue, agents, vendors, endpoint, hooks, grc } = d;
   const chain = status.chain || {};
   const evs = events.events || [];
   const q = queue.events || [];
@@ -6294,6 +6295,37 @@ function paintAudit(root, d) {
       </div>
     </section>
 
+    <section class="zone auditpair">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Compliance tests</span><span class="p-s">WHAT VANTA OR DRATA WILL SHOW</span></div>
+        <div class="au-rulelist">${(grc?.signals || []).map((s) => `
+          <div class="au-sig">
+            <span class="au-sev ${s.status === "pass" ? "ok" : s.status === "fail" ? "bad" : ""}">${s.status === "not_applicable" ? "n/a" : esc(s.status)}</span>
+            <div><div class="au-sig-t">${esc(s.title)}</div><div class="au-sig-d">${esc(s.detail)}</div></div>
+          </div>`).join("")}</div>
+        <div class="au-hint">Computed from the record. A test with nothing to judge reports n/a rather than passing.</div>
+      </div>
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Vanta · Drata</span><span class="p-s">EVIDENCE PUSH</span></div>
+        <div class="au-vendors">${(grc?.status || []).map((p) => {
+          const c = (grc.platforms || []).find((x) => x.id === p.id) || {};
+          const missing = (c.credentials || []).filter((x) => !x.optional && !p.credentials?.[x.env]).map((x) => x.env);
+          const last = p.lastRun ? (p.lastRun.ok ? `last push ok · ${p.lastRun.tests ?? 0} tests` : `last push failed · ${trunc(p.lastRun.error || "", 70)}`) : "not pushed since start";
+          return `<div class="au-vendor${p.configured ? " ready" : ""}">
+            <div class="au-vendor-h"><span class="au-vendor-n">${esc(p.name)}</span>
+              <span class="badge${p.enabled && p.configured ? " on" : ""}">${p.configured ? (p.enabled ? `every ${esc(String(p.intervalHours))}h` : "ready") : "not configured"}</span></div>
+            <div class="au-vendor-s">${esc(c.sends || "")}</div>
+            <div class="au-vendor-m">${missing.length ? `needs env ${missing.map((m) => `<span class="mono">${esc(m)}</span>`).join(", ")} · run <span class="mono">tollpike audit grc setup ${esc(p.id)}</span>` : esc(last)}</div>
+            ${p.configured ? `<div class="row" style="gap:8px;margin-top:8px">
+              <button class="sm" data-grc-push="${esc(p.id)}">Push now</button>
+              <button class="sm${p.enabled ? "" : " primary"}" data-grc-toggle="${esc(p.id)}" data-on="${p.enabled ? "1" : ""}">${p.enabled ? "Disable schedule" : "Enable schedule"}</button>
+              <span class="au-msg" data-gmsg="${esc(p.id)}"></span></div>` : ""}
+          </div>`;
+        }).join("")}</div>
+        <div class="au-hint">Only summaries leave: pass or fail with a reason, the evidence pack, and key names and dates. Neither platform lets an API create a test, so the pass/fail rule is set once in their UI.</div>
+      </div>
+    </section>
+
     <section class="zone auditwide last">
       <div class="pane">
         <div class="p-head"><span class="p-t">Evidence pack</span><span class="p-s">ISO/IEC 27001 · SOC 2</span></div>
@@ -6395,6 +6427,26 @@ function paintAudit(root, d) {
     modes[sel.dataset.rule] = sel.value;
     try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ ruleModes: modes }) }); document.activeElement?.blur?.(); rerender(); }
     catch (err) { alert(err.message); }
+  }));
+
+  root.querySelectorAll("[data-grc-push]").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.grcPush;
+    const m = root.querySelector(`[data-gmsg="${id}"]`);
+    const say = (t, cls = "") => { if (m) { m.textContent = t; m.className = `au-msg ${cls}`; } };
+    say("pushing…");
+    btn.disabled = true;
+    auditUi.busy = true;
+    try {
+      const r = await api(`/api/panel/audit/grc/${encodeURIComponent(id)}/push`, { method: "POST" });
+      say(`${r.tests ?? 0} tests${r.accounts ? ` · ${r.accounts} accounts` : ""}${r.evidence ? " · evidence sent" : ""}`, "ok");
+    } catch (err) { say(err.message, "bad"); }
+    auditUi.busy = false;
+    btn.disabled = false;
+  }));
+  root.querySelectorAll("[data-grc-toggle]").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.grcToggle;
+    try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ grc: { [id]: { enabled: !btn.dataset.on } } }) }); rerender(); }
+    catch (err) { const m = root.querySelector(`[data-gmsg="${id}"]`); if (m) { m.textContent = err.message; m.className = "au-msg bad"; } }
   }));
 
   root.querySelectorAll("[data-pull]").forEach((btn) => btn.addEventListener("click", async () => {

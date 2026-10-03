@@ -27,7 +27,7 @@ Routing infrastructure for AI. One endpoint, every provider behind it.
 
 USAGE
   tollpike [start]        start the gateway and the control panel
-  tollpike mcp            serve the 111 MCP tools over stdio, for an MCP
+  tollpike mcp            serve the 112 MCP tools over stdio, for an MCP
                           client that spawns a subprocess
   tollpike verify         check the usage ledger's tamper-evident hash chain
   tollpike verify --seal  retro-seal rows that predate the chain (writes a .bak)
@@ -41,6 +41,7 @@ USAGE
   tollpike audit export   evidence pack for an auditor (--from, --to, --out)
   tollpike audit egress-hosts  provider hosts to block for everyone but Tollpike
   tollpike audit vendors  hosted-agent audit-log connectors (pull <id> to fetch now)
+  tollpike audit grc      compliance tests and Vanta/Drata push (setup <id>, push <id>)
   tollpike hook config    print the Claude Code hooks block (--command, --fail-closed)
   tollpike hook claude-code  forward one Claude Code hook event (run by the hook)
   tollpike mcp-proxy      audited MCP proxy over stdio (--check to test servers)
@@ -344,6 +345,90 @@ if (cmd === "audit" || cmd === "agents") {
     }
     console.log("\non = configured and scheduled, idle = configured but not enabled, -- = missing credentials or settings.");
     console.log("Pull one now: tollpike audit vendors pull <id>");
+    process.exit(0);
+  }
+
+  if (sub === "grc") {
+    const grc = await import(pathToFileURL(path.join(root, "src", "audit", "grc", "index.js")).href);
+    const action = words[2] || "status";
+    if (action === "push") {
+      const r = await grc.pushGrc(words[3]);
+      if (!r.ok) {
+        console.error(`push failed: ${r.error}`);
+        process.exit(1);
+      }
+      console.log(`${words[3]}: ${r.tests ?? 0} tests, ${r.accounts ?? 0} accounts, evidence ${r.evidence ? JSON.stringify(r.evidence) : "not sent"}`);
+      for (const s of r.skipped || []) console.log(`  skipped ${s}`);
+      process.exit(0);
+    }
+    if (action === "setup") {
+      const id = words[3];
+      if (id === "vanta") {
+        const { VANTA_TEST_SCHEMA } = await import(pathToFileURL(path.join(root, "src", "audit", "grc", "vanta.js")).href);
+        console.log(`Vanta, one-time setup:
+
+1. Settings > Developer Console > Create > Build Integrations > Private.
+   Copy the client id and secret into the gateway's environment:
+     VANTA_CLIENT_ID=...   VANTA_CLIENT_SECRET=...
+2. In that app's Resources tab, add a Custom Resource named "Tollpike test"
+   with this schema, and copy its Resource ID:
+
+${JSON.stringify(VANTA_TEST_SCHEMA, null, 2)}
+
+3. Optional: add a User Account resource too, for agent keys in access reviews.
+4. Optional, for evidence uploads: create a Manage Vanta app and set
+     VANTA_MANAGE_CLIENT_ID=...   VANTA_MANAGE_CLIENT_SECRET=...
+   and pick the evidence document to upload to.
+5. Tell Tollpike the ids:
+     POST /api/panel/audit/settings
+     {"grc": {"vanta": {"enabled": true, "testsResourceId": "...", "accountsResourceId": "...", "documentId": "..."}}}
+6. Push once:  tollpike audit grc push vanta
+7. Tests > Create custom test > integration "Tollpike" > resource "Tollpike test".
+   Rule: passing equals true  OR  applicable equals false.
+   Map it to your logging and monitoring controls. Vanta has no API for this step.`);
+        process.exit(0);
+      }
+      if (id === "drata") {
+        console.log(`Drata, one-time setup:
+
+1. Settings > API Keys > Create API Key, with Custom Connections Data
+   (create and update) and Evidence Library: Create Evidence. Put it in the
+   gateway's environment:  DRATA_API_KEY=...
+2. Create a custom connection for the tests (Drata API or UI), with these
+   record fields: id, name (display key), status, passing (boolean),
+   applicable (boolean), detail, controls, measuredAt. Note the connection id
+   and customResources[0].id. Custom Connections need Advanced or Enterprise.
+3. Optional: a second connection for the agent register, fields id, name,
+   kind, active (boolean), createdAt, revokedAt, human (boolean).
+4. Tell Tollpike the ids (workspaceId from GET /workspaces):
+     POST /api/panel/audit/settings
+     {"grc": {"drata": {"enabled": true, "workspaceId": "...", "testsConnectionId": "...",
+       "testsResourceId": "...", "evidenceControlCodes": "DCF-37,DCF-38"}}}
+5. Push once:  tollpike audit grc push drata
+6. Monitoring > Create test > Custom > provider "Tollpike".
+   Condition: passing = true  OR  applicable = false. Publish it and map it to
+   your logging and monitoring controls. Drata has no API for this step.`);
+        process.exit(0);
+      }
+      console.error("usage: tollpike audit grc setup <vanta|drata>");
+      process.exit(1);
+    }
+    const signals = grc.computeSignals();
+    const status = grc.grcStatus();
+    if (json) {
+      console.log(JSON.stringify({ signals, platforms: status }, null, 2));
+      process.exit(0);
+    }
+    console.log("continuous tests (what Vanta or Drata would show)");
+    for (const s of signals) console.log(`  ${s.status === "pass" ? "PASS" : s.status === "fail" ? "FAIL" : "n/a "}  ${s.id.padEnd(24)} ${s.detail}`);
+    console.log("\nplatforms");
+    const catalog = grc.grcCatalog();
+    for (const p of status) {
+      const required = (catalog.find((c) => c.id === p.id)?.credentials || []).filter((c) => !c.optional).map((c) => c.env);
+      const missing = required.filter((env) => !p.credentials[env]);
+      console.log(`  ${p.configured ? (p.enabled ? "on  " : "idle") : "--  "}  ${p.name.padEnd(8)} ${p.configured ? `every ${p.intervalHours}h${p.lastRun ? `, last ${p.lastRun.ok ? "ok" : "failed"}` : ""}` : `needs ${missing.join(", ") || "settings"}`}`);
+    }
+    console.log("\nSet up:  tollpike audit grc setup <vanta|drata>     Push now:  tollpike audit grc push <id>");
     process.exit(0);
   }
 

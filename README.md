@@ -5,11 +5,11 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **744 tests** · **19 routing
+**46 providers** (6 local runtimes) · **762 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
-**111 MCP tools across 32 scopes** over stdio/HTTP/SSE · **A2A** JSON-RPC
+**112 MCP tools across 32 scopes** over stdio/HTTP/SSE · **A2A** JSON-RPC
 with 6 skills · response caching · security guardrails
 
 Point any OpenAI-compatible tool at one local endpoint and reach 46
@@ -289,12 +289,13 @@ TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
 ```bash
 tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
-tollpike mcp             # serve the 111 MCP tools over stdio
+tollpike mcp             # serve the 112 MCP tools over stdio
 tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
 tollpike agents add NAME # issue an agent key (shown once); keys become mandatory
 tollpike audit           # audit coverage, gaps and rule modes
 tollpike audit export    # evidence pack for ISO 27001 / SOC 2 (--from, --to, --out)
+tollpike audit grc       # compliance tests; push them to Vanta or Drata (setup, push)
 tollpike hook config     # Claude Code hooks block, so its actions are audited before they run
 tollpike mcp-proxy       # audited MCP proxy over stdio (--check to test the servers)
 tollpike where           # print resolved paths, ports and URLs
@@ -307,7 +308,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 744 tests
+npm test                 # 762 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -653,7 +654,7 @@ Preview it against your own text on the Compression page before enabling it.
 
 The gateway exposes *itself*, so an agent can operate it.
 
-### MCP: 111 tools across 32 scopes
+### MCP: 112 tools across 32 scopes
 
 Over **stdio** (`tollpike mcp`, or `node src/mcp/server.js` from a checkout),
 **Streamable HTTP** (`POST /mcp`)
@@ -875,6 +876,25 @@ limitations.
 | 5.23 Cloud services, 8.15 Logging (vendors) | CC9.2, CC7.2 | hosted AI services' own audit logs, with every collection run recorded |
 | 5.28 Collection of evidence | CC2.1 | the export, committed to by the chain head |
 
+**Compliance platforms (Vanta, Drata).** Tollpike can push this evidence into
+the platform where an ISO 27001 or SOC 2 programme already runs. It sends
+seven pass/fail tests computed from the audit record (chain intact, chain
+keyed, agents attributed, review backlog, pre-execution coverage, egress
+enforced, vendor collection), the evidence pack as a PDF, and the agent key
+register. A test with nothing to judge reports not applicable, never a
+pass. Neither platform lets an API create a test, so each signal is sent as a
+record and you create the custom test once in their UI. Pushes run every 24
+hours and are themselves recorded in the chain.
+
+```bash
+tollpike audit grc                 # the seven tests and each platform's status
+tollpike audit grc setup vanta     # step-by-step setup, with the schema to paste
+tollpike audit grc push drata      # push now
+```
+
+[docs/audit-grc.md](docs/audit-grc.md) covers both setups, the plan tiers they
+need, and what the documentation left open.
+
 **What this does not do.** It does not make an organisation compliant: ISO
 27001 and SOC 2 also cover policy, risk assessment, people, suppliers and
 physical security. For agents wired to neither hooks nor the MCP proxy, it
@@ -1051,7 +1071,7 @@ src/
   a2a/
     server.js, skills.js, card.js  # 6 A2A skills over JSON-RPC + the agent card
   mcp/
-    server.js, scopes.js       # 111 tools across 32 scopes over stdio / HTTP / SSE;
+    server.js, scopes.js       # 112 tools across 32 scopes over stdio / HTTP / SSE;
                                 # read-only mode hides AND refuses mutations
   server.js                    # Express app: REST API, SSE streaming, control
                                 # panel API, static panel assets

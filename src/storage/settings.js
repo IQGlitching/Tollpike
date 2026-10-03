@@ -40,7 +40,9 @@ const DEFAULTS = {
     allowedDomains: [], // empty = no domain allowlist rule
     agentProcesses: [], // extra agent runtimes: [{ name, image?, commandLine? }] (regex strings)
     gatewayHosts: [], // hosts allowed to reach providers directly (this host always is)
-    vendors: {} // { connectorId: { enabled, intervalMinutes, ...connector settings } }; credentials live in env only
+    vendors: {}, // { connectorId: { enabled, intervalMinutes, ...connector settings } }; credentials live in env only
+    grc: {}, // { platformId: { enabled, intervalHours, periodDays, ...platform settings } }; credentials live in env only
+    grcReviewDays: 7 // the review-backlog test fails when a flag has waited longer than this
   }
 };
 
@@ -50,7 +52,7 @@ const AUDIT_MODES = ["observe", "flag", "ask", "block"];
 // Validates a partial audit patch. Rule ids are checked by the caller that
 // knows the rule catalog (audit/rules.js), to keep this module free of an
 // import from the audit layer, which itself imports settings.
-export function validateAudit(patch = {}, knownRules = null, vendorCatalog = null) {
+export function validateAudit(patch = {}, knownRules = null, vendorCatalog = null, grcCatalog = null) {
   const next = {};
   if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled);
   if (patch.content !== undefined) {
@@ -131,6 +133,38 @@ export function validateAudit(patch = {}, knownRules = null, vendorCatalog = nul
       out[id] = entry;
     }
     next.vendors = out;
+  }
+  if (patch.grc !== undefined) {
+    if (!patch.grc || typeof patch.grc !== "object" || Array.isArray(patch.grc)) return { ok: false, error: "grc must be an object of platformId -> settings" };
+    const out = {};
+    for (const [id, v] of Object.entries(patch.grc)) {
+      const known = grcCatalog ? grcCatalog.find((c) => c.id === id) : null;
+      if (grcCatalog && !known) return { ok: false, error: `unknown compliance platform "${id}"` };
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: `grc.${id} must be an object` };
+      const allowed = new Set(["enabled", "intervalHours", "periodDays", ...(known ? known.settings.map((x) => x.key) : [])]);
+      const entry = {};
+      for (const [k, val] of Object.entries(v)) {
+        if (!allowed.has(k)) return { ok: false, error: `grc.${id}.${k} is not a setting of this platform${known ? ` (settings: ${[...allowed].join(", ")})` : ""}` };
+        if (k === "enabled") entry.enabled = Boolean(val);
+        else if (k === "intervalHours" || k === "periodDays") {
+          const n = Number(val);
+          const [lo, hi] = k === "intervalHours" ? [1, 744] : [1, 366];
+          if (!Number.isInteger(n) || n < lo || n > hi) return { ok: false, error: `grc.${id}.${k} must be an integer between ${lo} and ${hi}` };
+          entry[k] = n;
+        } else {
+          if (typeof val !== "string" || !/^[A-Za-z0-9._@:\/, -]{1,200}$/.test(val)) return { ok: false, error: `grc.${id}.${k} must be an identifier (letters, digits, space, . _ @ : / , -)` };
+          if (/^(sk-|tpk_|tpa_|ghp_|github_pat_|xox|AKIA|vat_|drata_)/i.test(val)) return { ok: false, error: `grc.${id}.${k} looks like a credential. Credentials go in the environment, not in settings.` };
+          entry[k] = val;
+        }
+      }
+      out[id] = entry;
+    }
+    next.grc = out;
+  }
+  if (patch.grcReviewDays !== undefined) {
+    const n = Number(patch.grcReviewDays);
+    if (!Number.isInteger(n) || n < 1 || n > 90) return { ok: false, error: "grcReviewDays must be an integer between 1 and 90" };
+    next.grcReviewDays = n;
   }
   if (patch.gatewayHosts !== undefined) {
     if (!Array.isArray(patch.gatewayHosts) || patch.gatewayHosts.length > 50 || patch.gatewayHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]{1,253}$/.test(h))) {

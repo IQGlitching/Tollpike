@@ -935,6 +935,14 @@ export const SCOPES = {
         schema: OBJECT(),
         handler: () => audit.verifyAudit()
       },
+      compliance: {
+        description: "The continuous compliance tests (chain intact, agents attributed, review backlog, egress, vendor collection) and the Vanta/Drata push status.",
+        schema: OBJECT(),
+        handler: async () => {
+          const g = await import("../audit/grc/index.js");
+          return { signals: g.computeSignals(), platforms: g.grcStatus() };
+        }
+      },
       vendors: {
         description: "Hosted-agent vendor audit-log connectors: which are configured (credential presence only), enabled, and when each last pulled.",
         schema: OBJECT(),

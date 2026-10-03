@@ -52,6 +52,7 @@ import { gatewayHub, createProxyServer, proxyConfigPath } from "./audit/mcpProxy
 import { ingestEndpoint, endpointStatus } from "./audit/endpoint/index.js";
 import { FORMATS as ENDPOINT_FORMATS } from "./audit/endpoint/parsers.js";
 import { pullVendor, vendorsStatus, connectorCatalog, startVendorSchedule } from "./audit/vendors/index.js";
+import { grcCatalog, grcStatus, pushGrc, startGrcSchedule, computeSignals } from "./audit/grc/index.js";
 import { hostGuard } from "./middleware/hostGuard.js";
 import { csrfGuard } from "./middleware/csrf.js";
 import { pathToken, isPathTokenEnabled } from "./middleware/pathToken.js";
@@ -1652,6 +1653,14 @@ app.get("/api/panel/audit/endpoint", (req, res) => res.json(endpointStatus()));
 
 app.get("/api/panel/audit/vendors", (req, res) => res.json({ connectors: connectorCatalog(), status: vendorsStatus() }));
 
+// Compliance platforms (Vanta, Drata): what would be sent, and a push now.
+app.get("/api/panel/audit/grc", (req, res) => res.json({ platforms: grcCatalog(), status: grcStatus(), signals: computeSignals() }));
+
+app.post("/api/panel/audit/grc/:id/push", async (req, res) => {
+  const r = await pushGrc(req.params.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
 // Pull one vendor now, for a first check after configuring it.
 app.post("/api/panel/audit/vendors/:id/pull", async (req, res) => {
   const r = await pullVendor(req.params.id);
@@ -1714,13 +1723,16 @@ app.post("/api/panel/audit/review", (req, res) => {
 });
 
 app.post("/api/panel/audit/settings", (req, res) => {
-  const parsed = validateAudit(req.body || {}, AUDIT_RULES.map((r) => r.id), connectorCatalog());
+  const parsed = validateAudit(req.body || {}, AUDIT_RULES.map((r) => r.id), connectorCatalog(), grcCatalog());
   if (!parsed.ok) return res.status(400).json({ error: parsed.error });
   const current = getSettings().audit;
   // vendors merge per connector, so enabling one does not erase another's settings.
   const vendors = parsed.value.vendors ? { ...(current.vendors || {}), ...Object.fromEntries(Object.entries(parsed.value.vendors).map(([id, v]) => [id, { ...(current.vendors?.[id] || {}), ...v }])) } : current.vendors;
-  const next = updateSettings({ audit: { ...current, ...parsed.value, vendors } });
+  // grc merges per platform for the same reason.
+  const grc = parsed.value.grc ? { ...(current.grc || {}), ...Object.fromEntries(Object.entries(parsed.value.grc).map(([id, v]) => [id, { ...(current.grc?.[id] || {}), ...v }])) } : current.grc;
+  const next = updateSettings({ audit: { ...current, ...parsed.value, vendors, grc } });
   if (parsed.value.vendors) startVendorSchedule();
+  if (parsed.value.grc) startGrcSchedule();
   res.json({ ok: true, audit: next.audit });
 });
 
@@ -1772,6 +1784,8 @@ app.listen(PORT, BIND_HOST, () => {
   audit.recordStartup({ version: VERSION, bind: BIND_HOST, port: Number(PORT) });
   const vendorJobs = startVendorSchedule();
   if (vendorJobs) console.log(`  audit: pulling ${vendorJobs} vendor audit log(s) on a schedule`);
+  const grcJobs = startGrcSchedule();
+  if (grcJobs) console.log(`  audit: pushing evidence to ${grcJobs} compliance platform(s) on a schedule`);
   console.log(`tollpike listening on http://${BIND_HOST}:${PORT}`);
   // "available (key set)" counted the local runtimes, which are available
   // precisely because they need no key: the registry hands them a placeholder
