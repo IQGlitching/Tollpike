@@ -907,6 +907,97 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
 #topoSvg.tinspect g[data-lane]:not(.tfocus) { opacity: .42; transform: scale(.985); }
 
 .btn { will-change: transform; transition: border-color .14s var(--ease), background .14s var(--ease), color .14s var(--ease), transform .2s var(--ease); }
+
+/* ---------- agent audit ----------
+   Green is the record (sealed, explained), amber is a person's attention
+   (flagged, asked), red is an action stopped before it ran. Same grammar as
+   the control panel's Audit page. */
+#audit { position: relative; }
+.au-top { align-items: start; }
+.obs-cell.c7 { grid-column: span 7; }
+@media (max-width: 900px) { .obs-cell.c7 { grid-column: span 12; } .obs-cell.c5 { grid-column: span 12; } }
+
+#auSvg .au-blk rect.au-blk-box { fill: var(--surface-2); stroke: var(--line-2); transition: stroke .35s var(--ease); }
+#auSvg .au-blk.new rect.au-blk-box { stroke: rgba(126,231,135,.55); }
+#auSvg .au-blk.flag.new rect.au-blk-box { stroke: rgba(253,203,110,.6); }
+#auSvg .au-blk.block.new rect.au-blk-box { stroke: rgba(248,113,113,.6); }
+#auSvg .au-blk text { transition: opacity .3s var(--ease); }
+#auSvg .au-link { stroke: rgba(126,231,135,.28); stroke-width: 1; stroke-dasharray: 2 3; }
+#auGateRing { transition: stroke .3s var(--ease); }
+#auGate.hit #auGateRing { stroke: rgba(248,113,113,.8); }
+#auGate.warn #auGateRing { stroke: rgba(253,203,110,.8); }
+#auBlock { transition: opacity .35s var(--ease); }
+
+.au-stream { position: relative; height: 268px; overflow: hidden; margin-top: 10px; }
+.au-row {
+  display: grid; grid-template-columns: 62px 132px minmax(0,1fr) auto; gap: 10px; align-items: baseline;
+  font-family: var(--mono); font-size: 10.5px; padding: 7px 2px 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.035); border-left: 2px solid transparent; color: var(--txt-3);
+  animation: streamIn .4s var(--ease);
+}
+.au-row.flag { border-left-color: var(--conn); }
+.au-row.block { border-left-color: var(--bad); }
+.au-row .ar-t { color: var(--txt-4); }
+.au-row .ar-who { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-row .ar-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-row .ar-what em { font-style: normal; color: var(--model); }
+.au-tag { font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(126,231,135,.35); color: var(--ok); white-space: nowrap; }
+.au-tag.flag { border-color: rgba(253,203,110,.45); color: var(--conn); }
+.au-tag.block { border-color: rgba(248,113,113,.5); color: var(--bad); background: rgba(61,28,31,.6); }
+.au-tag.ask { border-color: rgba(253,203,110,.45); color: var(--conn); background: rgba(61,47,16,.5); }
+@media (max-width: 640px) { .au-row { grid-template-columns: minmax(0,1fr) auto; } .au-row .ar-t, .au-row .ar-who { display: none; } }
+
+.au-term { margin-top: 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg-deep); overflow: hidden; }
+.au-term-bar { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--txt-4); }
+.au-term-bar .cdots { display: flex; gap: 5px; }
+.au-term-bar .cdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--line-2); }
+.au-term-body { padding: 16px 14px 14px; font-family: var(--mono); font-size: 11.5px; min-height: 206px; }
+.au-term-line { display: flex; align-items: baseline; gap: 2px; color: var(--txt); flex-wrap: wrap; word-break: break-all; }
+.au-term-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 8px; flex: 0 0 7px; align-self: center; }
+.au-term-paren { color: var(--txt-4); }
+.au-term-cmd { color: var(--model); }
+.au-term-cmd::after { content: '▍'; color: var(--txt-4); animation: auCaret 1s steps(1) infinite; margin-left: 1px; }
+.au-term-cmd.done::after { content: ''; }
+@keyframes auCaret { 50% { opacity: 0; } }
+.au-verdict { margin-top: 18px; border-left: 2px solid var(--line-3); padding: 3px 0 4px 12px; transition: border-color .3s var(--ease); }
+.au-verdict-k { display: block; font-size: 10px; letter-spacing: .16em; color: var(--txt-4); }
+.au-verdict-v { display: block; font-size: 11.5px; color: var(--txt-2); margin-top: 6px; line-height: 1.55; font-family: var(--sans); }
+.au-verdict.deny { border-left-color: var(--bad); } .au-verdict.deny .au-verdict-k { color: var(--bad); }
+.au-verdict.ask { border-left-color: var(--conn); } .au-verdict.ask .au-verdict-k { color: var(--conn); }
+.au-verdict.ok { border-left-color: var(--ok); } .au-verdict.ok .au-verdict-k { color: var(--ok); }
+.au-term-note { margin-top: 18px; font-size: 9px; letter-spacing: .1em; color: var(--txt-4); text-transform: uppercase; }
+
+.au-evidence { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 28px; margin-top: 44px; align-items: start; }
+@media (max-width: 1000px) { .au-evidence { grid-template-columns: 1fr; } }
+.au-evidence > * { min-width: 0; }
+.au-h3 { font-size: clamp(20px, 2vw, 26px); font-weight: 600; letter-spacing: -.01em; margin: 14px 0 8px; color: var(--txt); }
+.au-sub { font-size: 13.5px; color: var(--txt-3); line-height: 1.6; margin: 0 0 22px; max-width: 560px; }
+.au-ctl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+@media (max-width: 640px) { .au-ctl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.au-ctl { background: var(--surface); padding: 12px 14px; display: grid; gap: 3px; position: relative; transition: background .5s var(--ease); }
+.au-ctl::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .5s var(--ease); }
+.au-ctl b { font-family: var(--mono); font-size: 15px; font-weight: 500; color: var(--txt); }
+.au-ctl span { font-size: 11.5px; color: var(--txt-3); }
+.au-ctl i { font-family: var(--mono); font-size: 9px; font-style: normal; letter-spacing: .08em; color: var(--txt-4); }
+.au-ctl.lit { background: #13241a; }
+.au-ctl.lit::before { background: var(--ok); box-shadow: 0 0 8px rgba(126,231,135,.6); }
+.au-ctl.lit b { color: var(--ok); }
+.au-vendors { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 22px; }
+.au-vendors-k { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; color: var(--txt-4); margin-right: 6px; }
+.au-chip { font-family: var(--mono); font-size: 10.5px; color: var(--txt-2); padding: 4px 9px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); transition: border-color .4s var(--ease), color .4s var(--ease); }
+.au-chip.lit { border-color: rgba(126,231,135,.5); color: var(--ok); }
+
+.au-pack { border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg-deep); overflow: hidden; }
+.au-pack-bar { display: flex; align-items: center; gap: 12px; padding: 10px 13px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; color: var(--txt-4); }
+.au-pack-bar .cdots { display: flex; gap: 5px; }
+.au-pack-bar .cdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--line-2); }
+.au-pack-body { padding: 16px 16px 18px; font-family: var(--mono); font-size: 11px; line-height: 1.75; color: var(--txt-2); }
+.au-pack-h { color: var(--txt); font-size: 12.5px; margin-bottom: 6px; }
+.au-pack-s { color: var(--route); margin-top: 10px; }
+.au-pack-l b { color: var(--txt); font-weight: 400; }
+.au-pack-l .ok { color: var(--ok); } .au-pack-l .bad { color: var(--bad); }
+.au-pack-l.dim { color: var(--txt-4); }
+@media (prefers-reduced-motion: reduce) { .au-row { animation: none; } .au-term-cmd::after { animation: none; } }
 </style>
 </head>
 <body>
@@ -938,6 +1029,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
       <a href="#how">How it works</a>
       <a href="#providers">Providers</a>
       <a href="#routing">Routing</a>
+      <a href="#audit">Audit</a>
       <a href="#developers">Docs</a>
       <a href="#start">Install</a>
     </nav>
@@ -1757,6 +1849,191 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
         <div class="obs-k"><span class="dot ok"></span>Event stream</div>
         <div id="obsStream" style="margin-top:10px"></div>
         <div class="obs-s" style="margin-top:12px">STREAMING FROM THE REQUEST LEDGER</div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+
+<!-- ======================= AUDIT ======================= -->
+<section id="audit" class="band gridpaper">
+  <span class="ghostlabel" aria-hidden="true">AUDIT</span>
+  <div class="band-in">
+    <div class="pos-grid au-top">
+      <div class="rv">
+        <p class="kicker sc-g">AGENT AUDIT</p>
+        <h2 class="display">Every agent action. Sealed, attributed, explained.</h2>
+        <p class="lede">Your agents write code, run shells, read files and call models all day.
+          Tollpike records every one of those actions from four places at once, checks each
+          against your rules, and seals it into a hash chain that shows any edit, deletion or
+          rollback. Risky actions are <b style="color:var(--bad)">stopped before they run</b>.
+          Everything else lands in the record, <b>attributed to the agent that did it</b>.</p>
+        <div class="dev-feats">
+          <div class="dev-feat"><span class="df-k">Model connection</span><span class="df-v">Every call on all four API formats, with the tool calls the model proposed and the results the agent reported back.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--conn)">Before it runs</span><span class="df-v">Claude Code hooks and the MCP proxy see each action first. <code>block</code> refuses it, <code>ask</code> puts a person in the loop.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--model)">On the machine</span><span class="df-v">Sysmon, auditd, osquery and Falco telemetry, matched to the action that explains each agent process.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--ok)">Hosted agents</span><span class="df-v">ChatGPT Enterprise, Claude, Microsoft 365 Copilot, GitHub Copilot, Gemini and Cursor audit logs, pulled into the same chain.</span></div>
+        </div>
+      </div>
+
+      <div class="rv netcanvas" id="auCanvas">
+        <svg id="auSvg" viewBox="0 0 680 520" role="img"
+             aria-label="Four capture layers, the model connection, hooks and the MCP proxy, endpoint sensors and vendor logs, feed agent events through a rules gate into a hash chain. A download-and-execute command from a Claude Code session is blocked before it runs.">
+          <text class="colhead" x="26" y="32">CAPTURE · FOUR LAYERS · ONE CHAIN</text>
+          <text class="colhead" x="455" y="32" id="auSealTag" fill="var(--ok)">SEALED · HMAC-SHA256</text>
+          <line x1="0" y1="42" x2="680" y2="42" stroke="rgba(255,255,255,.06)"/>
+
+          <!-- sources -->
+          <g id="auSrc0">
+            <rect class="nodebox" x="22" y="78" width="184" height="54" rx="9"/>
+            <rect class="rail" x="22" y="78" width="2.5" height="54" fill="var(--route)"/>
+            <text class="nlabel" x="38" y="100">MODEL CONNECTION</text>
+            <text class="nsub" x="38" y="118">every call · 4 api formats</text>
+          </g>
+          <g id="auSrc1">
+            <rect class="nodebox" x="22" y="174" width="184" height="54" rx="9"/>
+            <rect class="rail" x="22" y="174" width="2.5" height="54" fill="var(--conn)"/>
+            <text class="nlabel" x="38" y="196">HOOKS · MCP PROXY</text>
+            <text class="nsub" x="38" y="214">before it runs · can block</text>
+          </g>
+          <g id="auSrc2">
+            <rect class="nodebox" x="22" y="270" width="184" height="54" rx="9"/>
+            <rect class="rail" x="22" y="270" width="2.5" height="54" fill="var(--model)"/>
+            <text class="nlabel" x="38" y="292">ENDPOINT SENSORS</text>
+            <text class="nsub" x="38" y="310">sysmon · auditd · osquery</text>
+          </g>
+          <g id="auSrc3">
+            <rect class="nodebox" x="22" y="366" width="184" height="54" rx="9"/>
+            <rect class="rail" x="22" y="366" width="2.5" height="54" fill="var(--ok)"/>
+            <text class="nlabel" x="38" y="388">VENDOR LOGS</text>
+            <text class="nsub" x="38" y="406">chatgpt · claude · copilot</text>
+          </g>
+
+          <path id="auW0" class="wire" d="M 206 105 C 252 105 262 230 296 246"/>
+          <path id="auW1" class="wire" d="M 206 201 C 244 201 262 236 294 252"/>
+          <path id="auW2" class="wire" d="M 206 297 C 244 297 262 264 294 262"/>
+          <path id="auW3" class="wire" d="M 206 393 C 252 393 262 278 296 270"/>
+
+          <!-- rules gate -->
+          <g id="auGate">
+            <circle cx="324" cy="258" r="32" fill="var(--bg-deep)" stroke="rgba(126,231,135,.45)" stroke-width="1.2" id="auGateRing"/>
+            <circle cx="324" cy="258" r="22" fill="none" stroke="rgba(126,231,135,.4)" stroke-width="1" stroke-dasharray="3 5"/>
+            <text x="325" y="256" font-size="9" fill="var(--txt)" letter-spacing=".14em" text-anchor="middle">RULES</text>
+            <text x="324" y="301" font-size="7.5" fill="var(--txt-4)" letter-spacing=".1em" text-anchor="middle">14 RULES ACTIVE</text>
+          </g>
+          <text class="nsub" x="324" y="316" fill="var(--txt-4)" text-anchor="middle">observe · flag · ask · block</text>
+
+          <!-- blocked badge, shown on the hooks wire when a block lands -->
+          <g id="auBlock" opacity="0">
+            <rect x="214" y="150" width="138" height="22" rx="6" fill="rgba(61,28,31,.94)" stroke="rgba(248,113,113,.55)"/>
+            <text x="224" y="165" font-size="9.5" fill="var(--bad)" letter-spacing=".08em">BLOCKED BEFORE IT RAN</text>
+          </g>
+
+          <path id="auWc" class="wire hot-ok" d="M 356 258 H 404"/>
+
+          <!-- the chain: newest at the top, each block sealed to the one below -->
+          <g id="auChain"></g>
+          <line x1="415" y1="470" x2="658" y2="470" stroke="rgba(255,255,255,.06)"/>
+          <text class="nsub" x="415" y="488" fill="var(--txt-3)" id="auRows">CHAIN INTACT · 18,402,117 ROWS</text>
+          <text class="nsub" x="26" y="488" fill="var(--txt-3)" id="auCaption">RECORDING</text>
+
+          <g id="auParticles" class="particle"></g>
+        </svg>
+        <span class="frame-note">edit a row and the chain breaks · delete one and the anchor disagrees</span>
+      </div>
+    </div>
+
+    <div class="obs-grid rv au-instr">
+      <div class="obs-cell c3">
+        <div class="obs-k"><span class="dot ok beat"></span>Events sealed</div>
+        <div class="obs-v" id="auSealed">18,402,117</div>
+        <div class="obs-s">THIS QUARTER · HASH-CHAINED</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k">Chain</div>
+        <div class="obs-v" style="color:var(--ok)">INTACT</div>
+        <div class="obs-s">HMAC-SHA256 · ANCHORED · VERIFIED 4 MIN AGO</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k">Agents attributed</div>
+        <div class="obs-v">214<span style="font-size:13px;color:var(--txt-4)"> / 214</span></div>
+        <div class="obs-s">PER-AGENT KEYS · 0 UNATTRIBUTED CALLS</div>
+      </div>
+      <div class="obs-cell c3">
+        <div class="obs-k"><span class="dot warn"></span>Awaiting review</div>
+        <div class="obs-v" style="color:var(--conn)" id="auQueue">3</div>
+        <div class="obs-s">MEDIAN SIGN-OFF · 11 MIN</div>
+      </div>
+
+      <div class="obs-cell c7">
+        <div class="obs-k"><span class="dot ok"></span>Audit stream</div>
+        <div class="au-stream" id="auStream"></div>
+        <div class="obs-s" style="margin-top:12px">EVERY ROW SEALED TO THE ONE BEFORE IT</div>
+      </div>
+      <div class="obs-cell c5">
+        <div class="obs-k"><span class="dot warn"></span>Before it runs</div>
+        <div class="au-term" id="auTerm">
+          <div class="au-term-bar"><span class="cdots"><i></i><i></i><i></i></span><span>claude code · PreToolUse → tollpike</span></div>
+          <div class="au-term-body">
+            <div class="au-term-line"><span class="au-term-dot"></span><span id="auTermTool">Bash</span><span class="au-term-paren">(</span><span id="auTermCmd" class="au-term-cmd"></span><span class="au-term-paren">)</span></div>
+            <div class="au-verdict" id="auVerdict"><span class="au-verdict-k" id="auVerdictK">WAITING</span><span class="au-verdict-v" id="auVerdictV">for the next tool call</span></div>
+            <div class="au-term-note" id="auTermNote">Tollpike can withhold permission. It never grants it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="au-evidence rv">
+      <div class="au-controls">
+        <div class="au-ev-head">
+          <p class="kicker sc-g" style="margin:0">EVIDENCE</p>
+          <h3 class="au-h3">Controls an auditor can open.</h3>
+          <p class="au-sub">Every finding names the ISO/IEC 27001 and SOC 2 controls it supports. Watch them light as events land.</p>
+        </div>
+        <div class="au-ctl-grid" id="auCtl">
+          <div class="au-ctl" data-ctl="8.15"><b>8.15</b><span>Logging</span><i>CC7.2</i></div>
+          <div class="au-ctl" data-ctl="8.16"><b>8.16</b><span>Monitoring activities</span><i>CC7.2 · CC4.1</i></div>
+          <div class="au-ctl" data-ctl="5.25"><b>5.25</b><span>Assessment of security events</span><i>CC7.3 · CC7.4</i></div>
+          <div class="au-ctl" data-ctl="8.12"><b>8.12</b><span>Data leakage prevention</span><i>C1.1 · CC6.7</i></div>
+          <div class="au-ctl" data-ctl="5.15"><b>5.15</b><span>Access control and identity</span><i>CC6.1 · CC6.3</i></div>
+          <div class="au-ctl" data-ctl="8.5"><b>8.5</b><span>Secure authentication</span><i>CC6.1</i></div>
+          <div class="au-ctl" data-ctl="8.32"><b>8.32</b><span>Change management</span><i>CC8.1</i></div>
+          <div class="au-ctl" data-ctl="8.18"><b>8.18</b><span>Privileged utility programs</span><i>CC6.8</i></div>
+          <div class="au-ctl" data-ctl="8.20"><b>8.20</b><span>Networks security</span><i>CC6.6</i></div>
+          <div class="au-ctl" data-ctl="5.23"><b>5.23</b><span>Cloud services</span><i>CC9.2</i></div>
+          <div class="au-ctl" data-ctl="8.11"><b>8.11</b><span>Data masking</span><i>C1.1</i></div>
+          <div class="au-ctl" data-ctl="5.28"><b>5.28</b><span>Collection of evidence</span><i>CC2.1</i></div>
+        </div>
+        <div class="au-vendors">
+          <span class="au-vendors-k">HOSTED AGENTS, PULLED IN</span>
+          <span class="au-chip" data-v="chatgpt">ChatGPT Enterprise</span>
+          <span class="au-chip" data-v="claude">Claude</span>
+          <span class="au-chip" data-v="m365">Microsoft 365 Copilot</span>
+          <span class="au-chip" data-v="github">GitHub Copilot</span>
+          <span class="au-chip" data-v="gemini">Gemini</span>
+          <span class="au-chip" data-v="cursor">Cursor</span>
+          <span class="au-chip" data-v="openai">OpenAI platform</span>
+        </div>
+      </div>
+
+      <div class="au-pack">
+        <div class="au-pack-bar"><span class="cdots"><i></i><i></i><i></i></span><span>tollpike audit export · SUMMARY.md</span></div>
+        <div class="au-pack-body">
+          <div class="au-pack-h"># Tollpike audit evidence</div>
+          <div class="au-pack-l">Period <b>2026-07-01 → 2026-09-30</b></div>
+          <div class="au-pack-s">## Integrity</div>
+          <div class="au-pack-l"><span class="ok">✓</span> Chain intact · 18,402,117 rows · hmac-sha256</div>
+          <div class="au-pack-l"><span class="ok">✓</span> Anchor verifies · nothing deleted or rolled back</div>
+          <div class="au-pack-l dim">Head 25323ae2…7e36c3</div>
+          <div class="au-pack-s">## Activity</div>
+          <div class="au-pack-l">214 agents · 0 unattributed model calls</div>
+          <div class="au-pack-l">1,284 flagged · <span class="ok">1,281 signed off</span> · 3 open</div>
+          <div class="au-pack-l"><span class="bad">96 blocked</span> before they ran</div>
+          <div class="au-pack-s">## Controls this evidence supports</div>
+          <div class="au-pack-l">13 mappings · ISO/IEC 27001:2022 · SOC 2 TSC</div>
+          <div class="au-pack-s">## Limitations</div>
+          <div class="au-pack-l dim">Technical controls only. An ISMS also covers policy, risk, people and suppliers.</div>
+        </div>
       </div>
     </div>
   </div>
