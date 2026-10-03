@@ -85,7 +85,7 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2})$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?)$/.test(c)), `${r.id}: ${r.controls}`);
     }
   });
 
@@ -108,6 +108,25 @@ describe("rules", () => {
       for (const id of (row.iso42001 || "").match(/A\.\d+(\.\d+){1,2}/g) || []) assert.ok(ISO42001_ANNEX_A.has(id), `${row.iso}: ${id}`);
     }
     assert.ok(audit.CONTROL_MAP.some((c) => c.iso42001.startsWith("A.6.2.8")), "event logging is the core 42001 control");
+  });
+
+  // The EU AI Act articles the evidence supports (Regulation (EU) 2024/1689):
+  // 12 record-keeping, 14 human oversight, 15(5) resilience to manipulation,
+  // 19 log retention, 26(2)/(5)/(6) deployer oversight, monitoring and log
+  // retention. Anything else would be a claim nobody reviewed.
+  const EU_AI_ACT = new Set(["Art.12", "Art.14", "Art.15(5)", "Art.19", "Art.26(2)", "Art.26(5)", "Art.26(6)"]);
+
+  test("every rule and test names the EU AI Act articles it supports, from the reviewed set", async () => {
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    for (const r of rules.RULES) assert.ok(r.controls.some((c) => c.startsWith("EUAIA:")), `${r.id} has no EU AI Act article`);
+    for (const t of [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("EUAIA:"))) {
+      assert.ok(EU_AI_ACT.has(t.slice(6)), t);
+    }
+    assert.ok(audit.CONTROL_MAP.some((c) => c.euAiAct.startsWith("Art. 12")), "record-keeping is the core EU AI Act match");
+    const md = audit.evidenceMarkdown(audit.exportEvidence({}));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | Evidence |"));
+    assert.match(md, /high-risk AI systems/);
+    assert.match(md, /Most AI agent use is not high-risk/);
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -318,7 +337,7 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | Evidence |"));
     assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
     assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
     assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));

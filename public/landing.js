@@ -1194,7 +1194,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   /* controls and vendor chips light for the event that evidences them */
-  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl').map(el => [el.dataset.ctl, el]));
+  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl').map(el => [el.dataset.ctl, el]));
   const chipEls = new Map($$('.au-chip').map(el => [el.dataset.v, el]));
   // The ISO/IEC 42001 controls each ISO 27001 control's evidence also supports,
   // as in the export's control map.
@@ -1202,10 +1202,18 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     '8.15': ['A.6.2.8'], '8.16': ['A.6.2.6'], '5.25': ['A.6.2.6', 'A.8.4'], '8.12': ['A.9.2'], '8.11': ['A.9.2'],
     '5.15': ['A.3.2', 'A.4.2'], '8.18': ['A.9.2', 'A.9.4'], '8.20': ['A.9.4', 'A.4.5'], '5.23': ['A.10.3'], '5.28': ['7.5', '9.1']
   };
+  // And the EU AI Act articles, as in the same control map.
+  const TO_EU = {
+    '8.15': ['EU12', 'EU19', 'EU26-6'], '8.16': ['EU26-5'], '5.25': ['EU26-2', 'EU73'], '5.15': ['EU12'],
+    '8.18': ['EU14'], '8.20': ['EU12', 'EU26-5'], '5.23': ['EU26-5'], '5.28': ['EU19', 'EU26-6']
+  };
+  const EU_BY_RULE = { 'shell.remote_exec': 'EU15-5', 'injection.in_tool_result': 'EU15-5' };
   function light(e) {
     const base = [...e.ctl, '5.28'];
     const ai = base.flatMap(c => TO_42001[c] || []);
-    if (e.type === 'model.call') ai.push('A.4.4', 'A.4.5');
+    if (e.type === 'model.call') ai.push('A.4.4', 'A.4.5', 'EU6');
+    ai.push(...base.flatMap(c => TO_EU[c] || []));
+    if (EU_BY_RULE[e.rule]) ai.push(EU_BY_RULE[e.rule]);
     for (const c of [...new Set([...base, ...ai])]) {
       const el = ctlEls.get(c); if (!el) continue;
       el.classList.add('lit');

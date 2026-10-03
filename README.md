@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **764 tests** · **19 routing
+**46 providers** (6 local runtimes) · **765 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -294,7 +294,7 @@ tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
 tollpike agents add NAME # issue an agent key (shown once); keys become mandatory
 tollpike audit           # audit coverage, gaps and rule modes
-tollpike audit export    # evidence pack for ISO 27001 / 42001 / SOC 2 (--from, --to, --out)
+tollpike audit export    # evidence pack for ISO 27001 / 42001, SOC 2, EU AI Act (--from, --to, --out)
 tollpike audit grc       # compliance tests; push them to Vanta or Drata (setup, push)
 tollpike hook config     # Claude Code hooks block, so its actions are audited before they run
 tollpike mcp-proxy       # audited MCP proxy over stdio (--check to test the servers)
@@ -308,7 +308,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 764 tests
+npm test                 # 765 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -750,7 +750,13 @@ as evidence for the logging, monitoring and access controls of ISO/IEC 27001
 and SOC 2, and for the AI-specific controls of ISO/IEC 42001, the AI
 management system standard: event logging (A.6.2.8), operation and
 monitoring (A.6.2.6), responsible and intended use (A.9.2, A.9.4), AI
-suppliers (A.10.3) and the inventory of AI systems in use (A.4).
+suppliers (A.10.3) and the inventory of AI systems in use (A.4). It also maps
+to the EU AI Act: record-keeping (Art. 12), log retention of at least six
+months (Art. 19, 26(6)), human oversight (Art. 14, 26(2)), monitoring of
+operation (Art. 26(5)) and resilience to manipulation such as prompt injection
+(Art. 15(5)). Those duties bind high-risk AI systems, from 2 December 2027 for
+Annex III systems; for the many agents that are not high-risk, the same record
+is good practice.
 
 **Agent keys.** One key per agent, so every event names the agent behind it.
 
@@ -864,21 +870,21 @@ first. It contains the chain verification, the agent register, admin changes,
 reviews, open flags, an inventory of the providers and models each agent used,
 the control mapping below, and the export's own limitations.
 
-| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 | Evidence |
-|---|---|---|---|
-| 8.15 Logging | A.6.2.8 Recording of event logs | CC7.2 | the hash-chained log and its verification |
-| 8.16 Monitoring activities | A.6.2.6 Operation and monitoring | CC7.2, CC4.1 | rule findings on every event |
-| 5.25 Assessment of security events | A.6.2.6, A.8.4 Communication of incidents | CC7.3, CC7.4 | flagged events and their reviews |
-| 8.12 Data leakage prevention, 8.11 Data masking | A.9.2 Responsible use | C1.1, CC6.7 | credential and personal-data findings, redacted storage |
-| 5.15, 5.16, 5.18 Access control and identity | A.3.2 Roles, A.4.2 Resource documentation | CC6.1, CC6.2, CC6.3 | the agent register, attribution, unattributed-call count |
-| 8.5 Secure authentication | | CC6.1 | failed and revoked-key events |
-| 8.32 Change management, 8.9 Configuration | | CC8.1 | admin changes |
-| 8.18 Privileged utility programs, 8.7 Malware protection | A.9.2 Responsible use, A.9.4 Intended use | CC6.8, CC7.2 | pre-execution decisions (block, ask) and withheld results |
-| 8.16 Monitoring, 8.15 Logging (endpoint) | A.6.2.6, A.6.2.8 | CC7.2, CC7.3 | agent processes matched to audited actions, unexplained activity, sensor heartbeats |
-| 8.20 Networks security, 5.23 Cloud services | A.9.4 Intended use, A.4.5 Computing resources | CC6.6 | provider connections that bypassed the gateway |
-| 5.23 Cloud services, 8.15 Logging (vendors) | A.10.3 Suppliers, A.6.2.8 | CC9.2, CC7.2 | hosted AI services' own audit logs, with every collection run recorded |
-| 5.9 Inventory of assets | A.4.2, A.4.4, A.4.5 AI resources | CC6.1 | the providers and models each agent used, with call counts |
-| 5.28 Collection of evidence | Clauses 7.5, 9.1 | CC2.1 | the export, committed to by the chain head |
+| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 | EU AI Act | Evidence |
+|---|---|---|---|---|
+| 8.15 Logging | A.6.2.8 Recording of event logs | CC7.2 | Art. 12, 19, 26(6) | the hash-chained log and its verification |
+| 8.16 Monitoring activities | A.6.2.6 Operation and monitoring | CC7.2, CC4.1 | Art. 26(5), 15(5) | rule findings on every event |
+| 5.25 Assessment of security events | A.6.2.6, A.8.4 Communication of incidents | CC7.3, CC7.4 | Art. 26(2), 73 (supporting) | flagged events and their reviews |
+| 8.12 Data leakage prevention, 8.11 Data masking | A.9.2 Responsible use | C1.1, CC6.7 | | credential and personal-data findings, redacted storage |
+| 5.15, 5.16, 5.18 Access control and identity | A.3.2 Roles, A.4.2 Resource documentation | CC6.1, CC6.2, CC6.3 | Art. 12 | the agent register, attribution, unattributed-call count |
+| 8.5 Secure authentication | | CC6.1 | | failed and revoked-key events |
+| 8.32 Change management, 8.9 Configuration | | CC8.1 | | admin changes |
+| 8.18 Privileged utility programs, 8.7 Malware protection | A.9.2 Responsible use, A.9.4 Intended use | CC6.8, CC7.2 | Art. 14 Human oversight | pre-execution decisions (block, ask) and withheld results |
+| 8.16 Monitoring, 8.15 Logging (endpoint) | A.6.2.6, A.6.2.8 | CC7.2, CC7.3 | Art. 26(5) | agent processes matched to audited actions, unexplained activity, sensor heartbeats |
+| 8.20 Networks security, 5.23 Cloud services | A.9.4 Intended use, A.4.5 Computing resources | CC6.6 | Art. 12, 26(5) | provider connections that bypassed the gateway |
+| 5.23 Cloud services, 8.15 Logging (vendors) | A.10.3 Suppliers, A.6.2.8 | CC9.2, CC7.2 | Art. 26(5) | hosted AI services' own audit logs, with every collection run recorded |
+| 5.9 Inventory of assets | A.4.2, A.4.4, A.4.5 AI resources | CC6.1 | Art. 6 classification (supporting) | the providers and models each agent used, with call counts |
+| 5.28 Collection of evidence | Clauses 7.5, 9.1 | CC2.1 | Art. 19, 26(6) | the export, committed to by the chain head |
 
 **Compliance platforms (Vanta, Drata).** Tollpike can push this evidence into
 the platform where an ISO 27001, ISO 42001 or SOC 2 programme already runs. It sends
@@ -902,7 +908,10 @@ need, and what the documentation left open.
 **What this does not do.** It does not make an organisation compliant: ISO
 27001 and SOC 2 also cover policy, risk assessment, people, suppliers and
 physical security, and ISO 42001 also requires an AI policy, AI system impact
-assessments and governance of the data used to develop AI systems. For agents wired to neither hooks nor the MCP proxy, it
+assessments and governance of the data used to develop AI systems. It does
+not classify AI systems under the EU AI Act, and does not evidence AI literacy
+(Art. 4), fundamental rights impact assessments (Art. 27), transparency to
+people (Art. 50) or provider duties such as conformity assessment. For agents wired to neither hooks nor the MCP proxy, it
 sees only what they tell the model. On machines without an endpoint sensor it
 sees nothing of what ran there, and on machines with one it sees only agents'
 process trees and provider connections. Unless direct access is blocked, an

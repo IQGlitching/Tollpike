@@ -28,13 +28,13 @@ import { getSettings } from "../../storage/settings.js";
 const DAY = 24 * 60 * 60 * 1000;
 
 export const SIGNAL_CATALOG = [
-  { id: "audit.chain_intact", title: "AI agent audit log is intact", controls: ["ISO27001:8.15", "ISO27001:5.28", "SOC2:CC7.2", "ISO42001:A.6.2.8"] },
-  { id: "audit.chain_keyed", title: "AI agent audit log is tamper-evident (keyed)", controls: ["ISO27001:8.15", "SOC2:CC7.2", "ISO42001:A.6.2.8"] },
-  { id: "audit.agents_attributed", title: "Every AI model call is attributed to an agent identity", controls: ["ISO27001:5.16", "ISO27001:8.15", "SOC2:CC6.1", "ISO42001:A.6.2.8", "ISO42001:A.3.2"] },
-  { id: "audit.review_backlog", title: "Flagged AI agent events are reviewed on time", controls: ["ISO27001:5.25", "SOC2:CC7.3", "SOC2:CC7.4", "ISO42001:A.6.2.6"] },
-  { id: "audit.preexecution", title: "AI agent actions are checked before they run", controls: ["ISO27001:8.16", "ISO27001:8.18", "SOC2:CC6.8", "ISO42001:A.9.2", "ISO42001:A.9.4"] },
-  { id: "audit.egress_enforced", title: "No AI provider access bypasses the gateway", controls: ["ISO27001:8.20", "ISO27001:5.23", "SOC2:CC6.6", "ISO42001:A.9.4", "ISO42001:A.10.3"] },
-  { id: "audit.vendor_collection", title: "Hosted AI service audit logs are collected", controls: ["ISO27001:5.23", "ISO27001:8.15", "SOC2:CC7.2", "ISO42001:A.10.3", "ISO42001:A.6.2.8"] }
+  { id: "audit.chain_intact", title: "AI agent audit log is intact", controls: ["ISO27001:8.15", "ISO27001:5.28", "SOC2:CC7.2", "ISO42001:A.6.2.8", "EUAIA:Art.12", "EUAIA:Art.19", "EUAIA:Art.26(6)"] },
+  { id: "audit.chain_keyed", title: "AI agent audit log is tamper-evident (keyed)", controls: ["ISO27001:8.15", "SOC2:CC7.2", "ISO42001:A.6.2.8", "EUAIA:Art.12"] },
+  { id: "audit.agents_attributed", title: "Every AI model call is attributed to an agent identity", controls: ["ISO27001:5.16", "ISO27001:8.15", "SOC2:CC6.1", "ISO42001:A.6.2.8", "ISO42001:A.3.2", "EUAIA:Art.12"] },
+  { id: "audit.review_backlog", title: "Flagged AI agent events are reviewed on time", controls: ["ISO27001:5.25", "SOC2:CC7.3", "SOC2:CC7.4", "ISO42001:A.6.2.6", "EUAIA:Art.14", "EUAIA:Art.26(2)"] },
+  { id: "audit.preexecution", title: "AI agent actions are checked before they run", controls: ["ISO27001:8.16", "ISO27001:8.18", "SOC2:CC6.8", "ISO42001:A.9.2", "ISO42001:A.9.4", "EUAIA:Art.14"] },
+  { id: "audit.egress_enforced", title: "No AI provider access bypasses the gateway", controls: ["ISO27001:8.20", "ISO27001:5.23", "SOC2:CC6.6", "ISO42001:A.9.4", "ISO42001:A.10.3", "EUAIA:Art.12", "EUAIA:Art.26(5)"] },
+  { id: "audit.vendor_collection", title: "Hosted AI service audit logs are collected", controls: ["ISO27001:5.23", "ISO27001:8.15", "SOC2:CC7.2", "ISO42001:A.10.3", "ISO42001:A.6.2.8", "EUAIA:Art.26(5)", "EUAIA:Art.12"] }
 ];
 
 function result(id, status, detail, metrics = {}) {
