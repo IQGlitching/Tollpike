@@ -152,13 +152,21 @@ describe("mcp: unauthenticated HTTP transport defaults to read-only", () => {
 
   test("read-only is derived from whether a gateway key is set", () => {
     assert.ok(
-      /function mcpReadOnly\(\)/.test(server),
-      "the mode must be computed, not a flat process.env read"
+      /function mcpReadOnly\(req\)/.test(server),
+      "the mode must be computed per caller, not a flat process.env read"
     );
     assert.ok(
       /return !getSettings\(\)\.gatewayApiKey/.test(server),
       "no key must mean read-only — 100+ tools reachable unauthenticated is a remote control"
     );
+  });
+
+  test("an agent key always gets the read-only surface, ahead of any env override", () => {
+    const body = server.slice(server.indexOf("function mcpReadOnly(req)"));
+    const agentLine = body.indexOf("if (req?.agent) return true;");
+    const envLine = body.indexOf('process.env.MCP_READ_ONLY === "false"');
+    assert.ok(agentLine !== -1, "agents must be forced read-only: an agent able to change settings could switch off its own audit");
+    assert.ok(agentLine < envLine, "the agent check must run before MCP_READ_ONLY=false can opt back in");
   });
 
   test("MCP_READ_ONLY=false is an explicit opt back in", () => {
@@ -169,7 +177,7 @@ describe("mcp: unauthenticated HTTP transport defaults to read-only", () => {
     const mcp = src("mcp/server.js");
     assert.ok(mcp.includes("resolveReadOnly"), "must have a resolver");
     assert.ok(
-      /createMcpServer\(\{ readOnly: resolveReadOnly\(\) \}\)/.test(mcp),
+      /createMcpServer\(\{ readOnly: resolveReadOnly\(req\) \}\)/.test(mcp),
       "setting a key from the panel must take effect without a restart"
     );
   });

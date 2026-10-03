@@ -96,7 +96,9 @@ export async function startMcpServer() {
  * changes rather than at the next restart.
  */
 export async function mountMcpHttp(app, { path: basePath = "/mcp", readOnly = false } = {}) {
-  const resolveReadOnly = () => (typeof readOnly === "function" ? Boolean(readOnly()) : Boolean(readOnly));
+  // The request is passed through so the policy can depend on who is calling:
+  // an agent key always gets the read-only surface.
+  const resolveReadOnly = (req) => (typeof readOnly === "function" ? Boolean(readOnly(req)) : Boolean(readOnly));
   const { StreamableHTTPServerTransport } = await import(
     "@modelcontextprotocol/sdk/server/streamableHttp.js"
   );
@@ -110,7 +112,7 @@ export async function mountMcpHttp(app, { path: basePath = "/mcp", readOnly = fa
   // multi-turn state on the server to keep.
   app.post(basePath, async (req, res) => {
     try {
-      const server = createMcpServer({ readOnly: resolveReadOnly() });
+      const server = createMcpServer({ readOnly: resolveReadOnly(req) });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       // Closing the server with the response prevents an accumulation of live
       // Server objects, one per request, each holding its transport.
@@ -153,7 +155,7 @@ export async function mountMcpHttp(app, { path: basePath = "/mcp", readOnly = fa
       const transport = new SSEServerTransport(`${basePath}/messages`, res);
       sseTransports.set(transport.sessionId, transport);
       res.on("close", () => sseTransports.delete(transport.sessionId));
-      const server = createMcpServer({ readOnly: resolveReadOnly() });
+      const server = createMcpServer({ readOnly: resolveReadOnly(req) });
       await server.connect(transport);
     } catch (err) {
       console.error(`[mcp/sse] ${err.message}`);

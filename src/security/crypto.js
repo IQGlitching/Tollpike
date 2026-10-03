@@ -44,10 +44,20 @@ function getMasterKey() {
 // corruption and naive edits but not a motivated local editor, and reports
 // `keyed: false` so nothing overclaims tamper-evidence it cannot provide.
 export function ledgerKey() {
+  return chainKey("tollpike-ledger-chain-v1");
+}
+
+// The audit log's chain key. Same secret, its own label, so a MAC valid in one
+// chain is never valid in the other and a row cannot be moved between them.
+export function auditKey() {
+  return chainKey("tollpike-audit-chain-v1");
+}
+
+function chainKey(label) {
   const secret = process.env.TOLLPIKE_SECRET;
   if (!secret) return null;
   const master = crypto.scryptSync(secret, loadSalt(), KEY_LENGTH);
-  return crypto.createHmac("sha256", master).update("tollpike-ledger-chain-v1").digest();
+  return crypto.createHmac("sha256", master).update(label).digest();
 }
 
 export function isEncryptionAvailable() {

@@ -27,10 +27,27 @@ Routing infrastructure for AI. One endpoint, every provider behind it.
 
 USAGE
   tollpike [start]        start the gateway and the control panel
-  tollpike mcp            serve the 104 MCP tools over stdio, for an MCP
+  tollpike mcp            serve the 111 MCP tools over stdio, for an MCP
                           client that spawns a subprocess
   tollpike verify         check the usage ledger's tamper-evident hash chain
   tollpike verify --seal  retro-seal rows that predate the chain (writes a .bak)
+  tollpike agents add N   issue an agent key (shown once); keys become mandatory
+  tollpike agents list    the agent key register
+  tollpike agents revoke  revoke an agent's key by id or name
+  tollpike audit          audit coverage, gaps and rule modes
+  tollpike audit events   recent audit events (--flagged, --unreviewed, --agent, --type)
+  tollpike audit verify   check the audit log's tamper-evident hash chain
+  tollpike audit review   sign off a flagged event (--by <name> --note <text>)
+  tollpike audit export   evidence pack for an auditor (--from, --to, --out)
+  tollpike audit egress-hosts  provider hosts to block for everyone but Tollpike
+  tollpike audit vendors  hosted-agent audit-log connectors (pull <id> to fetch now)
+  tollpike hook config    print the Claude Code hooks block (--command, --fail-closed)
+  tollpike hook claude-code  forward one Claude Code hook event (run by the hook)
+  tollpike mcp-proxy      audited MCP proxy over stdio (--check to test servers)
+  tollpike agents add N --sensor  issue a sensor key for an endpoint collector
+  tollpike endpoint sysmon   ship Sysmon events (Windows) to the gateway
+  tollpike endpoint tail F --format auditd|osquery|falco  follow a sensor log
+  tollpike endpoint snapshot send the current process list
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
   tollpike --help         this text
@@ -47,6 +64,8 @@ ENVIRONMENT
   TOLLPIKE_ENV_FILE    read credentials from this file and nothing else
   TOLLPIKE_DATA_DIR    where usage.jsonl and settings.json live
   TOLLPIKE_SECRET      enables AES-256-GCM encryption of the stored gateway key
+                       and keys the ledger and audit hash chains
+  TOLLPIKE_AUDIT       set to off to stop recording the audit trail
 
   Point any OpenAI-compatible client at http://127.0.0.1:20128/v1
 `);
@@ -141,6 +160,390 @@ if (cmd === "verify") {
   process.exit(2);
 }
 
+// The audit trail and the agent key register, from the terminal. These run in
+// their own process next to a possibly running gateway; both files they touch
+// re-read their state when another process has written, so that is safe.
+if (cmd === "audit" || cmd === "agents") {
+  const audit = await import(pathToFileURL(path.join(root, "src", "audit", "index.js")).href);
+  const agents = await import(pathToFileURL(path.join(root, "src", "audit", "agents.js")).href);
+  const VALUE_FLAGS = ["--from", "--to", "--type", "--agent", "--tool", "--severity", "--limit", "--by", "--note", "--out"];
+  const opts = {};
+  const words = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (VALUE_FLAGS.includes(argv[i])) opts[argv[i].slice(2)] = argv[++i];
+    else if (!argv[i].startsWith("-")) words.push(argv[i]);
+  }
+  const sub = words[1] || (cmd === "agents" ? "list" : "status");
+  const json = flag("--json");
+  const out = (obj, text) => console.log(json ? JSON.stringify(obj, null, 2) : text());
+
+  if (cmd === "agents") {
+    if (sub === "list") {
+      const list = agents.listAgents();
+      out({ agents: list }, () =>
+        list.length
+          ? list
+              .map((a) => `${a.active ? "active " : "revoked"}  ${a.kind.padEnd(6)} ${a.id}  ${a.name.padEnd(24)} created ${a.createdAt}${a.revokedAt ? `  revoked ${a.revokedAt}` : ""}`)
+              .join("\n")
+          : "no agent keys issued. Create one: tollpike agents add <name>"
+      );
+      process.exit(0);
+    }
+    if (sub === "add") {
+      const r = agents.createAgent(words.slice(2).join(" "), { note: opts.note, kind: flag("--sensor") ? "sensor" : "agent" });
+      if (!r.ok) {
+        console.error(r.error);
+        process.exit(1);
+      }
+      audit.recordAdmin("agent.created", { target: r.agent, via: "cli" });
+      console.log(`agent         ${r.agent.name} (${r.agent.id})`);
+      console.log(`key           ${r.key}`);
+      console.log("");
+      console.log("This key is shown once and cannot be recovered.");
+      if (r.agent.kind === "sensor") console.log("Set it as TOLLPIKE_SENSOR_KEY where the collector runs. It can submit endpoint telemetry and nothing else.");
+      else {
+        console.log("Give it to the agent as its API key.");
+        console.log("Model endpoints now require a key: callers without one are refused.");
+      }
+      process.exit(0);
+    }
+    if (sub === "revoke") {
+      const r = agents.revokeAgent(words.slice(2).join(" "));
+      if (!r.ok) {
+        console.error(r.error);
+        process.exit(1);
+      }
+      audit.recordAdmin("agent.revoked", { target: r.agent, via: "cli" });
+      console.log(`revoked       ${r.agent.name} (${r.agent.id}) at ${r.agent.revokedAt}`);
+      process.exit(0);
+    }
+    console.error(`tollpike: unknown agents command "${sub}". Use list, add <name> or revoke <id|name>.`);
+    process.exit(1);
+  }
+
+  if (sub === "status") {
+    const s = audit.auditStatus();
+    out(s, () =>
+      [
+        `audit         ${s.enabled ? "enabled" : "DISABLED"}, content stored ${s.content === "hash" ? "as hashes only" : "redacted"}`,
+        `log           ${s.logPath}`,
+        `chain         ${s.chain.total} rows, ${s.chain.intact ? "intact" : "NOT INTACT"}, ${s.chain.keyed ? "keyed" : "unkeyed"}`,
+        `agents        ${s.agents.active} active${s.agents.requireKeyOnModelEndpoints ? ", key required on model endpoints" : ""}`,
+        `operator key  ${s.operatorKeySet ? "set" : "NOT SET"}`,
+        "",
+        "gaps",
+        ...s.gaps.map((g) => `  - ${g}`),
+        "",
+        "rules",
+        ...s.rules.map((r) => `  ${r.mode.padEnd(8)} ${r.severity.padEnd(8)} ${r.id}`)
+      ].join("\n")
+    );
+    process.exit(0);
+  }
+
+  if (sub === "verify") {
+    const v = audit.verifyAudit();
+    const problems = [];
+    if (v.brokenLinks) problems.push(`${v.brokenLinks} broken link(s) at row ${v.brokenAt.join(", ")}`);
+    if (v.truncated) problems.push("rows deleted");
+    if (v.rolledBack) problems.push("tail replaced");
+    if (v.anchorOk === false) problems.push("anchor missing or does not verify");
+    out(v, () =>
+      [
+        `log           ${audit.auditStatus().logPath}`,
+        `rows          ${v.total}, ${v.algo}${v.keyed ? " (keyed)" : " (unkeyed)"}`,
+        `status        ${v.intact ? "OK, every row verifies" : `TAMPERED: ${problems.join("; ")}`}`,
+        `head          ${v.head}`,
+        v.note
+      ].join("\n")
+    );
+    process.exit(v.intact ? 0 : 2);
+  }
+
+  if (sub === "summary") {
+    const s = audit.auditSummary({ from: opts.from, to: opts.to });
+    console.log(JSON.stringify(s, null, 2));
+    process.exit(0);
+  }
+
+  if (sub === "events") {
+    const r = audit.queryEvents({
+      from: opts.from,
+      to: opts.to,
+      type: opts.type,
+      agent: opts.agent,
+      tool: opts.tool,
+      severity: opts.severity,
+      flaggedOnly: flag("--flagged"),
+      unreviewedOnly: flag("--unreviewed"),
+      limit: opts.limit || 50
+    });
+    out(r, () => {
+      if (!r.events.length) return "no matching events";
+      const rows = r.events.map((e) => {
+        const what = e.tool || e.action || e.outcome || e.reason || "";
+        const findings = (e.findings || []).map((x) => x.rule).join(",");
+        const mark = findings ? `  [${e.flagged ? "FLAG " : ""}${findings}]` : "";
+        return `${e.ts}  ${e.id}  ${(e.agent?.name || "-").padEnd(16)} ${e.type.padEnd(14)} ${what}${mark}`;
+      });
+      return `${rows.join("\n")}\n\n${r.returned} of ${r.total} shown`;
+    });
+    process.exit(0);
+  }
+
+  if (sub === "review") {
+    const [eventId, decision] = words.slice(2);
+    const r = audit.reviewEvent({ eventId, decision, reviewer: opts.by, note: opts.note });
+    if (!r.ok) {
+      console.error(r.error);
+      console.error("usage: tollpike audit review <eventId> <acknowledged|false_positive|escalated|resolved> --by <name> [--note <text>]");
+      process.exit(1);
+    }
+    console.log(`reviewed      ${eventId} as ${decision} by ${opts.by} (${r.review.id})`);
+    process.exit(0);
+  }
+
+  if (sub === "export") {
+    const pack = audit.exportEvidence({ from: opts.from, to: opts.to });
+    const dir = path.resolve(opts.out || `tollpike-evidence-${new Date().toISOString().slice(0, 10)}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "evidence.json"), JSON.stringify(pack, null, 2));
+    fs.writeFileSync(path.join(dir, "SUMMARY.md"), audit.evidenceMarkdown(pack));
+    audit.recordAdmin("evidence.export", { period: pack.period, events: pack.events.length, via: "cli" });
+    console.log(`evidence      ${dir}`);
+    console.log(`              evidence.json (${pack.events.length} events), SUMMARY.md`);
+    console.log(`chain         ${pack.verification.intact ? "intact" : "NOT INTACT"}, head ${pack.verification.head}`);
+    process.exit(0);
+  }
+
+  if (sub === "vendors") {
+    const vendors = await import(pathToFileURL(path.join(root, "src", "audit", "vendors", "index.js")).href);
+    const action = words[2] || "list";
+    if (action === "pull") {
+      const id = words[3];
+      const r = await vendors.pullVendor(id);
+      if (!r.ok) {
+        console.error(`pull failed: ${r.error}`);
+        process.exit(1);
+      }
+      console.log(`${id}: ${r.fetched} fetched, ${r.recorded} recorded, ${r.duplicates} duplicates, ${r.pages} page(s)`);
+      process.exit(0);
+    }
+    const catalog = vendors.connectorCatalog();
+    const status = vendors.vendorsStatus();
+    if (json) {
+      console.log(JSON.stringify({ connectors: catalog, status }, null, 2));
+      process.exit(0);
+    }
+    for (const c of catalog) {
+      const s = status.find((x) => x.id === c.id);
+      console.log(`${s.configured ? (s.enabled ? "on  " : "idle") : "--  "}  ${c.id.padEnd(18)} ${c.name}`);
+      console.log(`        covers   ${c.covers}`);
+      console.log(`        needs    ${[...c.credentials.map((x) => `${x.env}${x.optional ? " (optional)" : ""}${process.env[x.env] ? " [set]" : ""}`), ...c.settings.filter((x) => x.required).map((x) => `audit.vendors.${c.id}.${x.key}`)].join(", ")}`);
+      if (s.lastPullAt) console.log(`        last     ${s.lastPullAt}`);
+    }
+    console.log("\non = configured and scheduled, idle = configured but not enabled, -- = missing credentials or settings.");
+    console.log("Pull one now: tollpike audit vendors pull <id>");
+    process.exit(0);
+  }
+
+  if (sub === "egress-hosts") {
+    const { providerHosts } = await import(pathToFileURL(path.join(root, "src", "audit", "egress.js")).href);
+    const hosts = providerHosts();
+    if (json) console.log(JSON.stringify(hosts, null, 2));
+    else if (flag("--plain")) console.log(hosts.map((h) => h.host).join("\n"));
+    else {
+      console.log("Block these for every machine except the Tollpike host (docs/audit-egress.md):\n");
+      for (const h of hosts) console.log(`${h.host.padEnd(44)} ${h.providers.join(", ")}`);
+      console.log(`\n${hosts.length} hosts. --plain prints hostnames only, for a firewall import.`);
+    }
+    process.exit(0);
+  }
+
+  console.error(`tollpike: unknown audit command "${sub}". Use status, verify, events, summary, review, export or egress-hosts.`);
+  process.exit(1);
+}
+
+// Endpoint collectors. They run on an agent's machine with a sensor key in
+// TOLLPIKE_SENSOR_KEY and ship OS telemetry to the gateway.
+if (cmd === "endpoint") {
+  const collect = await import(pathToFileURL(path.join(root, "src", "audit", "endpoint", "collect.js")).href);
+  const words = argv.filter((a, i) => !a.startsWith("-") && !["--url", "--format", "--host", "--interval"].includes(argv[i - 1]));
+  const valueOf = (name, fallback) => {
+    const i = argv.indexOf(name);
+    return i !== -1 && argv[i + 1] ? argv[i + 1] : fallback;
+  };
+  const sub = words[1] || "";
+  const url = valueOf("--url", process.env.TOLLPIKE_URL || "http://127.0.0.1:20128");
+  const key = process.env.TOLLPIKE_SENSOR_KEY;
+  const format = valueOf("--format", "");
+  const say = (m) => console.error(`[endpoint] ${m}`);
+
+  const sendSnapshot = async () => {
+    const snap = await collect.snapshotProcesses();
+    if (!snap.ok) return say(`snapshot failed: ${snap.error}`);
+    const r = await collect.sendBatch({ url, key, format: "native", body: snap.events });
+    say(r.ok ? `snapshot: ${snap.events.length} processes sent` : `snapshot refused: ${r.error}`);
+    return r;
+  };
+
+  if (sub === "snapshot") {
+    const r = await sendSnapshot();
+    process.exit(r?.ok ? 0 : 1);
+  }
+
+  if (sub === "send") {
+    if (!format) {
+      console.error("usage: tollpike endpoint send --format <sysmon|auditd|osquery|falco|native> [file]   (stdin when no file)");
+      process.exit(1);
+    }
+    const file = words[2];
+    let body = "";
+    if (file && file !== "-") body = fs.readFileSync(file, "utf8");
+    else for await (const chunk of process.stdin) body += chunk;
+    const r = await collect.sendBatch({ url, key, format, body, host: valueOf("--host", undefined) });
+    if (!r.ok) {
+      console.error(`refused: ${r.error}`);
+      process.exit(1);
+    }
+    console.log(`received ${r.received}, recorded ${r.recorded}, unexplained ${r.unexplained}, ignored ${r.ignored}, skipped ${r.skipped}`);
+    process.exit(0);
+  }
+
+  if (sub === "tail") {
+    const file = words[2];
+    if (!file || !format) {
+      console.error("usage: tollpike endpoint tail <file> --format <auditd|osquery|falco|native> [--from-start]");
+      process.exit(1);
+    }
+    await sendSnapshot();
+    await collect.tailFile({ file, format, url, key, fromStart: flag("--from-start"), intervalMs: Number(valueOf("--interval", "2")) * 1000, log: say });
+  }
+
+  if (sub === "sysmon") {
+    if (process.platform !== "win32") {
+      console.error("Sysmon is Windows-only. On Linux use: tollpike endpoint tail /var/log/audit/audit.log --format auditd");
+      process.exit(1);
+    }
+    await sendSnapshot();
+    const r = await collect.pollSysmon({ url, key, intervalMs: Number(valueOf("--interval", "5")) * 1000, log: say, once: flag("--once") });
+    process.exit(r?.ok === false ? 1 : 0);
+  }
+
+  console.error("usage: tollpike endpoint snapshot | send --format F [file] | tail <file> --format F | sysmon   (key in TOLLPIKE_SENSOR_KEY)");
+  process.exit(1);
+}
+
+// Claude Code hook client and config. `tollpike hook claude-code` is what a
+// command hook runs: it forwards the event on stdin to the gateway and prints
+// the gateway's answer for Claude Code. Its one job beyond forwarding is the
+// failure policy. Fail-open by default (the gateway being down must not stop
+// work); --fail-closed refuses tool calls while the audit cannot be recorded.
+// Nothing is written to stdout except the answer: stdout is what Claude Code
+// parses.
+if (cmd === "hook") {
+  const sub = argv.filter((a) => !a.startsWith("-"))[1] || "";
+  const valueOf = (name, fallback) => {
+    const i = argv.indexOf(name);
+    return i !== -1 && argv[i + 1] ? argv[i + 1] : fallback;
+  };
+  const url = valueOf("--url", process.env.TOLLPIKE_URL || "http://127.0.0.1:20128");
+
+  if (sub === "config") {
+    const { claudeCodeHookConfig } = await import(pathToFileURL(path.join(root, "src", "audit", "hooks.js")).href);
+    console.log(JSON.stringify(claudeCodeHookConfig({ url, mode: flag("--command") ? "command" : "http", failClosed: flag("--fail-closed") }), null, 2));
+    process.exit(0);
+  }
+
+  if (sub === "claude-code") {
+    const failClosed = flag("--fail-closed");
+    let raw = "";
+    for await (const chunk of process.stdin) raw += chunk;
+    let event = "";
+    try {
+      event = JSON.parse(raw).hook_event_name || "";
+    } catch {
+      // forwarded as-is; the gateway answers 400 and the policy below applies
+    }
+    const refuse = (why) => {
+      // Exit 2 blocks a PreToolUse and feeds stderr to Claude. Any other event
+      // has nothing to block, so the failure is reported and work continues.
+      if (failClosed && (event === "PreToolUse" || event === "UserPromptSubmit")) {
+        console.error(`Tollpike audit could not record this action (${why}). Blocked because the hook is fail-closed.`);
+        process.exit(2);
+      }
+      console.error(`tollpike hook: ${why}; continuing unaudited (fail-open).`);
+      process.exit(0);
+    };
+    try {
+      const res = await fetch(`${url.replace(/\/+$/, "")}/audit/hooks/claude-code`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(process.env.TOLLPIKE_AGENT_KEY ? { authorization: `Bearer ${process.env.TOLLPIKE_AGENT_KEY}` } : {})
+        },
+        body: raw,
+        signal: AbortSignal.timeout(Number(valueOf("--timeout", "10")) * 1000)
+      });
+      const text = await res.text();
+      if (!res.ok) refuse(`gateway answered HTTP ${res.status}`);
+      process.stdout.write(text || "{}");
+      process.exit(0);
+    } catch (err) {
+      refuse(err.name === "TimeoutError" ? "gateway timed out" : `gateway unreachable: ${err.cause?.code || err.message}`);
+    }
+  }
+
+  console.error("usage: tollpike hook claude-code [--url U] [--fail-closed]   (run by a Claude Code command hook)");
+  console.error("       tollpike hook config [--url U] [--command] [--fail-closed]   (print the settings.json hooks block)");
+  process.exit(1);
+}
+
+// The MCP proxy over stdio, for an agent that spawns its MCP servers. The
+// agent spawns this instead; this spawns the real servers from mcp-proxy.json
+// and records every call. Identity comes from TOLLPIKE_AGENT_KEY, checked
+// against the local agent register. stdout is the protocol stream.
+if (cmd === "mcp-proxy") {
+  const proxy = await import(pathToFileURL(path.join(root, "src", "audit", "mcpProxy.js")).href);
+  const agentsMod = await import(pathToFileURL(path.join(root, "src", "audit", "agents.js")).href);
+  const cfg = proxy.loadProxyConfig();
+  if (!cfg.ok) {
+    console.error(`tollpike mcp-proxy: ${cfg.error}`);
+    process.exit(1);
+  }
+
+  if (flag("--check")) {
+    const hub = new proxy.ProxyHub(cfg.servers);
+    const tools = await hub.listTools();
+    console.log(`config        ${cfg.file}${cfg.missing ? " (not found: no servers)" : ""}`);
+    for (const s of hub.status()) console.log(`${s.connected ? "ok  " : "FAIL"}  ${s.name.padEnd(16)} ${s.kind.padEnd(5)} ${s.target}  ${s.connected ? `${s.tools} tools` : s.error}`);
+    console.log(`tools         ${tools.length} exposed: ${tools.map((t) => t.name).slice(0, 20).join(", ")}${tools.length > 20 ? ", ..." : ""}`);
+    await hub.close();
+    process.exit(0);
+  }
+
+  let agent = null;
+  const presented = process.env.TOLLPIKE_AGENT_KEY;
+  const match = presented ? agentsMod.matchAgentKey(presented) : null;
+  if (match?.agent) agent = { id: match.agent.id, name: match.agent.name };
+  else if (presented || agentsMod.hasAgentKeys()) {
+    console.error(`tollpike mcp-proxy: ${match?.revoked ? "this agent key has been revoked" : presented ? "TOLLPIKE_AGENT_KEY is not a valid agent key" : "agent keys are in use, so TOLLPIKE_AGENT_KEY must be set"}.`);
+    process.exit(1);
+  }
+  const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
+  const hub = new proxy.ProxyHub(cfg.servers);
+  const server = proxy.createProxyServer(hub, { context: { source: "mcp-proxy", agent, callerId: agent ? `agent:${agent.id}` : "anonymous" } });
+  await server.connect(new StdioServerTransport());
+  const shutdown = async () => {
+    await hub.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+  process.stdin.on("end", shutdown);
+  console.error(`[mcp-proxy] ready on stdio, ${Object.keys(cfg.servers).length} downstream server(s), agent ${agent ? agent.name : "unattributed"}`);
+}
+
 // The MCP stdio transport, reachable from an install. The README documented
 // it as `node src/mcp/server.js`, which is a path only a source checkout has:
 // anyone who followed `npx tollpike` or `npm install -g tollpike` had no way
@@ -152,7 +555,9 @@ if (cmd === "verify") {
 //
 // Nothing may be written to stdout from here on: on this path stdout is the
 // JSON-RPC stream itself.
-if (cmd === "mcp") {
+if (cmd === "mcp-proxy") {
+  // started above; the stdio transport keeps the process alive
+} else if (cmd === "mcp") {
   const { startMcpServer } = await import(
     pathToFileURL(path.join(root, "src", "mcp", "server.js")).href
   );

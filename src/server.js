@@ -38,9 +38,19 @@ import {
   setBudgetCap,
   updateSettings,
   isKeyEncryptedAtRest,
-  validateCompression
+  validateCompression,
+  validateAudit
 } from "./storage/settings.js";
 import { requireGatewayKey, requireAuthenticatedOrLocal } from "./middleware/auth.js";
+import { auditContext } from "./audit/context.js";
+import * as audit from "./audit/index.js";
+import * as auditAgents from "./audit/agents.js";
+import { RULES as AUDIT_RULES } from "./audit/rules.js";
+import { handleClaudeCodeHook, claudeCodeHookConfig } from "./audit/hooks.js";
+import { gatewayHub, createProxyServer, proxyConfigPath } from "./audit/mcpProxy.js";
+import { ingestEndpoint, endpointStatus } from "./audit/endpoint/index.js";
+import { FORMATS as ENDPOINT_FORMATS } from "./audit/endpoint/parsers.js";
+import { pullVendor, vendorsStatus, connectorCatalog, startVendorSchedule } from "./audit/vendors/index.js";
 import { hostGuard } from "./middleware/hostGuard.js";
 import { csrfGuard } from "./middleware/csrf.js";
 import { pathToken, isPathTokenEnabled } from "./middleware/pathToken.js";
@@ -194,8 +204,12 @@ app.use("/a2a", csrfGuard);
 // bearer token — so a stranger could name someone else's bucket and drain
 // it without ever holding a valid key.
 app.use("/v1", requireGatewayKey);
+app.use("/v1", auditContext);
 app.use("/v1", rateLimiter.rateLimit);
 app.use("/api", requireGatewayKey);
+// Who is calling, for the audit layer. After authentication, so the identity
+// recorded is the one the key check established.
+app.use("/api", auditContext);
 
 // The agent protocols get the same auth as /v1, and for a stronger reason: an
 // unauthenticated MCP endpoint is a remote control for this gateway's spend, and
@@ -206,8 +220,14 @@ app.use("/api", requireGatewayKey);
 // Rate-limited too. MCP's completions_chat and A2A's smart-routing skill both
 // reach routeChatCompletion, so leaving them off the limiter would leave a way
 // around the one control that exists to stop a runaway agent loop.
-app.use("/mcp", requireGatewayKey, rateLimiter.rateLimit);
-app.use("/a2a", requireGatewayKey, rateLimiter.rateLimit);
+// Agent runtimes reporting their own actions, and the MCP proxy. Behind the
+// same key check as /v1, but deliberately NOT rate-limited: a throttled hook
+// is a non-blocking error to Claude Code, so the action would proceed with no
+// record. The limiter exists to cap model spend, and neither path spends.
+app.use("/audit", csrfGuard, requireGatewayKey, auditContext);
+app.use("/mcp-proxy", csrfGuard, requireGatewayKey, auditContext);
+app.use("/mcp", requireGatewayKey, auditContext, rateLimiter.rateLimit);
+app.use("/a2a", requireGatewayKey, auditContext, rateLimiter.rateLimit);
 
 // The rate limiter is deliberately NOT mounted on /api. It exists to stop a
 // runaway agent loop burning paid quota, which is a /v1 concern; applying it
@@ -289,6 +309,7 @@ async function prepare(payload, { sessionId = "default" } = {}) {
     redactPii: settings.redactPii === true,
     injectionMode: settings.injectionMode || "off"
   });
+  if (guard.blocked) audit.recordBlocked(payload.messages, guard.findings.injection);
 
   return {
     blocked: guard.blocked,
@@ -323,7 +344,11 @@ async function prepare(payload, { sessionId = "default" } = {}) {
 function cacheFor(req, body, payload) {
   const enabled = body.cache !== false && isCacheable(payload);
   const key = enabled ? cacheKey(payload, req.callerId) : null;
-  return { key, hit: key ? cache.get(key) : null };
+  const hit = key ? cache.get(key) : null;
+  // A cached answer reaches the agent without touching the router, so it is
+  // recorded here: the tool calls in it are delivered all the same.
+  if (hit) audit.recordModelCall(payload, hit, { cache: true });
+  return { key, hit };
 }
 
 app.post("/v1/chat/completions", async (req, res) => {
@@ -796,9 +821,31 @@ app.get("/api/panel/state", (req, res) => {
       mcp: "node src/mcp/server.js (stdio)"
     },
     proxy: proxyStatus(),
+    audit: auditPulse(),
     gatewayAuthEnabled: Boolean(settings.gatewayApiKey)
   });
 });
+
+// The audit figures the sidebar badge and the command rail need. Counting the
+// review queue reads the whole log, and this endpoint is polled every few
+// seconds, so the answer is cached for 30 seconds. A review made from the
+// panel clears the cache, so the badge drops at once.
+let auditPulseCache = null;
+function auditPulse() {
+  if (auditPulseCache && Date.now() - auditPulseCache.at < 30_000) return auditPulseCache.value;
+  let value;
+  try {
+    const v = audit.verifyAudit();
+    value = { enabled: audit.auditEnabled(), awaitingReview: audit.reviewQueue().length, intact: v.intact, keyed: v.keyed, rows: v.total };
+  } catch (err) {
+    value = { enabled: audit.auditEnabled(), error: err.message };
+  }
+  auditPulseCache = { at: Date.now(), value };
+  return value;
+}
+function clearAuditPulse() {
+  auditPulseCache = null;
+}
 
 // Exercise one specific provider rather than walking the whole fallback
 // chain — the panel's per-card "Test" needs to know that *this* jack works,
@@ -1549,11 +1596,151 @@ app.post("/api/panel/test", async (req, res) => {
 // The stdio transport is deliberately unaffected. It is spawned as a subprocess
 // by a client the operator already trusts with their shell, so there is no
 // network exposure to mitigate and read-only would only break local use.
-function mcpReadOnly() {
+function mcpReadOnly(req) {
+  // An agent never gets the mutating tools, whatever MCP_READ_ONLY says: an
+  // agent able to change settings could switch off the audit watching it.
+  if (req?.agent) return true;
   if (process.env.MCP_READ_ONLY === "true") return true;
   if (process.env.MCP_READ_ONLY === "false") return false;
   return !getSettings().gatewayApiKey;
 }
+
+// ---- Audit: capture points that see actions before they run ----
+
+app.post("/audit/hooks/claude-code", (req, res) => {
+  const r = handleClaudeCodeHook(req.body);
+  res.status(r.status).json(r.body);
+});
+
+// The MCP proxy over Streamable HTTP. Stateless per request like /mcp; the
+// downstream connections live in one shared hub, rebuilt when its config
+// file changes.
+app.post("/mcp-proxy", async (req, res) => {
+  try {
+    const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
+    const server = createProxyServer(gatewayHub());
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on("close", () => {
+      transport.close().catch(() => {});
+      server.close().catch(() => {});
+    });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error(`[mcp-proxy/http] ${err.message}`);
+    if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });
+  }
+});
+// Endpoint telemetry from OS sensors. JSON arrives parsed by the global
+// body parser; auditd text, NDJSON and Sysmon XML arrive as text. Larger limit
+// than the API's: a collector batches.
+app.post(
+  "/audit/endpoint/events",
+  express.text({ type: ["text/*", "application/x-ndjson", "application/xml"], limit: process.env.MAX_ENDPOINT_BATCH || "20mb" }),
+  (req, res) => {
+    const format = String(req.query.format || "");
+    if (!ENDPOINT_FORMATS[format]) return res.status(400).json({ error: `?format= must be one of: ${Object.keys(ENDPOINT_FORMATS).join(", ")}` });
+    const host = typeof req.query.host === "string" && /^[A-Za-z0-9._-]{1,253}$/.test(req.query.host) ? req.query.host : undefined;
+    const r = ingestEndpoint({ format, body: req.body, host, sensor: req.sensor?.name || (req.callerId && req.callerId !== "anonymous" ? "operator" : "anonymous") });
+    res.status(r.ok ? 200 : 400).json(r);
+  }
+);
+
+app.get("/api/panel/audit/endpoint", (req, res) => res.json(endpointStatus()));
+
+app.get("/api/panel/audit/vendors", (req, res) => res.json({ connectors: connectorCatalog(), status: vendorsStatus() }));
+
+// Pull one vendor now, for a first check after configuring it.
+app.post("/api/panel/audit/vendors/:id/pull", async (req, res) => {
+  const r = await pullVendor(req.params.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.get("/mcp-proxy", (req, res) => res.status(405).json({ error: "POST JSON-RPC to /mcp-proxy (Streamable HTTP, stateless)." }));
+
+app.get("/api/panel/audit/mcp-proxy", (req, res) => {
+  const hub = gatewayHub();
+  res.json({ config: proxyConfigPath(), configError: hub.configError || null, servers: hub.status() });
+});
+
+app.get("/api/panel/audit/claude-code-hooks", (req, res) => {
+  const mode = req.query.mode === "command" ? "command" : "http";
+  const url = typeof req.query.url === "string" && /^https?:\/\/[^\s"]+$/.test(req.query.url) ? req.query.url : `http://${req.get("host")}`;
+  res.json(claudeCodeHookConfig({ url, mode, failClosed: req.query.failClosed === "true" }));
+});
+
+// ---- Audit ----
+//
+// The operator's view of the agent audit trail. All of /api is already behind
+// requireGatewayKey, and agent keys are refused on it there, so an agent can
+// never read its own audit record or change the rules watching it.
+
+app.get("/api/panel/audit/status", (req, res) => res.json(audit.auditStatus()));
+
+app.get("/api/panel/audit/summary", (req, res) => res.json(audit.auditSummary({ from: req.query.from, to: req.query.to })));
+
+app.get("/api/panel/audit/events", (req, res) => {
+  const q = req.query;
+  res.json(
+    audit.queryEvents({
+      from: q.from,
+      to: q.to,
+      type: q.type,
+      agent: q.agent,
+      tool: q.tool,
+      severity: q.severity,
+      flaggedOnly: q.flagged === "true",
+      unreviewedOnly: q.unreviewed === "true",
+      limit: q.limit
+    })
+  );
+});
+
+app.get("/api/panel/audit/verify", (req, res) => res.json(audit.verifyAudit()));
+
+app.get("/api/panel/audit/export", (req, res) => {
+  const pack = audit.exportEvidence({ from: req.query.from, to: req.query.to });
+  audit.recordAdmin("evidence.export", { period: pack.period, events: pack.events.length });
+  res.set("Content-Disposition", `attachment; filename="tollpike-audit-evidence-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json(pack);
+});
+
+app.post("/api/panel/audit/review", (req, res) => {
+  const r = audit.reviewEvent(req.body || {});
+  if (r.ok) clearAuditPulse();
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post("/api/panel/audit/settings", (req, res) => {
+  const parsed = validateAudit(req.body || {}, AUDIT_RULES.map((r) => r.id), connectorCatalog());
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const current = getSettings().audit;
+  // vendors merge per connector, so enabling one does not erase another's settings.
+  const vendors = parsed.value.vendors ? { ...(current.vendors || {}), ...Object.fromEntries(Object.entries(parsed.value.vendors).map(([id, v]) => [id, { ...(current.vendors?.[id] || {}), ...v }])) } : current.vendors;
+  const next = updateSettings({ audit: { ...current, ...parsed.value, vendors } });
+  if (parsed.value.vendors) startVendorSchedule();
+  res.json({ ok: true, audit: next.audit });
+});
+
+app.get("/api/panel/audit/agents", (req, res) => res.json({ agents: auditAgents.listAgents() }));
+
+// Issuing a key writes a credential, so it takes the same guard as setting a
+// provider key: operator-authenticated, or from this machine when no
+// operator key exists. The key is in this response and nowhere else.
+app.post("/api/panel/audit/agents", requireAuthenticatedOrLocal, (req, res) => {
+  const r = auditAgents.createAgent(req.body?.name, { note: req.body?.note, kind: req.body?.kind === "sensor" ? "sensor" : "agent" });
+  if (!r.ok) return res.status(400).json({ error: r.error });
+  audit.recordAdmin("agent.created", { target: r.agent });
+  res.set("Cache-Control", "no-store");
+  res.json({ ok: true, agent: r.agent, key: r.key, shownOnce: true });
+});
+
+app.delete("/api/panel/audit/agents/:id", requireAuthenticatedOrLocal, (req, res) => {
+  const r = auditAgents.revokeAgent(req.params.id);
+  if (!r.ok) return res.status(404).json({ error: r.error });
+  audit.recordAdmin("agent.revoked", { target: r.agent });
+  res.json({ ok: true, agent: r.agent });
+});
 
 const mcpHttp = await mountMcpHttp(app, { path: "/mcp", readOnly: mcpReadOnly });
 
@@ -1580,6 +1767,9 @@ app.use((err, req, res, next) => {
 services.installShutdownHooks();
 
 app.listen(PORT, BIND_HOST, () => {
+  audit.recordStartup({ version: "0.1.0", bind: BIND_HOST, port: Number(PORT) });
+  const vendorJobs = startVendorSchedule();
+  if (vendorJobs) console.log(`  audit: pulling ${vendorJobs} vendor audit log(s) on a schedule`);
   console.log(`tollpike listening on http://${BIND_HOST}:${PORT}`);
   // "available (key set)" counted the local runtimes, which are available
   // precisely because they need no key: the registry hands them a placeholder

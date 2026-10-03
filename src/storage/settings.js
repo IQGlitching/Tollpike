@@ -28,8 +28,127 @@ const DEFAULTS = {
     embeddingModel: null
   },
   knowledge: { notion: false, obsidianVault: null },
-  gamification: true
+  gamification: true,
+  // Agent audit trail; see src/audit. On by default: it records metadata and
+  // redacted previews, never raw content.
+  audit: {
+    enabled: true,
+    content: "redacted", // redacted | hash
+    retentionDays: 365, // declared retention, reported in evidence exports
+    ruleModes: {}, // { ruleId: "observe" | "flag" | "ask" | "block" }
+    disabledRules: [],
+    allowedDomains: [], // empty = no domain allowlist rule
+    agentProcesses: [], // extra agent runtimes: [{ name, image?, commandLine? }] (regex strings)
+    gatewayHosts: [], // hosts allowed to reach providers directly (this host always is)
+    vendors: {} // { connectorId: { enabled, intervalMinutes, ...connector settings } }; credentials live in env only
+  }
 };
+
+const AUDIT_CONTENT = ["redacted", "hash"];
+const AUDIT_MODES = ["observe", "flag", "ask", "block"];
+
+// Validates a partial audit patch. Rule ids are checked by the caller that
+// knows the rule catalog (audit/rules.js), to keep this module free of an
+// import from the audit layer, which itself imports settings.
+export function validateAudit(patch = {}, knownRules = null, vendorCatalog = null) {
+  const next = {};
+  if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled);
+  if (patch.content !== undefined) {
+    if (!AUDIT_CONTENT.includes(patch.content)) return { ok: false, error: `content must be one of: ${AUDIT_CONTENT.join(", ")}` };
+    next.content = patch.content;
+  }
+  if (patch.retentionDays !== undefined) {
+    const n = Number(patch.retentionDays);
+    if (!Number.isInteger(n) || n < 30 || n > 3650) return { ok: false, error: "retentionDays must be an integer between 30 and 3650" };
+    next.retentionDays = n;
+  }
+  if (patch.ruleModes !== undefined) {
+    if (!patch.ruleModes || typeof patch.ruleModes !== "object" || Array.isArray(patch.ruleModes)) return { ok: false, error: "ruleModes must be an object of ruleId -> mode" };
+    for (const [id, mode] of Object.entries(patch.ruleModes)) {
+      if (knownRules && !knownRules.includes(id)) return { ok: false, error: `unknown rule "${id}"` };
+      if (!AUDIT_MODES.includes(mode)) return { ok: false, error: `mode for ${id} must be one of: ${AUDIT_MODES.join(", ")}` };
+    }
+    next.ruleModes = { ...patch.ruleModes };
+  }
+  if (patch.disabledRules !== undefined) {
+    if (!Array.isArray(patch.disabledRules)) return { ok: false, error: "disabledRules must be an array of rule ids" };
+    for (const id of patch.disabledRules) if (knownRules && !knownRules.includes(id)) return { ok: false, error: `unknown rule "${id}"` };
+    next.disabledRules = [...new Set(patch.disabledRules.map(String))];
+  }
+  if (patch.allowedDomains !== undefined) {
+    if (!Array.isArray(patch.allowedDomains) || patch.allowedDomains.length > 500) return { ok: false, error: "allowedDomains must be an array of up to 500 domains" };
+    const clean = [];
+    for (const d of patch.allowedDomains) {
+      const v = String(d).trim().toLowerCase().replace(/^\*\./, "").replace(/\.$/, "");
+      if (!/^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)+$/.test(v)) return { ok: false, error: `"${d}" is not a domain` };
+      clean.push(v);
+    }
+    next.allowedDomains = [...new Set(clean)];
+  }
+  if (patch.agentProcesses !== undefined) {
+    if (!Array.isArray(patch.agentProcesses) || patch.agentProcesses.length > 50) return { ok: false, error: "agentProcesses must be an array of up to 50 { name, image?, commandLine? }" };
+    const clean = [];
+    for (const r of patch.agentProcesses) {
+      if (!r || typeof r.name !== "string" || !/^[a-z0-9][a-z0-9_-]{0,31}$/i.test(r.name)) return { ok: false, error: "each agentProcesses entry needs a name of 1-32 letters, digits, '-' or '_'" };
+      if (!r.image && !r.commandLine) return { ok: false, error: `agentProcesses "${r.name}" needs an image or commandLine pattern` };
+      for (const k of ["image", "commandLine"]) {
+        if (r[k] === undefined) continue;
+        if (typeof r[k] !== "string" || r[k].length > 200) return { ok: false, error: `agentProcesses "${r.name}": ${k} must be a regex string up to 200 characters` };
+        try {
+          new RegExp(r[k], "i");
+        } catch {
+          return { ok: false, error: `agentProcesses "${r.name}": ${k} is not a valid regex` };
+        }
+      }
+      clean.push({ name: r.name, ...(r.image ? { image: r.image } : {}), ...(r.commandLine ? { commandLine: r.commandLine } : {}) });
+    }
+    next.agentProcesses = clean;
+  }
+  if (patch.vendors !== undefined) {
+    if (!patch.vendors || typeof patch.vendors !== "object" || Array.isArray(patch.vendors)) return { ok: false, error: "vendors must be an object of connectorId -> settings" };
+    const out = {};
+    for (const [id, v] of Object.entries(patch.vendors)) {
+      const known = vendorCatalog ? vendorCatalog.find((c) => c.id === id) : null;
+      if (vendorCatalog && !known) return { ok: false, error: `unknown vendor connector "${id}"` };
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, error: `vendors.${id} must be an object` };
+      const allowed = new Set(["enabled", "intervalMinutes", ...(known ? known.settings.map((s) => s.key) : [])]);
+      const entry = {};
+      for (const [k, val] of Object.entries(v)) {
+        if (!allowed.has(k)) return { ok: false, error: `vendors.${id}.${k} is not a setting of this connector${known ? ` (settings: ${[...allowed].join(", ")})` : ""}` };
+        if (k === "enabled") entry.enabled = Boolean(val);
+        else if (k === "intervalMinutes") {
+          const n = Number(val);
+          if (!Number.isInteger(n) || n < 5 || n > 1440) return { ok: false, error: `vendors.${id}.intervalMinutes must be an integer between 5 and 1440` };
+          entry.intervalMinutes = n;
+        } else {
+          // Identifiers only (tenant, org, workspace). Never a credential:
+          // those are read from the environment, so nothing here looks like one.
+          if (typeof val !== "string" || !/^[A-Za-z0-9._@:\/,-]{1,200}$/.test(val)) return { ok: false, error: `vendors.${id}.${k} must be an identifier or a comma-separated list (letters, digits, . _ @ : / , -)` };
+          if (/^(sk-|tpk_|tpa_|ghp_|github_pat_|xox|AKIA)/.test(val)) return { ok: false, error: `vendors.${id}.${k} looks like a credential. Credentials go in the environment, not in settings.` };
+          entry[k] = val;
+        }
+      }
+      out[id] = entry;
+    }
+    next.vendors = out;
+  }
+  if (patch.gatewayHosts !== undefined) {
+    if (!Array.isArray(patch.gatewayHosts) || patch.gatewayHosts.length > 50 || patch.gatewayHosts.some((h) => typeof h !== "string" || !/^[A-Za-z0-9.-]{1,253}$/.test(h))) {
+      return { ok: false, error: "gatewayHosts must be an array of up to 50 host names" };
+    }
+    next.gatewayHosts = [...new Set(patch.gatewayHosts.map((h) => h.toLowerCase()))];
+  }
+  return { ok: true, value: next };
+}
+
+// Observers of settings writes. The audit layer registers here to record
+// admin changes; settings must not import the audit layer (it imports
+// settings), so the dependency points one way and this hook carries events
+// the other.
+const changeListeners = [];
+export function onSettingsChange(fn) {
+  changeListeners.push(fn);
+}
 
 export function validateCompression(patch = {}) {
   const next = {};
@@ -195,13 +314,27 @@ export function getSettings() {
       caveman: { ...DEFAULTS.compression.caveman, ...(storedCompression.caveman || {}) }
     },
     memory: { ...DEFAULTS.memory, ...(stored.memory || {}) },
-    knowledge: { ...DEFAULTS.knowledge, ...(stored.knowledge || {}) }
+    knowledge: { ...DEFAULTS.knowledge, ...(stored.knowledge || {}) },
+    audit: { ...DEFAULTS.audit, ...(stored.audit || {}) }
   };
 }
 
 export function updateSettings(patch) {
+  const before = changeListeners.length ? getSettings() : null;
   const next = { ...getSettings(), ...patch };
   writeAtomic(encodeForDisk(next, { explicit: Object.keys(patch || {}) }));
+  if (before) {
+    const changed = Object.keys(patch || {}).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(next[k]));
+    if (changed.length) {
+      for (const fn of changeListeners) {
+        try {
+          fn({ changed, before, after: next });
+        } catch (err) {
+          console.error(`[settings] change listener failed: ${err.message}`);
+        }
+      }
+    }
+  }
   return next;
 }
 

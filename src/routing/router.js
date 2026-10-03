@@ -21,6 +21,7 @@ import {
   listCombos,
   recordStrategyOutcome
 } from "./strategies.js";
+import { recordModelCall, recordModelFailure } from "../audit/index.js";
 
 const ADAPTERS = {
   "openai-compatible": callOpenAICompatible,
@@ -246,20 +247,21 @@ export async function routeChatCompletion(request) {
           });
 
           succeeded = true;
-          return {
-            response,
-            attempts: [
-              ...attempts,
-              {
-                provider: provider.id,
-                connection: connection.id,
-                tier,
-                strategy,
-                ok: true,
-                retries: attempt
-              }
-            ]
-          };
+          const finalAttempts = [
+            ...attempts,
+            {
+              provider: provider.id,
+              connection: connection.id,
+              tier,
+              strategy,
+              ok: true,
+              retries: attempt
+            }
+          ];
+          // The audit record of this call: who asked, what the agent reported
+          // back, what the model proposed. Never throws into the request.
+          recordModelCall(request, response, { attempts: finalAttempts, provider: provider.id, model });
+          return { response, attempts: finalAttempts };
         } catch (err) {
           lastError = err;
           // A failed call still consumed the vendor's rate-limit budget —
@@ -299,6 +301,7 @@ export async function routeChatCompletion(request) {
   const error = new Error("All candidate providers failed or were unavailable");
   error.status = 502;
   error.attempts = attempts;
+  recordModelFailure(request, error);
   throw error;
 }
 
@@ -371,6 +374,22 @@ export async function* routeChatCompletionStream(request) {
     let completionText = "";
     // Populated if the provider volunteers real token counts mid-stream.
     let reportedUsage = null;
+    // Tool calls arrive in fragments across deltas, keyed by index: the id and
+    // name in the first, the arguments string spread over the rest. Stitched
+    // back together here so the audit log records the call the agent received.
+    const streamedCalls = [];
+    let finishReason = null;
+    const collectDelta = (choice) => {
+      if (!choice) return;
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+      for (const tc of choice.delta?.tool_calls || []) {
+        const i = Number.isInteger(tc.index) ? tc.index : streamedCalls.length;
+        const slot = (streamedCalls[i] ||= { id: null, type: "function", function: { name: "", arguments: "" } });
+        if (tc.id) slot.id = tc.id;
+        if (tc.function?.name) slot.function.name += tc.function.name;
+        if (typeof tc.function?.arguments === "string") slot.function.arguments += tc.function.arguments;
+      }
+    };
 
     // A stream that dies partway used to skip recordUsage entirely, so the
     // tokens already generated and billed by the provider were invisible to
@@ -391,6 +410,18 @@ export async function* routeChatCompletionStream(request) {
         costPer1mTokens: priceFor(provider, model)
       });
       recordFreeUsage(provider.id, { tokens: promptTokens + completionTokens });
+      const calls = streamedCalls.filter(Boolean);
+      recordModelCall(
+        request,
+        {
+          provider: provider.id,
+          model,
+          choices: [{ message: { role: "assistant", content: completionText, ...(calls.length ? { tool_calls: calls } : {}) }, finish_reason: finishReason }],
+          usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens },
+          usage_source: estimated ? "estimated" : "reported"
+        },
+        { stream: true, provider: provider.id, model }
+      );
     };
 
     try {
@@ -408,6 +439,7 @@ export async function* routeChatCompletionStream(request) {
               try {
                 const evt = JSON.parse(line.slice(6));
                 completionText += evt.choices?.[0]?.delta?.content || "";
+                collectDelta(evt.choices?.[0]);
                 // Providers that volunteer a usage frame give exact numbers.
                 if (evt.usage) {
                   reportedUsage = {
@@ -431,6 +463,7 @@ export async function* routeChatCompletionStream(request) {
             continue;
           }
           completionText += chunk.choices?.[0]?.delta?.content || "";
+          collectDelta(chunk.choices?.[0]);
           yield { type: "chunk", chunk };
         }
       }
@@ -450,5 +483,6 @@ export async function* routeChatCompletionStream(request) {
   const error = new Error("All candidate providers failed or were unavailable for streaming");
   error.status = 502;
   error.attempts = attempts;
+  recordModelFailure(request, error, { stream: true });
   throw error;
 }

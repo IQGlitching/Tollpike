@@ -181,6 +181,7 @@ const NAV = [
     group: "Security",
     items: [
       { id: "guards", label: "Guards", sub: "PII & injection", icon: "shield" },
+      { id: "audit", label: "Audit", sub: "Agent audit trail & evidence", icon: "shield", badge: (s) => { const n = s.audit?.awaitingReview; return n ? String(n) : null; } },
       { id: "access", label: "Access", sub: "Gateway key & limits", icon: "lock" }
     ]
   },
@@ -207,6 +208,7 @@ const PAGE_META = {
   cache: ["Cache", "Exact-match response cache"],
   compression: ["Compression", "Lossless prompt slimming before dispatch"],
   guards: ["Guards", "PII redaction and prompt-injection heuristics"],
+  audit: ["Audit", "What every agent did, whether the record holds, and the evidence"],
   access: ["Access", "Gateway key, rate limiting, encryption at rest"],
   proxy: ["Proxy", "Egress proxy across three levels, plus TLS shaping"],
   endpoints: ["Endpoints", "Where to point your OpenAI-compatible client"],
@@ -241,7 +243,7 @@ const openCards = new Set();
 
 function renderNav() {
   const nav = document.getElementById("nav");
-  const hot = new Set(["resilience"]);
+  const hot = new Set(["resilience", "audit"]);
   nav.innerHTML = NAV.map((g) => {
     const items = g.items.map((it) => {
       const badge = state && it.badge ? it.badge(state) : null;
@@ -5965,6 +5967,478 @@ function paintSidebarFoot(s) {
 // live numbers in the same instrument type. Every value here is read from
 // state — a page with nothing measurable falls back to the plaza totals
 // rather than inventing a metric to fill the slot.
+// =========================================================================
+// AUDIT: the agent audit trail. What every agent did, whether the record is
+// intact, what is waiting for a person to look at it, and the evidence pack.
+//
+// Everything an event carries came from an agent, a tool, an OS sensor or a
+// vendor, so every value rendered here goes through esc() or textContent.
+// The page keeps its own state (filters, the open event, a half-written
+// review note) in module variables, and skips the poll's re-render while
+// focus is inside it, so an 8-second refresh never eats a reviewer's note.
+// =========================================================================
+
+const AUDIT_GROUPS = [
+  { id: "all", label: "All" },
+  { id: "model", label: "Model" },
+  { id: "tool", label: "Tool" },
+  { id: "endpoint", label: "Endpoint" },
+  { id: "vendor", label: "Vendor" },
+  { id: "auth", label: "Auth" },
+  { id: "admin", label: "Admin" },
+  { id: "review", label: "Review" }
+];
+const AUDIT_DECISIONS = [
+  ["acknowledged", "Acknowledge"],
+  ["false_positive", "False positive"],
+  ["escalated", "Escalate"],
+  ["resolved", "Resolved"]
+];
+const AUDIT_MODES = ["observe", "flag", "ask", "block"];
+const AUDIT_REVIEWER_KEY = "tollpike_audit_reviewer";
+
+const auditUi = {
+  group: "all",
+  severity: "",
+  agent: "",
+  openEvent: null,
+  openQueue: null,
+  note: "",
+  newKey: null,
+  exportFrom: "",
+  exportTo: "",
+  hookMode: "http",
+  busy: false
+};
+
+function auditReviewer() {
+  try { return localStorage.getItem(AUDIT_REVIEWER_KEY) || ""; } catch { return ""; }
+}
+function rememberReviewer(name) {
+  try { localStorage.setItem(AUDIT_REVIEWER_KEY, name); } catch { /* private window */ }
+}
+
+const SEV_CLASS = { critical: "bad", high: "bad", medium: "warn", low: "" };
+
+function auditWhat(e) {
+  if (e.tool) return e.tool;
+  if (e.type === "endpoint.process") return e.commandLine || e.image || "process";
+  if (e.type === "endpoint.network") return e.destHost || e.destIp || "connection";
+  if (e.type === "endpoint.file") return e.path || "file";
+  if (e.type === "endpoint.sensor") return `${e.sensor || "sensor"} heartbeat`;
+  if (e.type === "vendor.activity") return `${e.vendor}: ${e.action || "activity"}`;
+  if (e.type === "vendor.pull") return `${e.vendor} pull ${e.outcome || ""}`;
+  if (e.type === "model.call") return [e.modelRequested, e.provider ? `→ ${e.provider}` : "", e.outcome && e.outcome !== "ok" ? e.outcome : ""].filter(Boolean).join(" ");
+  if (e.type === "review") return `${e.decision} by ${e.reviewer}`;
+  return e.action || e.reason || e.outcome || "";
+}
+
+function auditWho(e) {
+  return e.agent?.name || e.actor?.email || e.actor?.id || e.sensor || (e.type === "model.call" ? "unattributed" : "–");
+}
+
+function auditTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "–";
+  const same = new Date().toDateString() === d.toDateString();
+  return same ? fmtTime(iso) : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function auditEventRow(e, { open, queue }) {
+  const sev = e.severity || "";
+  const rules = (e.findings || []).map((f) => f.rule);
+  return `<div class="au-ev${open ? " open" : ""}${e.flagged ? " flagged" : ""}" data-ev="${esc(e.id)}" data-queue="${queue ? 1 : ""}">
+      <span class="au-t">${esc(auditTime(e.ts))}</span>
+      <span class="au-sev ${esc(SEV_CLASS[sev] || "")}">${esc(sev || "·")}</span>
+      <span class="au-type">${esc(e.type)}</span>
+      <span class="au-who">${esc(trunc(auditWho(e), 28))}</span>
+      <span class="au-what">${esc(trunc(auditWhat(e), 140))}</span>
+      <span class="au-rules">${rules.length ? esc(trunc(rules.join(", "), 60)) : ""}</span>
+    </div>`;
+}
+
+function auditDetail(e, { queue }) {
+  const findings = (e.findings || []).map((f) => `
+      <div class="au-f">
+        <span class="au-sev ${esc(SEV_CLASS[f.severity] || "")}">${esc(f.severity)}</span>
+        <div><div class="au-f-t">${esc(f.title)} <span class="mono dim">${esc(f.rule)} · ${esc(f.mode)}</span></div>
+          <div class="au-f-d">${esc(f.detail)}</div>
+          <div class="au-f-c">${(f.controls || []).map((c) => `<span class="badge">${esc(c)}</span>`).join(" ")}</div></div>
+      </div>`).join("");
+  const reviewer = auditReviewer();
+  const form = queue ? `
+      <div class="au-review">
+        <div class="au-review-h">SIGN OFF</div>
+        <div class="row" style="flex-wrap:wrap;gap:8px">
+          <input id="auReviewer" placeholder="your name" value="${esc(reviewer)}" style="width:170px" />
+          <input id="auNote" placeholder="why (kept on the record)" value="${esc(auditUi.note)}" style="flex:1;min-width:220px" />
+        </div>
+        <div class="row" style="margin-top:9px;flex-wrap:wrap;gap:8px">
+          ${AUDIT_DECISIONS.map(([d, label]) => `<button class="sm${d === "escalated" ? " danger" : d === "acknowledged" ? " primary" : ""}" data-decide="${esc(d)}">${esc(label)}</button>`).join("")}
+          <span class="au-msg" id="auReviewMsg"></span>
+        </div>
+        <div class="au-hint">A review is appended to the chain next to the event. Nothing is edited, so the finding and the sign-off are both kept.</div>
+      </div>` : "";
+  return `<div class="au-detail" data-detail="${esc(e.id)}">
+      ${e.enforcement ? `<div class="au-enf">${esc(e.enforcement)}</div>` : ""}
+      ${findings ? `<div class="au-fs">${findings}</div>` : ""}
+      ${form}
+      <pre class="out au-json" data-json="${esc(e.id)}"></pre>
+    </div>`;
+}
+
+function auditFillJson(root, events) {
+  root.querySelectorAll("[data-json]").forEach((pre) => {
+    const e = events.find((x) => x.id === pre.dataset.json);
+    // Untrusted content: textContent only.
+    if (e) pre.textContent = JSON.stringify(e, null, 2);
+  });
+}
+
+function auditCapture(status, endpoint, vendors) {
+  const cs = status.captureSources || {};
+  const modelCalls = ["openai", "anthropic", "responses", "ollama", "mcp", "a2a", "local", "panel"].reduce((n, k) => n + (cs[k] || 0), 0);
+  const sensors = (endpoint.sensors || []).length;
+  const vendorOn = (vendors.status || []).filter((v) => v.configured && v.enabled).length;
+  const rows = [
+    ["Model connection", modelCalls, "every routed call, on all four API formats", modelCalls > 0],
+    ["Claude Code hooks", cs["claude-code"] || 0, "actions before they run · can block", (cs["claude-code"] || 0) > 0],
+    ["MCP proxy", cs["mcp-proxy"] || 0, "MCP tool calls before they run · can block", (cs["mcp-proxy"] || 0) > 0],
+    ["Endpoint sensors", sensors, sensors ? `${sensors} sensor(s) reporting` : "no sensor reporting", sensors > 0],
+    ["Vendor logs", vendorOn, vendorOn ? `${vendorOn} connector(s) scheduled` : "no connector enabled", vendorOn > 0]
+  ];
+  return rows.map(([name, n, sub, on]) => `
+      <div class="au-cap${on ? " on" : ""}">
+        <div class="au-cap-n">${esc(name)}</div>
+        <div class="au-cap-v">${esc(String(n))}<span>${esc(name === "Endpoint sensors" || name === "Vendor logs" ? "" : "events · 30d")}</span></div>
+        <div class="au-cap-s">${esc(sub)}</div>
+      </div>`).join("");
+}
+
+function auditBars(obj, limit = 8) {
+  const entries = Object.entries(obj || {}).sort((a, b) => b[1] - a[1]).slice(0, limit);
+  if (!entries.length) return `<div class="empty-note">Nothing recorded in this window.</div>`;
+  const max = entries[0][1] || 1;
+  return entries.map(([k, v]) => `
+      <div class="au-bar"><span class="au-bar-k">${esc(k)}</span>
+        <span class="au-bar-t"><i style="width:${Math.max(3, Math.round((v / max) * 100))}%"></i></span>
+        <span class="au-bar-v">${esc(String(v))}</span></div>`).join("");
+}
+
+async function auditLoad() {
+  const q = new URLSearchParams({ limit: "120" });
+  if (auditUi.group !== "all") q.set("type", auditUi.group);
+  if (auditUi.severity) q.set("severity", auditUi.severity);
+  if (auditUi.agent) q.set("agent", auditUi.agent);
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const [status, summary, events, queue, agents, vendors, endpoint, hooks] = await Promise.all([
+    api("/api/panel/audit/status"),
+    api(`/api/panel/audit/summary?from=${weekAgo}`),
+    api(`/api/panel/audit/events?${q}`),
+    api("/api/panel/audit/events?unreviewed=true&limit=200"),
+    api("/api/panel/audit/agents"),
+    api("/api/panel/audit/vendors"),
+    api("/api/panel/audit/endpoint"),
+    api(`/api/panel/audit/claude-code-hooks?mode=${encodeURIComponent(auditUi.hookMode)}`)
+  ]);
+  return { status, summary, events, queue, agents, vendors, endpoint, hooks };
+}
+
+// The poll calls this every few seconds. A reviewer typing a note, or a key
+// on screen waiting to be copied, outranks freshness; the page's own actions
+// pass force and always refresh.
+function auditRender(el, force = false) {
+  const a = document.activeElement;
+  const typing = el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a?.tagName || "");
+  if (el.dataset.ready && !force && (typing || auditUi.newKey || auditUi.busy)) return;
+  const render = (root, data) => { root.dataset.ready = "1"; paintAudit(root, data); };
+  if (!el.dataset.ready) return loadPage(el, auditLoad, render);
+  auditLoad().then((data) => render(el, data)).catch(() => { /* keep the last good render */ });
+}
+
+PAGES.audit = (el) => auditRender(el);
+
+function paintAudit(root, d) {
+  const { status, summary, events, queue, agents, vendors, endpoint, hooks } = d;
+  const chain = status.chain || {};
+  const evs = events.events || [];
+  const q = queue.events || [];
+  const all = [...evs, ...q];
+
+  const gaps = (status.gaps || []).map((g) => {
+    const bad = /OFF|not set|failed|open to anyone/i.test(g);
+    return `<div class="alert" style="border-left-color:var(--${bad ? "bad" : "conn"})">
+        <div class="ai" style="background:var(--${bad ? "bad" : "conn"}-dim);color:var(--${bad ? "bad" : "conn"})">!</div>
+        <div><div class="ab" style="margin-top:0">${esc(g)}</div></div></div>`;
+  }).join("");
+
+  root.innerHTML = `
+    ${gaps ? `<div class="alerts-band">${gaps}</div>` : ""}
+
+    <section class="zone auditcore">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Record</span><span class="p-s">${esc(chain.keyed ? "HMAC-SHA256 · KEYED" : "SHA-256 · UNKEYED")}</span></div>
+        <div class="au-seal ${chain.intact ? "ok" : "bad"}">
+          <div class="au-seal-v">${chain.intact ? "Intact" : "Not intact"}</div>
+          <div class="au-seal-s">${esc(String(chain.total ?? 0))} rows${status.enabled ? "" : " · AUDITING OFF"}</div>
+        </div>
+        <div class="au-kv"><span>Content</span><b>${esc(status.content === "hash" ? "hashes only" : "redacted previews + hashes")}</b></div>
+        <div class="au-kv"><span>Retention</span><b>${esc(String(status.retentionDays))} days declared</b></div>
+        <div class="au-kv"><span>Agents</span><b>${esc(String(status.agents?.active ?? 0))} active${status.agents?.requireKeyOnModelEndpoints ? " · key required" : ""}</b></div>
+        <div class="au-kv"><span>Operator key</span><b class="${status.operatorKeySet ? "" : "warn"}">${status.operatorKeySet ? "set" : "not set"}</b></div>
+        <div class="row" style="margin-top:14px"><button class="sm" id="auVerify">Verify chain now</button><span class="au-msg" id="auVerifyMsg"></span></div>
+      </div>
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Capture points</span><span class="p-s">WHERE THE RECORD COMES FROM</span></div>
+        <div class="au-caps">${auditCapture(status, endpoint, vendors)}</div>
+      </div>
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Last 7 days</span><span class="p-s">${esc(String(summary.events || 0))} EVENTS · ${esc(String(summary.flagged || 0))} FLAGGED</span></div>
+        <div class="au-sub">By agent</div>
+        ${auditBars(summary.byAgent, 6)}
+        <div class="au-sub">Findings by rule</div>
+        ${auditBars(summary.findingsByRule, 6)}
+      </div>
+    </section>
+
+    <section class="zone auditwide">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Review queue</span><span class="p-s">${q.length ? `${esc(String(q.length))} AWAITING A PERSON` : "NOTHING WAITING"}</span></div>
+        ${q.length ? `<div class="au-list" id="auQueue">${q.slice().reverse().map((e) => auditEventRow(e, { open: auditUi.openQueue === e.id, queue: true }) + (auditUi.openQueue === e.id ? auditDetail(e, { queue: true }) : "")).join("")}</div>`
+          : `<div class="empty-note"><b>Every flagged event has been reviewed.</b>Flags appear here when a rule in flag, ask or block mode fires. Each one needs a sign-off: who looked, what they decided, and why.</div>`}
+      </div>
+    </section>
+
+    <section class="zone auditwide">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Events</span>
+          <span class="seg" id="auGroups">${AUDIT_GROUPS.map((g) => `<b class="${auditUi.group === g.id ? "on" : ""}" data-group="${esc(g.id)}">${esc(g.label)}</b>`).join("")}</span>
+          <span class="p-s">${esc(String(events.returned ?? 0))} OF ${esc(String(events.total ?? 0))}</span></div>
+        <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <select id="auSeverity"><option value="">any severity</option>${["low", "medium", "high", "critical"].map((s) => `<option value="${s}"${auditUi.severity === s ? " selected" : ""}>${s} and up</option>`).join("")}</select>
+          <input id="auAgent" placeholder="agent name or id" value="${esc(auditUi.agent)}" style="width:200px" />
+          <button class="sm" id="auApply">Filter</button>
+        </div>
+        <div class="au-list" id="auEvents">${evs.length ? evs.map((e) => auditEventRow(e, { open: auditUi.openEvent === e.id, queue: false }) + (auditUi.openEvent === e.id ? auditDetail(e, { queue: false }) : "")).join("") : `<div class="empty-note">No events match.</div>`}</div>
+      </div>
+    </section>
+
+    <section class="zone auditpair">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Keys</span><span class="p-s">THE ACCESS REGISTER</span></div>
+        ${auditUi.newKey ? `
+          <div class="au-newkey">
+            <div class="au-newkey-h">${esc(auditUi.newKey.agent.kind === "sensor" ? "SENSOR" : "AGENT")} KEY FOR ${esc(auditUi.newKey.agent.name)} · SHOWN ONCE</div>
+            <div class="au-newkey-k mono" id="auKeyText"></div>
+            <div class="row" style="gap:8px;margin-top:9px"><button class="sm primary" id="auCopyKey">Copy</button><button class="sm" id="auDoneKey">I have stored it</button></div>
+            <div class="au-hint">${auditUi.newKey.agent.kind === "sensor"
+              ? "Set it as TOLLPIKE_SENSOR_KEY where the collector runs. It can submit endpoint telemetry and nothing else."
+              : "Give it to the agent as its API key (or TOLLPIKE_AGENT_KEY for hooks and the MCP proxy). Model endpoints now require a key."}
+              It is not stored anywhere and cannot be shown again.</div>
+          </div>` : ""}
+        <div class="au-keys">${(agents.agents || []).length ? agents.agents.slice().reverse().map((a) => `
+          <div class="au-key${a.active ? "" : " off"}">
+            <span class="badge${a.kind === "sensor" ? "" : " on"}">${esc(a.kind)}</span>
+            <span class="au-key-n">${esc(a.name)}<span class="au-key-i mono">${esc(a.id)}</span></span>
+            <span class="au-key-d">${a.active ? `since ${esc(auditTime(a.createdAt))}` : `revoked ${esc(auditTime(a.revokedAt))}`}</span>
+            ${a.active ? `<button class="sm danger" data-revoke="${esc(a.id)}">Revoke</button>` : "<span></span>"}
+          </div>`).join("") : `<div class="empty-note">No keys issued. Until the first agent key exists, model calls are recorded as unattributed.</div>`}</div>
+        <div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">
+          <input id="auKeyName" placeholder="claude-code-laptop" style="width:200px" />
+          <select id="auKeyKind"><option value="agent">agent key</option><option value="sensor">sensor key</option></select>
+          <button class="sm primary" id="auIssue">Issue key</button>
+          <span class="au-msg" id="auKeyMsg"></span>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Rules</span><span class="p-s">ASK AND BLOCK ONLY BITE BEFORE AN ACTION RUNS</span></div>
+        <div class="au-rulelist">${(status.rules || []).map((r) => `
+          <div class="au-rule">
+            <span class="au-sev ${esc(SEV_CLASS[r.severity] || "")}">${esc(r.severity)}</span>
+            <span class="au-rule-n">${esc(r.title)}<span class="mono dim"> ${esc(r.id)}</span></span>
+            <select data-rule="${esc(r.id)}">${AUDIT_MODES.map((m) => `<option value="${m}"${r.mode === m ? " selected" : ""}>${m}</option>`).join("")}</select>
+          </div>`).join("")}</div>
+        <div class="au-hint">Observe records the finding. Flag also queues it for review. Ask makes Claude Code prompt the person; block refuses the action. Both take effect at Claude Code hooks and the MCP proxy only, and are recorded as flags elsewhere. Start in flag and promote what you trust.</div>
+      </div>
+    </section>
+
+    <section class="zone auditpair">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Vendor logs</span><span class="p-s">HOSTED AGENTS</span></div>
+        <div class="au-vendors">${(vendors.status || []).map((v) => {
+          const c = (vendors.connectors || []).find((x) => x.id === v.id) || {};
+          const missing = (c.credentials || []).filter((x) => !x.optional && !v.credentials?.[x.env]).map((x) => x.env);
+          return `<div class="au-vendor${v.configured ? " ready" : ""}">
+            <div class="au-vendor-h"><span class="au-vendor-n">${esc(v.name)}</span>
+              <span class="badge${v.enabled && v.configured ? " on" : ""}">${v.configured ? (v.enabled ? "scheduled" : "ready") : "not configured"}</span></div>
+            <div class="au-vendor-s">${esc(c.covers || "")}</div>
+            <div class="au-vendor-m">${missing.length ? `needs env ${missing.map((m) => `<span class="mono">${esc(m)}</span>`).join(", ")}` : v.lastPullAt ? `last pull ${esc(auditTime(v.lastPullAt))}${v.lastRun?.error ? ` · <span class="warn">${esc(trunc(v.lastRun.error, 80))}</span>` : ""}` : "credentials present"}</div>
+            ${v.configured ? `<div class="row" style="gap:8px;margin-top:8px">
+              <button class="sm" data-pull="${esc(v.id)}">Pull now</button>
+              <button class="sm${v.enabled ? "" : " primary"}" data-toggle-vendor="${esc(v.id)}" data-on="${v.enabled ? "1" : ""}">${v.enabled ? "Disable schedule" : "Enable schedule"}</button>
+              <span class="au-msg" data-vmsg="${esc(v.id)}"></span></div>` : ""}
+          </div>`;
+        }).join("")}</div>
+        <div class="au-hint">Credentials are read from the gateway's environment and never entered here. Tenant and workspace ids are set through the audit settings API.</div>
+      </div>
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Endpoint sensors</span><span class="p-s">OS TELEMETRY</span></div>
+        ${(endpoint.sensors || []).length ? (endpoint.sensors || []).map((s) => `
+          <div class="au-kv"><span>${esc(s.sensor)} · ${esc(s.format)}</span><b>${esc(s.host || "?")} · ${s.lastHeartbeatAt ? `heartbeat ${esc(auditTime(s.lastHeartbeatAt))}` : `since ${esc(auditTime(s.since))}`}</b></div>`).join("")
+          : `<div class="empty-note">No sensor has reported since the gateway started. Issue a sensor key, then run <em>tollpike endpoint sysmon</em> (Windows) or <em>tollpike endpoint tail</em> on the agent machines.</div>`}
+        <div class="p-head" style="margin-top:22px"><span class="p-t">Claude Code hooks</span>
+          <span class="seg" id="auHookMode"><b class="${auditUi.hookMode === "http" ? "on" : ""}" data-hmode="http">http</b><b class="${auditUi.hookMode === "command" ? "on" : ""}" data-hmode="command">fail-closed</b></span></div>
+        <pre class="out au-hooks" id="auHooks"></pre>
+        <div class="row" style="gap:8px;margin-top:8px"><button class="sm" id="auCopyHooks">Copy</button>
+          <span class="au-hint" style="margin:0">Paste into Claude Code settings. The key is read from TOLLPIKE_AGENT_KEY, never written here.</span></div>
+      </div>
+    </section>
+
+    <section class="zone auditwide last">
+      <div class="pane">
+        <div class="p-head"><span class="p-t">Evidence pack</span><span class="p-s">ISO/IEC 27001 · SOC 2</span></div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <label class="au-lbl">From <input type="date" id="auFrom" value="${esc(auditUi.exportFrom)}" /></label>
+          <label class="au-lbl">To <input type="date" id="auTo" value="${esc(auditUi.exportTo)}" /></label>
+          <button class="sm primary" id="auExport">Download evidence</button>
+          <span class="au-msg" id="auExportMsg"></span>
+        </div>
+        <div class="au-hint">A JSON pack with the chain verification, the access register, admin changes, reviews, open flags, every event in the period, the control mapping and the pack's own limitations. Evidence for the technical controls listed; an ISMS covers more than any tool can.</div>
+      </div>
+    </section>`;
+
+  // Untrusted text goes in by textContent.
+  auditFillJson(root, all);
+  const hooksPre = root.querySelector("#auHooks");
+  if (hooksPre) hooksPre.textContent = JSON.stringify(hooks, null, 2);
+  const keyText = root.querySelector("#auKeyText");
+  if (keyText && auditUi.newKey) keyText.textContent = auditUi.newKey.key;
+
+  const msg = (id, text, cls = "") => {
+    const m = root.querySelector(id) || root.querySelector(`[data-vmsg="${id}"]`);
+    if (m) { m.textContent = text; m.className = `au-msg ${cls}`; }
+  };
+  const rerender = () => auditRender(root, true);
+
+  root.querySelector("#auVerify")?.addEventListener("click", async () => {
+    msg("#auVerifyMsg", "checking…");
+    try {
+      const v = await api("/api/panel/audit/verify");
+      msg("#auVerifyMsg", v.intact ? `OK · ${v.total} rows verify` : `NOT INTACT · ${v.brokenLinks} broken${v.truncated ? " · rows deleted" : ""}${v.anchorOk === false ? " · anchor fails" : ""}`, v.intact ? "ok" : "bad");
+    } catch (err) { msg("#auVerifyMsg", err.message, "bad"); }
+  });
+
+  const toggleRow = (attr, key) => (ev) => {
+    const row = ev.target.closest(`[data-ev]`);
+    if (!row || ev.target.closest("button, input, select")) return;
+    const id = row.dataset.ev;
+    auditUi[key] = auditUi[key] === id ? null : id;
+    auditUi.note = "";
+    paintAudit(root, d);
+  };
+  root.querySelector("#auQueue")?.addEventListener("click", toggleRow("data-ev", "openQueue"));
+  root.querySelector("#auEvents")?.addEventListener("click", toggleRow("data-ev", "openEvent"));
+
+  root.querySelector("#auNote")?.addEventListener("input", (e) => { auditUi.note = e.target.value; });
+  root.querySelectorAll("[data-decide]").forEach((btn) => btn.addEventListener("click", async () => {
+    const reviewer = root.querySelector("#auReviewer")?.value.trim();
+    if (!reviewer) { msg("#auReviewMsg", "Enter your name: a sign-off needs a person.", "bad"); return; }
+    rememberReviewer(reviewer);
+    auditUi.busy = true;
+    try {
+      await api("/api/panel/audit/review", { method: "POST", body: JSON.stringify({ eventId: auditUi.openQueue, reviewer, decision: btn.dataset.decide, note: root.querySelector("#auNote")?.value.trim() || undefined }) });
+      auditUi.openQueue = null;
+      auditUi.note = "";
+      auditUi.busy = false;
+      document.activeElement?.blur?.();
+      rerender();
+    } catch (err) { auditUi.busy = false; msg("#auReviewMsg", err.message, "bad"); }
+  }));
+
+  root.querySelectorAll("#auGroups [data-group]").forEach((b) => b.addEventListener("click", () => {
+    auditUi.group = b.dataset.group;
+    auditUi.openEvent = null;
+    rerender();
+  }));
+  const applyFilters = () => {
+    auditUi.severity = root.querySelector("#auSeverity").value;
+    auditUi.agent = root.querySelector("#auAgent").value.trim();
+    document.activeElement?.blur?.();
+    rerender();
+  };
+  root.querySelector("#auApply")?.addEventListener("click", applyFilters);
+  root.querySelector("#auAgent")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyFilters(); } });
+  root.querySelector("#auSeverity")?.addEventListener("change", applyFilters);
+
+  root.querySelector("#auIssue")?.addEventListener("click", async () => {
+    const name = root.querySelector("#auKeyName").value.trim();
+    if (!name) { msg("#auKeyMsg", "Name the agent or sensor.", "bad"); return; }
+    try {
+      const r = await api("/api/panel/audit/agents", { method: "POST", body: JSON.stringify({ name, kind: root.querySelector("#auKeyKind").value }) });
+      auditUi.newKey = { key: r.key, agent: r.agent };
+      paintAudit(root, { ...d, agents: { agents: [...(agents.agents || []), r.agent] } });
+    } catch (err) { msg("#auKeyMsg", err.message, "bad"); }
+  });
+  root.querySelector("#auCopyKey")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(auditUi.newKey.key); root.querySelector("#auCopyKey").textContent = "Copied"; } catch { root.querySelector("#auCopyKey").textContent = "Select and copy"; }
+  });
+  root.querySelector("#auDoneKey")?.addEventListener("click", () => { auditUi.newKey = null; document.activeElement?.blur?.(); rerender(); });
+  root.querySelectorAll("[data-revoke]").forEach((btn) => btn.addEventListener("click", async () => {
+    const a = (agents.agents || []).find((x) => x.id === btn.dataset.revoke);
+    if (!confirm(`Revoke ${a?.name || btn.dataset.revoke}? It stops working immediately and cannot be restored.`)) return;
+    try { await api(`/api/panel/audit/agents/${encodeURIComponent(btn.dataset.revoke)}`, { method: "DELETE" }); rerender(); }
+    catch (err) { msg("#auKeyMsg", err.message, "bad"); }
+  }));
+
+  root.querySelectorAll("[data-rule]").forEach((sel) => sel.addEventListener("change", async () => {
+    const modes = Object.fromEntries((status.rules || []).filter((r) => r.mode !== r.defaultMode && r.mode !== "disabled").map((r) => [r.id, r.mode]));
+    modes[sel.dataset.rule] = sel.value;
+    try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ ruleModes: modes }) }); document.activeElement?.blur?.(); rerender(); }
+    catch (err) { alert(err.message); }
+  }));
+
+  root.querySelectorAll("[data-pull]").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.pull;
+    msg(id, "pulling…");
+    btn.disabled = true;
+    try {
+      const r = await api(`/api/panel/audit/vendors/${encodeURIComponent(id)}/pull`, { method: "POST" });
+      msg(id, `${r.recorded} new · ${r.duplicates} seen`, "ok");
+    } catch (err) { msg(id, err.message, "bad"); }
+    btn.disabled = false;
+  }));
+  root.querySelectorAll("[data-toggle-vendor]").forEach((btn) => btn.addEventListener("click", async () => {
+    const id = btn.dataset.toggleVendor;
+    try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ vendors: { [id]: { enabled: !btn.dataset.on } } }) }); rerender(); }
+    catch (err) { msg(id, err.message, "bad"); }
+  }));
+
+  root.querySelectorAll("#auHookMode [data-hmode]").forEach((b) => b.addEventListener("click", () => { auditUi.hookMode = b.dataset.hmode; rerender(); }));
+  root.querySelector("#auCopyHooks")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(root.querySelector("#auHooks").textContent); root.querySelector("#auCopyHooks").textContent = "Copied"; } catch { /* clipboard denied */ }
+  });
+
+  root.querySelector("#auFrom")?.addEventListener("change", (e) => { auditUi.exportFrom = e.target.value; });
+  root.querySelector("#auTo")?.addEventListener("change", (e) => { auditUi.exportTo = e.target.value; });
+  root.querySelector("#auExport")?.addEventListener("click", async () => {
+    msg("#auExportMsg", "building…");
+    try {
+      const qs = new URLSearchParams({ ...(auditUi.exportFrom ? { from: auditUi.exportFrom } : {}), ...(auditUi.exportTo ? { to: auditUi.exportTo } : {}) });
+      const res = await fetch(`/api/panel/audit/export?${qs}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`gateway answered ${res.status}`);
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `tollpike-audit-evidence-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      msg("#auExportMsg", "downloaded", "ok");
+    } catch (err) { msg("#auExportMsg", err.message, "bad"); }
+  });
+}
+
 function railCells(s) {
   const open = openCircuits(s);
   const active = s.providers.filter((p) => p.hasKey && p.enabled).length;
@@ -6043,6 +6517,11 @@ function railCells(s) {
       ["RTK", comp.rtk?.enabled ? "ON" : "OFF", comp.rtk?.enabled ? "ok" : ""],
       ["CAVEMAN", comp.caveman?.enabled ? esc(String(comp.caveman.level || "on")) : "OFF", comp.caveman?.enabled ? "warn" : "", true],
       ["HISTORY", `${comp.historyWindow ?? 12}<small> msg</small>`, "", true]];
+    case "audit": return [
+      ["RECORD", s.audit?.intact === false ? "BROKEN" : s.audit?.intact ? "INTACT" : "EMPTY", s.audit?.intact === false ? "bad" : s.audit?.intact ? "ok" : ""],
+      ["CHAIN", s.audit?.keyed ? "KEYED" : "UNKEYED", s.audit?.keyed ? "ok" : "warn", true],
+      ["ROWS", String(s.audit?.rows ?? 0), "", true],
+      ["TO REVIEW", String(s.audit?.awaitingReview ?? 0), s.audit?.awaitingReview ? "warn" : "ok"]];
     case "guards": return [
       ["PII", sec.redactPii ? "REDACTED" : "OFF", sec.redactPii ? "ok" : "warn"],
       ["INJECTION", esc(String(sec.injectionMode || "off").toUpperCase()),

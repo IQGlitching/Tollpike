@@ -5,11 +5,11 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **597 tests** · **19 routing
+**46 providers** (6 local runtimes) · **744 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
-**104 MCP tools across 31 scopes** over stdio/HTTP/SSE · **A2A** JSON-RPC
+**111 MCP tools across 32 scopes** over stdio/HTTP/SSE · **A2A** JSON-RPC
 with 6 skills · response caching · security guardrails
 
 Point any OpenAI-compatible tool at one local endpoint and reach 46
@@ -235,7 +235,7 @@ bypass the response cache for one request.
 
 ## The control panel
 
-<http://127.0.0.1:20128/panel>. Twenty pages over one gateway.
+<http://127.0.0.1:20128/panel>. Twenty-one pages over one gateway.
 
 | Page | What it is for |
 |---|---|
@@ -255,6 +255,7 @@ bypass the response cache for one request.
 | Cloud agents | Codex, Cursor, Devin, Jules behind one interface |
 | Services | Bifrost, 9Router, CLIProxy as supervised sidecars |
 | Guards | PII redaction, prompt-injection mode, rate limit |
+| Audit | Chain integrity, capture points, the review queue with sign-off, every event, agent and sensor keys, rule modes, vendor connectors, Claude Code hook config, the evidence pack |
 | Access | The gateway key, and what each control actually covers |
 | Proxy | Per-provider and global egress proxy |
 | Endpoints | Every route this gateway serves |
@@ -288,9 +289,14 @@ TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
 ```bash
 tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
-tollpike mcp             # serve the 104 MCP tools over stdio
+tollpike mcp             # serve the 111 MCP tools over stdio
 tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
+tollpike agents add NAME # issue an agent key (shown once); keys become mandatory
+tollpike audit           # audit coverage, gaps and rule modes
+tollpike audit export    # evidence pack for ISO 27001 / SOC 2 (--from, --to, --out)
+tollpike hook config     # Claude Code hooks block, so its actions are audited before they run
+tollpike mcp-proxy       # audited MCP proxy over stdio (--check to test the servers)
 tollpike where           # print resolved paths, ports and URLs
 tollpike --version
 tollpike --help
@@ -301,7 +307,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 597 tests
+npm test                 # 744 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -647,13 +653,13 @@ Preview it against your own text on the Compression page before enabling it.
 
 The gateway exposes *itself*, so an agent can operate it.
 
-### MCP: 104 tools across 31 scopes
+### MCP: 111 tools across 32 scopes
 
 Over **stdio** (`tollpike mcp`, or `node src/mcp/server.js` from a checkout),
 **Streamable HTTP** (`POST /mcp`)
 and **SSE** (`GET /mcp/sse`). Scopes: gateway, providers, models, routing,
 combos, completions, quota, budgets, cost, cache, resilience, compression,
-memory, notion, obsidian, guards, proxy, tls, auth, services, cloud_agents,
+memory, notion, obsidian, audit, guards, proxy, tls, auth, services, cloud_agents,
 gamification, a2a, mcp, settings, usage, pricing, context, sessions,
 diagnostics, dialects.
 
@@ -731,6 +737,167 @@ list is a closed set in code, because an arbitrary-command supervisor reachable
 from the control panel is a remote shell. Children are killed on gateway exit:
 an orphan holding a port is worse than no supervisor, since the next start
 fails against a process you can't see.
+
+## Agent audit
+
+Every agent has to call a model, and every model call through Tollpike is
+recorded: who called, on which API format, which model was asked for and which
+served it, the tool results the agent reported back, and the tool calls the
+model proposed. The record is a hash-chained, append-only log
+(`data/audit.jsonl`) that shows any edit, deletion or rollback, and it exports
+as evidence for the logging, monitoring and access controls of ISO/IEC 27001
+and SOC 2.
+
+**Agent keys.** One key per agent, so every event names the agent behind it.
+
+```bash
+tollpike agents add claude-code-laptop    # prints the key once
+tollpike agents list                      # the access register
+tollpike agents revoke claude-code-laptop # immediate, affects no one else
+```
+
+Once the first agent key exists, the model endpoints refuse callers without
+one. An agent key reaches `/v1`, `/api/chat`, `/a2a` and a read-only `/mcp`,
+and nothing else: it cannot open the control panel, change settings, read the
+audit log, or sign off its own findings. The control panel keeps its existing
+rule, so issuing agent keys never locks the operator out.
+
+**What gets recorded**
+
+| Event | When |
+|---|---|
+| `model.call` | every routed call, buffered or streamed, cached or not, on all four API formats and the MCP/A2A completion tools |
+| `tool.call` | each tool call the model proposed, with redacted arguments; on a stream, the fragments are reassembled first |
+| `tool.result` | each tool result the agent sent back, recorded once (only the results since the last model turn) |
+| `model.blocked` | the injection guardrail refused a request |
+| `auth.failed` | a missing, invalid or revoked key (one event per source and reason per minute, with a count) |
+| `admin.change` | settings changes, agent keys issued and revoked, evidence exports |
+| `review` | a person signing off a flagged event |
+| `system.start` | each boot, with whether auditing and the keyed chain were on |
+| `tool.requested` | an agent is about to run a tool (Claude Code hook or MCP proxy), with Tollpike's decision |
+| `tool.executed` | the tool ran, with its status and a redacted copy of the real result |
+| `prompt.submitted`, `session.start`, `session.end` | Claude Code prompts (stored as a hash) and sessions |
+
+**Before an action runs.** Two capture points see actions before they execute,
+which makes their record first-hand and lets them stop an action:
+
+- **Claude Code hooks.** `tollpike hook config` prints a hooks block for
+  Claude Code's settings. Claude Code then posts every tool call, result,
+  prompt and session event to `/audit/hooks/claude-code` under the agent's key.
+- **The MCP proxy.** The agent connects to Tollpike instead of its MCP servers
+  (`tollpike mcp-proxy` over stdio, or `/mcp-proxy` over HTTP). Tollpike runs
+  the real servers from `mcp-proxy.json` and checks every call on the way down
+  and back.
+
+[docs/audit-agents.md](docs/audit-agents.md) covers setup, fail-open and
+fail-closed, and the trust boundaries.
+
+**On the machine.** Endpoint telemetry from the operating system's own
+sensors (Sysmon on Windows, auditd, osquery or Falco elsewhere) is checked
+against everything above. Each process in an agent's tree is matched to the
+audited action that explains it, and children inherit the match. A process no
+recorded action accounts for is flagged as unexplained agent activity. A
+connection to a model provider from anywhere but the gateway is flagged as a
+bypass. Collectors run on the agent machines with a sensor key
+(`tollpike agents add <name> --sensor`), which can submit telemetry and
+nothing else:
+
+```bash
+tollpike endpoint sysmon                                    # Windows, elevated
+tollpike endpoint tail /var/log/audit/audit.log --format auditd   # Linux
+```
+
+Only agent-relevant events are kept; everything else is counted and dropped.
+[docs/audit-endpoint.md](docs/audit-endpoint.md) covers sensors, matching and
+limits.
+
+**Hosted agents.** ChatGPT, Claude.ai, Microsoft 365 Copilot, GitHub Copilot,
+Gemini and Cursor talk to their own vendor, so their activity comes from the
+vendors' own audit logs. Nine connectors pull them on a schedule into the same
+chain: ChatGPT Enterprise compliance logs, the OpenAI platform audit log, the
+Anthropic Compliance API and Admin API, Microsoft 365 Copilot (activity, and
+prompts through Graph), GitHub Copilot, Gemini in Workspace and Cursor.
+Privileged changes at the vendor are flagged. Message text, where a vendor
+provides it, is scanned for credentials and personal data and then kept only
+as a hash. Credentials stay in the environment; settings hold only tenant and
+workspace identifiers.
+
+```bash
+tollpike audit vendors                          # what each needs, what is configured
+tollpike audit vendors pull chatgpt-enterprise  # pull one now
+```
+
+[docs/audit-vendors.md](docs/audit-vendors.md) covers each vendor's
+requirements, and what was verified against which documentation.
+
+Content is never stored raw. Arguments and results are kept as a redacted
+preview, with credentials and personal data masked, plus a SHA-256 of the
+original. Setting `content` to `hash` keeps only the hashes.
+
+**Risk rules.** Each event is checked against rules that map to controls:
+destructive commands, download-and-execute, privilege changes, credential and
+system files, credentials in tool traffic or sent to a provider, personal data,
+prompt injection in tool results, domains outside an allowlist, and calls with
+no agent identity. Each rule runs in a mode: `observe` records the finding,
+`flag` also queues the event for review, `ask` makes Claude Code show the
+person a permission prompt, and `block` refuses the action. `ask` and `block`
+take effect only where an action has not run yet: Claude Code hooks and the
+MCP proxy. On the model connection the tool call has already reached the
+agent, so there they are recorded as flags with a note that they could not be
+enforced. Tollpike never answers "allow": it can withhold permission but
+never grants it.
+
+```bash
+tollpike audit                     # coverage, configuration gaps, rule modes
+tollpike audit events --unreviewed # the review queue
+tollpike audit review evt_... acknowledged --by "Faisal" --note "expected"
+tollpike audit verify              # check the chain
+tollpike audit export --from 2026-07-01 --to 2026-09-30   # evidence pack
+```
+
+The export writes `evidence.json` and a `SUMMARY.md` an auditor can read
+first. It contains the chain verification, the agent register, admin changes,
+reviews, open flags, the control mapping below, and the export's own
+limitations.
+
+| ISO/IEC 27001:2022 Annex A | SOC 2 | Evidence |
+|---|---|---|
+| 8.15 Logging | CC7.2 | the hash-chained log and its verification |
+| 8.16 Monitoring activities | CC7.2, CC4.1 | rule findings on every event |
+| 5.25 Assessment of security events | CC7.3, CC7.4 | flagged events and their reviews |
+| 8.12 Data leakage prevention, 8.11 Data masking | C1.1, CC6.7 | credential and personal-data findings, redacted storage |
+| 5.15, 5.16, 5.18 Access control and identity | CC6.1, CC6.2, CC6.3 | the agent register, attribution, unattributed-call count |
+| 8.5 Secure authentication | CC6.1 | failed and revoked-key events |
+| 8.32 Change management, 8.9 Configuration | CC8.1 | admin changes |
+| 8.18 Privileged utility programs, 8.7 Malware protection | CC6.8, CC7.2 | pre-execution decisions (block, ask) and withheld results |
+| 8.16 Monitoring, 8.15 Logging (endpoint) | CC7.2, CC7.3 | agent processes matched to audited actions, unexplained activity, sensor heartbeats |
+| 8.20 Networks security, 5.23 Cloud services | CC6.6 | provider connections that bypassed the gateway |
+| 5.23 Cloud services, 8.15 Logging (vendors) | CC9.2, CC7.2 | hosted AI services' own audit logs, with every collection run recorded |
+| 5.28 Collection of evidence | CC2.1 | the export, committed to by the chain head |
+
+**What this does not do.** It does not make an organisation compliant: ISO
+27001 and SOC 2 also cover policy, risk assessment, people, suppliers and
+physical security. For agents wired to neither hooks nor the MCP proxy, it
+sees only what they tell the model. On machines without an endpoint sensor it
+sees nothing of what ran there, and on machines with one it sees only agents'
+process trees and provider connections. Unless direct access is blocked, an
+agent can still call a provider directly; a sensor will flag it, but only
+after the fact. Making Tollpike the only way out is a network and key-custody
+control, and [docs/audit-egress.md](docs/audit-egress.md) covers both;
+`tollpike audit egress-hosts` prints the provider hosts to block. Set
+`TOLLPIKE_SECRET`, or the chain is unkeyed and only detects naive edits.
+
+| Variable or setting | Effect |
+|---|---|
+| `TOLLPIKE_AUDIT=off` | stop recording (each boot's `system.start` shows when it was on) |
+| `audit.content` | `redacted` (default) or `hash` |
+| `audit.ruleModes` | per-rule `observe` or `flag` |
+| `audit.disabledRules` | rules that do not run |
+| `audit.allowedDomains` | turns on the domain allowlist rule |
+| `audit.retentionDays` | declared retention, reported in exports (default 365) |
+
+Audit settings change through `POST /api/panel/audit/settings` (validated, and
+recorded as an admin change). They are not writable through MCP.
 
 ## Knowledge sources
 
@@ -872,6 +1039,11 @@ src/
     store.js, vector.js        # SQLite-backed store + optional Qdrant vectors
   knowledge/
     obsidian.js, notion.js     # read-only vault + Notion; keys stay in headers
+  audit/
+    index.js, rules.js         # agent audit trail: events, risk rules, evidence export
+    log.js                     # append-only hash-chained audit.jsonl + head anchor
+    agents.js, context.js      # per-agent keys (hashed), per-request identity
+    egress.js                  # provider hosts to block for everyone but the gateway
   agents/
     cloud.js                   # Codex / Cursor / Devin / Jules drivers (verified:false)
   services/
@@ -879,7 +1051,7 @@ src/
   a2a/
     server.js, skills.js, card.js  # 6 A2A skills over JSON-RPC + the agent card
   mcp/
-    server.js, scopes.js       # 104 tools across 31 scopes over stdio / HTTP / SSE;
+    server.js, scopes.js       # 111 tools across 32 scopes over stdio / HTTP / SSE;
                                 # read-only mode hides AND refuses mutations
   server.js                    # Express app: REST API, SSE streaming, control
                                 # panel API, static panel assets

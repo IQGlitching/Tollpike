@@ -897,6 +897,73 @@ export const SCOPES = {
     }
   },
 
+  // The agent audit trail. Reading tools only, plus review, which appends a
+  // sign-off and never edits an event. Audit configuration is deliberately not
+  // writable here (settings_patch does not allowlist it either): the rules
+  // watching agents are changed by the operator, from the panel or CLI.
+  audit: {
+    description: "The agent audit trail: events, findings, reviews, chain integrity.",
+    tools: {
+      status: {
+        description: "Audit coverage: what is recorded, what this layer cannot see, configuration gaps, rule modes.",
+        schema: OBJECT(),
+        handler: () => audit.auditStatus()
+      },
+      summary: {
+        description: "Counts for a period: events by type and agent, findings by rule, top tools, unattributed calls, review backlog.",
+        schema: OBJECT({ from: STR("Start date (YYYY-MM-DD or ISO)"), to: STR("End date") }),
+        handler: ({ from, to }) => audit.auditSummary({ from, to })
+      },
+      events: {
+        description: "Query audit events, newest first. Filter by period, type (model, tool, auth, admin, review), agent, tool, severity, flagged.",
+        schema: OBJECT({
+          from: STR("Start date"),
+          to: STR("End date"),
+          type: STR('Event type or prefix, e.g. "tool" or "tool.call"'),
+          agent: STR("Agent id or name"),
+          tool: STR("Tool name"),
+          severity: ENUM(["low", "medium", "high", "critical"], "Minimum severity"),
+          flaggedOnly: BOOL("Only events in the review queue's scope"),
+          unreviewedOnly: BOOL("Only flagged events nobody has reviewed"),
+          limit: NUM("Max events (default 100)")
+        }),
+        handler: (q) => audit.queryEvents(q)
+      },
+      verify: {
+        description: "Verify the audit log's hash chain and anchor: edits, deletions and rollbacks are reported.",
+        schema: OBJECT(),
+        handler: () => audit.verifyAudit()
+      },
+      vendors: {
+        description: "Hosted-agent vendor audit-log connectors: which are configured (credential presence only), enabled, and when each last pulled.",
+        schema: OBJECT(),
+        handler: async () => {
+          const v = await import("../audit/vendors/index.js");
+          return { connectors: v.connectorCatalog(), status: v.vendorsStatus() };
+        }
+      },
+      agents: {
+        description: "The agent key register: names, ids, created and revoked dates. Never any key material.",
+        schema: OBJECT(),
+        handler: () => ({ agents: auditAgents.listAgents() })
+      },
+      review: {
+        description: "Sign off a flagged event: acknowledged, false_positive, escalated or resolved, with reviewer and note. Appends a review record.",
+        schema: OBJECT(
+          {
+            eventId: STR("Audit event id (evt_...)"),
+            reviewer: STR("Who is signing off"),
+            decision: ENUM(["acknowledged", "false_positive", "escalated", "resolved"], "Outcome"),
+            note: STR("Reasoning")
+          },
+          ["eventId", "reviewer", "decision"]
+        ),
+        mutates: true,
+        handler: (args) => audit.reviewEvent(args)
+      }
+    }
+  },
+
   guards: {
     description: "Prompt-injection scanning, PII redaction and content-filter normalization.",
     tools: {

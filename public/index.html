@@ -2196,6 +2196,139 @@
   /* ---------- Responsive ----------
      The zones collapse in the order they can afford to. The core is the last
      thing to give up its two columns, because engine-beside-map IS the view. */
+
+  /* ==========================================================================
+     AUDIT
+     The agent audit trail. Severity borrows the alarm colours only: red for
+     high and critical, amber for medium. A flagged row carries an amber rail
+     until someone signs it off, the same 2px rail grammar as every lane.
+     ========================================================================== */
+  .zone.auditcore { grid-template-columns: 300px minmax(0,1.1fr) minmax(0,1fr); }
+  .zone.auditwide { grid-template-columns: minmax(0,1fr); }
+  .zone.auditpair { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .zone.auditwide.last { border-bottom: none; }
+  .zone.auditwide.last > .pane { padding-bottom: 42px; }
+
+  .au-seal { border-left: 2px solid var(--line-3); padding: 2px 0 3px 13px; margin-bottom: 16px; }
+  .au-seal.ok { border-left-color: var(--ok); } .au-seal.bad { border-left-color: var(--bad); }
+  .au-seal-v { font-family: var(--mono); font-size: 24px; letter-spacing: -.015em; color: var(--txt); }
+  .au-seal.ok .au-seal-v { color: var(--ok); } .au-seal.bad .au-seal-v { color: var(--bad); }
+  .au-seal-s { font-family: var(--mono); font-size: 9.5px; letter-spacing: .13em; color: var(--txt-4); margin-top: 8px; text-transform: uppercase; }
+  .au-kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 11.5px; }
+  .au-kv span { color: var(--txt-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .au-kv b { font-family: var(--mono); font-weight: 400; font-size: 11px; color: var(--txt); text-align: right; }
+  .au-kv b.warn, .au-vendor-m .warn { color: var(--conn); }
+
+  .au-caps { display: grid; gap: 10px; }
+  .au-cap { border-left: 2px solid var(--line-2); padding: 1px 0 2px 12px; display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 12px; }
+  .au-cap.on { border-left-color: var(--ok); }
+  .au-cap-n { font-size: 12.5px; font-weight: 500; }
+  .au-cap-v { font-family: var(--mono); font-size: 15px; color: var(--txt); text-align: right; grid-row: span 2; align-self: center; }
+  .au-cap:not(.on) .au-cap-v { color: var(--txt-4); }
+  .au-cap-v span { display: block; font-size: 8.5px; letter-spacing: .12em; color: var(--txt-4); margin-top: 4px; text-transform: uppercase; }
+  .au-cap-s { font-size: 11px; color: var(--txt-3); margin-top: 3px; }
+
+  .au-sub { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; color: var(--txt-4); text-transform: uppercase; margin: 4px 0 9px; }
+  .au-sub ~ .au-sub { margin-top: 18px; }
+  .au-bar { display: grid; grid-template-columns: minmax(0,150px) minmax(0,1fr) 38px; gap: 10px; align-items: center; padding: 3px 0; }
+  .au-bar-k { font-family: var(--mono); font-size: 10.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .au-bar-t { height: 5px; background: rgba(255,255,255,.05); border-radius: 3px; overflow: hidden; }
+  .au-bar-t i { display: block; height: 100%; background: var(--route-deep); border-radius: 3px; }
+  .au-bar-v { font-family: var(--mono); font-size: 10.5px; color: var(--txt-3); text-align: right; }
+
+  .au-list { border-top: 1px solid var(--line); max-height: 520px; overflow: auto; }
+  .au-ev {
+    display: grid; grid-template-columns: 96px 62px 128px 150px minmax(0,1fr) 210px; gap: 12px;
+    align-items: baseline; padding: 7px 10px 7px 12px; border-bottom: 1px solid var(--line);
+    border-left: 2px solid transparent; cursor: pointer; font-size: 11.5px;
+  }
+  .au-ev:hover { background: rgba(255,255,255,.022); }
+  .au-ev.flagged { border-left-color: var(--conn); }
+  .au-ev.open { background: var(--surface-2); }
+  .au-t { font-family: var(--mono); font-size: 10.5px; color: var(--txt-4); white-space: nowrap; }
+  .au-type { font-family: var(--mono); font-size: 10.5px; color: var(--model); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .au-who { color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .au-what { font-family: var(--mono); font-size: 11px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .au-rules { font-family: var(--mono); font-size: 10px; color: var(--conn); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+  .au-sev {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--txt-4); padding: 1px 6px; border: 1px solid var(--line-2); border-radius: 4px;
+    justify-self: start; white-space: nowrap; line-height: 1.5;
+  }
+  .au-sev.bad { color: var(--bad); border-color: rgba(248,113,113,.4); }
+  .au-sev.warn { color: var(--conn); border-color: rgba(253,203,110,.4); }
+
+  .au-detail { padding: 12px 14px 16px 14px; border-bottom: 1px solid var(--line); border-left: 2px solid var(--route); background: var(--surface); }
+  .au-enf { font-size: 11.5px; color: var(--conn); margin-bottom: 10px; }
+  .au-fs { display: grid; gap: 10px; margin-bottom: 12px; }
+  .au-f { display: grid; grid-template-columns: 70px minmax(0,1fr); gap: 10px; align-items: start; }
+  .au-f-t { font-size: 12.5px; font-weight: 500; }
+  .au-f-t .dim { font-weight: 400; font-size: 10.5px; color: var(--txt-4); }
+  .au-f-d { font-size: 11.5px; color: var(--txt-2); margin-top: 3px; line-height: 1.55; }
+  .au-f-c { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .au-review { border: 1px solid var(--line-2); border-radius: var(--r); padding: 11px 12px; margin-bottom: 12px; background: var(--bg-deep); }
+  .au-review-h { font-family: var(--mono); font-size: 9px; letter-spacing: .17em; color: var(--txt-4); margin-bottom: 9px; }
+  .au-json { max-height: 300px; overflow: auto; font-size: 10.5px; }
+  .au-msg { font-family: var(--mono); font-size: 10.5px; color: var(--txt-3); }
+  .au-msg.ok { color: var(--ok); } .au-msg.bad { color: var(--bad); }
+  .au-hint { font-size: 11px; color: var(--txt-3); margin-top: 11px; line-height: 1.65; max-width: 760px; }
+  .au-lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; color: var(--txt-4); display: inline-flex; align-items: center; gap: 7px; text-transform: uppercase; }
+
+  .au-newkey { border: 1px solid rgba(253,203,110,.45); background: var(--conn-dim); border-radius: var(--r); padding: 12px 13px; margin-bottom: 14px; }
+  .au-newkey-h { font-family: var(--mono); font-size: 9.5px; letter-spacing: .15em; color: var(--conn); }
+  .au-newkey-k { font-size: 12.5px; color: var(--txt); margin-top: 9px; word-break: break-all; user-select: all; background: var(--bg-deep); border: 1px solid var(--line-2); border-radius: 6px; padding: 8px 10px; }
+  .au-keys { border-top: 1px solid var(--line); }
+  .au-key { display: grid; grid-template-columns: 58px minmax(0,1fr) 118px 70px; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .au-key.off { opacity: .5; }
+  .au-key-n { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .au-key-i { display: block; font-size: 10px; font-weight: 400; color: var(--txt-4); overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .au-key-d { font-family: var(--mono); font-size: 10px; color: var(--txt-4); white-space: nowrap; }
+
+  .au-rulelist { border-top: 1px solid var(--line); }
+  .au-rule { display: grid; grid-template-columns: 70px minmax(0,1fr) 96px; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .au-rule-n .dim { font-size: 10px; color: var(--txt-4); }
+  .au-rule select { padding: 3px 6px; font-size: 11px; }
+
+  .au-vendors { display: grid; gap: 12px; }
+  .au-vendor { border-left: 2px solid var(--line-2); padding: 1px 0 3px 12px; }
+  .au-vendor.ready { border-left-color: var(--ok); }
+  .au-vendor-h { display: flex; align-items: center; gap: 10px; }
+  .au-vendor-n { font-size: 12.5px; font-weight: 500; }
+  .au-vendor-h .badge { margin-left: auto; }
+  .au-vendor-s { font-size: 11px; color: var(--txt-3); margin-top: 4px; line-height: 1.55; }
+  .au-vendor-m { font-family: var(--mono); font-size: 10px; color: var(--txt-4); margin-top: 5px; }
+  .au-vendor-m .mono { color: var(--conn); }
+  .au-hooks { max-height: 220px; overflow: auto; font-size: 10.5px; }
+  #page-audit .row select, #page-audit .row input:not([type=date]) { width: auto; }
+  #page-audit .au-rule select { width: 100%; }
+  #page-audit .p-head { flex-wrap: wrap; row-gap: 8px; }
+  #page-audit .p-head .seg { max-width: 100%; overflow-x: auto; }
+
+  @media (max-width: 1340px) {
+    .zone.auditcore { grid-template-columns: 280px minmax(0,1fr); }
+    .zone.auditcore > .pane:last-child { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+    .au-ev { grid-template-columns: 88px 60px 112px 120px minmax(0,1fr) 170px; gap: 10px; }
+  }
+  @media (max-width: 1180px) {
+    .au-ev { grid-template-columns: 88px 60px 112px minmax(0,1fr) 150px; }
+    .au-ev .au-who { display: none; }
+  }
+  @media (max-width: 860px) {
+    #page-audit .p-head .seg { order: 3; margin-left: 0; flex-basis: 100%; }
+  }
+  @media (max-width: 600px) {
+    .au-ev { grid-template-columns: 60px minmax(0,1fr) !important; gap: 8px; }
+    .au-ev .au-t { display: none; }
+    .au-f { grid-template-columns: minmax(0,1fr); }
+  }
+  @media (max-width: 1000px) {
+    .au-ev { grid-template-columns: 84px 58px minmax(0,1fr); }
+    .au-ev .au-rules { display: none; }
+    .au-ev .au-type, .au-ev .au-who { display: none; }
+    .au-key { grid-template-columns: 54px minmax(0,1fr) 70px; }
+    .au-key .au-key-d { display: none; }
+  }
+
   @media (max-width: 1560px) {
     .zone.detail { grid-template-columns: minmax(0,1fr) minmax(0,1.12fr); }
     .zone.detail > .pane:nth-child(2) { border-right: none; }
@@ -2258,7 +2391,8 @@
     .zone.core, .zone.analysis, .zone.detail, .zone.route, .zone.statement,
     .zone.isolation, .zone.scopes, .zone.combozone, .zone.guardzone,
     .zone.settings3, .zone.lockzone, .zone.egress, .zone.connect,
-    .zone.protozone, .zone.sources, .zone.memcfg { grid-template-columns: minmax(0,1fr); }
+    .zone.protozone, .zone.sources, .zone.memcfg, .zone.auditcore, .zone.auditpair { grid-template-columns: minmax(0,1fr); }
+    .zone.auditcore > .pane:last-child { grid-column: auto; border-top: none; }
     .zone.memcfg > .pane:last-child { grid-column: auto; border-top: none; }
     .surf-row { grid-template-columns: 118px 44px 74px minmax(0,1fr); gap: 10px; }
     .plan-row { grid-template-columns: 120px 90px 96px minmax(0,1fr); gap: 10px; }
@@ -2410,6 +2544,7 @@
       <div class="page" id="page-cache"></div>
       <div class="page" id="page-compression"></div>
       <div class="page" id="page-guards"></div>
+      <div class="page" id="page-audit"></div>
       <div class="page" id="page-access"></div>
       <div class="page" id="page-proxy"></div>
       <div class="page" id="page-endpoints"></div>

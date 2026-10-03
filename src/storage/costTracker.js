@@ -1,8 +1,8 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { dataDir } from "../paths.js";
 import { ledgerKey } from "../security/crypto.js";
+import { canonicalPayload, chainHashWith, hexEqual, anchorTag } from "../security/chain.js";
 
 const logPath = path.join(dataDir, "usage.jsonl");
 // Sidecar anchoring the chain's head hash and length. The in-file chain alone
@@ -169,45 +169,8 @@ function applyEntry(e) {
 // assumes for its in-memory aggregates).
 // ===========================================================================
 
-// Deterministic serialization of a row's payload, excluding the chain field
-// `h`. Keys are sorted so re-serializing a parsed row reproduces the exact
-// bytes hashed at write time regardless of key order on disk, and
-// undefined-valued fields are dropped to match JSON.stringify, so an absent
-// `estimated` hashes identically whether it was omitted or written.
-function canonicalPayload(row) {
-  const keys = Object.keys(row).filter((k) => k !== "h" && row[k] !== undefined).sort();
-  return "{" + keys.map((k) => JSON.stringify(k) + ":" + JSON.stringify(row[k])).join(",") + "}";
-}
-
-// h = MAC(prevHead + "\n" + canonicalPayload). HMAC-SHA256 keyed with
-// ledgerKey() when a secret is set; a bare SHA-256 otherwise. The unkeyed
-// form still chains, so a naive edit is caught at the next row, but it is
-// forgeable by anyone who can rewrite the whole tail, which is why the
-// report says `keyed: false` and nothing claims tamper-evidence without it.
-function chainHashWith(key, prevHead, canon) {
-  const input = prevHead + "\n" + canon;
-  return key
-    ? crypto.createHmac("sha256", key).update(input).digest("hex")
-    : crypto.createHash("sha256").update(input).digest("hex");
-}
-
-// Constant-time hex compare. This is MAC verification, the stored value is
-// attacker-controlled and the key is secret, so it gets the same treatment
-// as the gateway-key check. Length or encoding mismatch is a plain false.
-function hexEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) {
-    return false;
-  }
-  try {
-    return crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
-  } catch {
-    return false;
-  }
-}
-
-function anchorTag(key, count, head) {
-  return crypto.createHmac("sha256", key).update(`${count}:${head}`).digest("hex");
-}
+// The row hashing primitives live in security/chain.js, shared with the
+// audit log so the two chains can never be hashed two different ways.
 
 function readAnchor() {
   try {
