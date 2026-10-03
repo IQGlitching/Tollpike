@@ -85,7 +85,7 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+|OWASPLLM:LLM(0[1-9]|10)|OWASPASI:ASI(0[1-9]|10))$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+|OWASPLLM:LLM(0[1-9]|10)|OWASPASI:ASI(0[1-9]|10)|ATLAS:AML\.(T\d{4}(\.\d{3})?|M\d{4}))$/.test(c)), `${r.id}: ${r.controls}`);
     }
   });
 
@@ -124,7 +124,7 @@ describe("rules", () => {
     }
     assert.ok(audit.CONTROL_MAP.some((c) => c.euAiAct.startsWith("Art. 12")), "record-keeping is the core EU AI Act match");
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | MITRE ATLAS | Evidence |"));
     assert.match(md, /high-risk AI systems/);
     assert.match(md, /Most AI agent use is not high-risk/);
   });
@@ -193,6 +193,38 @@ describe("rules", () => {
     }
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
     assert.match(md, /insecure inter-agent communication \(ASI07\)/);
+  });
+
+  // MITRE ATLAS 2026.09: the techniques findings are evidence of, and the
+  // mitigations Tollpike implements. Every ID and name was taken from MITRE's
+  // published data file (atlas-data dist/v6/ATLAS-2026.09.yaml).
+  const ATLAS = new Map([
+    ["T0012", "Valid Accounts"], ["T0037", "Data from Local System"], ["T0040", "AI Model Inference API Access"],
+    ["T0050", "Command and Scripting Interpreter"], ["T0051", "LLM Prompt Injection"], ["T0051.001", "Indirect"],
+    ["T0053", "AI Agent Tool Invocation"], ["T0055", "Unsecured Credentials"], ["T0057", "LLM Data Leakage"],
+    ["T0081", "Modify AI Agent Configuration"], ["T0086", "Exfiltration via AI Agent Tool Invocation"],
+    ["T0098", "AI Agent Tool Credential Harvesting"], ["T0101", "Data Destruction via AI Agent Tool Invocation"],
+    ["M0019", "Control Access to AI Models and Data in Production"], ["M0020", "Generative AI Guardrails"],
+    ["M0023", "AI Bill of Materials"], ["M0024", "AI Telemetry Logging"], ["M0028", "AI Agent Tools Permissions Configuration"],
+    ["M0029", "Human In-the-Loop for AI Agent Actions"], ["M0030", "Restrict AI Agent Tool Invocation on Untrusted Data"]
+  ]);
+
+  test("findings name MITRE ATLAS techniques and the control map names real mitigations", async () => {
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    for (const r of rules.RULES) assert.ok(r.controls.some((c) => c.startsWith("ATLAS:AML.T")), `${r.id} names no ATLAS technique`);
+    for (const t of [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("ATLAS:"))) {
+      assert.ok(ATLAS.has(t.slice(10)), t);
+    }
+    for (const s of SIGNAL_CATALOG) assert.ok(s.controls.every((c) => !c.startsWith("ATLAS:AML.T")), `${s.id}: a test evidences mitigations, not techniques`);
+    for (const row of audit.CONTROL_MAP) {
+      for (const m of (row.mitreAtlas || "").matchAll(/AML\.(M\d{4}) ([^;(]+)/g)) {
+        assert.ok(ATLAS.has(m[1]), `${row.iso}: ${m[1]}`);
+        assert.equal(m[2].trim(), ATLAS.get(m[1]), `${row.iso}: ${m[1]} name`);
+      }
+    }
+    assert.ok(audit.CONTROL_MAP.some((c) => c.mitreAtlas.startsWith("AML.M0024 AI Telemetry Logging")));
+    const md = audit.evidenceMarkdown(audit.exportEvidence({}));
+    assert.match(md, /model-level attacks such as poisoning, evasion or model extraction are out of scope/);
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -403,7 +435,7 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | MITRE ATLAS | Evidence |"));
     assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
     assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
     assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));

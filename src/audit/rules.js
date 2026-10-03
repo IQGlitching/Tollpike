@@ -9,8 +9,8 @@
 //
 // Every rule carries the controls it gives evidence for, so an exported
 // finding already says which ISO 27001, ISO 42001, SOC 2, EU AI Act or NIST
-// AI RMF requirement it supports, and which OWASP LLM and Agentic Top 10
-// risks it detects.
+// AI RMF requirement it supports, which OWASP LLM and Agentic Top 10 risks
+// it detects, and which MITRE ATLAS technique it is evidence of.
 //
 // Modes, set per rule:
 //   observe  the finding is recorded on the event, nothing else
@@ -136,7 +136,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.9.2", "ISO42001:A.6.2.6", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MANAGE 2.4", "OWASPLLM:LLM06", "OWASPLLM:LLM05", "OWASPASI:ASI02"],
+    controls: ["ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.9.2", "ISO42001:A.6.2.6", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MANAGE 2.4", "OWASPLLM:LLM06", "OWASPLLM:LLM05", "OWASPASI:ASI02", "ATLAS:AML.T0101", "ATLAS:AML.T0053"],
     test: (t) => (anyMatch(DESTRUCTIVE, t) ? "irreversible delete, overwrite, force-push or schema drop" : null)
   },
   {
@@ -145,7 +145,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "critical",
     mode: "flag",
-    controls: ["ISO27001:8.16", "ISO27001:8.7", "SOC2:CC7.2", "SOC2:CC6.8", "ISO42001:A.9.2", "ISO42001:A.6.2.6", "EUAIA:Art.14", "EUAIA:Art.26(5)", "EUAIA:Art.15(5)", "NISTAIRMF:MEASURE 2.7", "NISTAIRMF:MANAGE 2.4", "OWASPLLM:LLM05", "OWASPLLM:LLM06", "OWASPASI:ASI05"],
+    controls: ["ISO27001:8.16", "ISO27001:8.7", "SOC2:CC7.2", "SOC2:CC6.8", "ISO42001:A.9.2", "ISO42001:A.6.2.6", "EUAIA:Art.14", "EUAIA:Art.26(5)", "EUAIA:Art.15(5)", "NISTAIRMF:MEASURE 2.7", "NISTAIRMF:MANAGE 2.4", "OWASPLLM:LLM05", "OWASPLLM:LLM06", "OWASPASI:ASI05", "ATLAS:AML.T0050"],
     test: (t) => (anyMatch(REMOTE_EXEC, t) ? "code fetched from the network and executed in one step" : null)
   },
   {
@@ -154,7 +154,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.2", "SOC2:CC6.1", "SOC2:CC6.3", "ISO42001:A.9.4", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI03"],
+    controls: ["ISO27001:8.2", "SOC2:CC6.1", "SOC2:CC6.3", "ISO42001:A.9.4", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI03", "ATLAS:AML.T0053"],
     test: (t) => (anyMatch(PRIVILEGE, t) ? "elevation, account or permission change" : null)
   },
   {
@@ -163,7 +163,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.3", "ISO27001:8.12", "SOC2:CC6.1", "ISO42001:A.9.4", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MAP 3.5", "OWASPLLM:LLM06", "OWASPLLM:LLM02", "OWASPASI:ASI02"],
+    controls: ["ISO27001:8.3", "ISO27001:8.12", "SOC2:CC6.1", "ISO42001:A.9.4", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MAP 3.5", "OWASPLLM:LLM06", "OWASPLLM:LLM02", "OWASPASI:ASI02", "ATLAS:AML.T0098", "ATLAS:AML.T0037"],
     test: (t) => (anyMatch(SENSITIVE_PATHS, t) ? "path to keys, credentials or system account data" : null)
   },
   {
@@ -172,7 +172,7 @@ export const RULES = [
     on: ["tool_call", "tool_result"],
     severity: "critical",
     mode: "flag",
-    controls: ["ISO27001:8.12", "ISO27001:5.17", "SOC2:CC6.1", "SOC2:C1.1", "ISO42001:A.9.2", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "OWASPLLM:LLM02", "OWASPASI:ASI02"],
+    controls: ["ISO27001:8.12", "ISO27001:5.17", "SOC2:CC6.1", "SOC2:C1.1", "ISO42001:A.9.2", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "OWASPLLM:LLM02", "OWASPASI:ASI02", "ATLAS:AML.T0055", "ATLAS:AML.T0098"],
     test: (t) => {
       const s = secretsIn(t);
       return s.length ? `credential shapes: ${s.join(", ")}` : null;
@@ -184,7 +184,7 @@ export const RULES = [
     on: ["prompt"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.12", "ISO27001:5.23", "SOC2:C1.1", "ISO42001:A.9.2", "ISO42001:A.10.3", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "NISTAIRMF:MANAGE 3.1", "OWASPLLM:LLM02", "OWASPLLM:LLM07"],
+    controls: ["ISO27001:8.12", "ISO27001:5.23", "SOC2:C1.1", "ISO42001:A.9.2", "ISO42001:A.10.3", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "NISTAIRMF:MANAGE 3.1", "OWASPLLM:LLM02", "OWASPLLM:LLM07", "ATLAS:AML.T0057"],
     test: (t) => {
       const s = secretsIn(t);
       return s.length ? `credential shapes leaving for a third-party model: ${s.join(", ")}` : null;
@@ -196,7 +196,7 @@ export const RULES = [
     on: ["prompt", "tool_call", "tool_result"],
     severity: "medium",
     mode: "observe",
-    controls: ["ISO27001:5.34", "ISO27001:8.11", "SOC2:P4.1", "SOC2:C1.1", "ISO42001:A.9.2", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.10", "OWASPLLM:LLM02"],
+    controls: ["ISO27001:5.34", "ISO27001:8.11", "SOC2:P4.1", "SOC2:C1.1", "ISO42001:A.9.2", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.10", "OWASPLLM:LLM02", "ATLAS:AML.T0057"],
     test: (t) => {
       const f = redactPii(t).found.filter((x) => PII_FINDINGS.has(x));
       return f.length ? `personal data shapes: ${f.join(", ")}` : null;
@@ -208,7 +208,7 @@ export const RULES = [
     on: ["tool_result"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.6.2.6", "EUAIA:Art.15(5)", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "OWASPLLM:LLM01", "OWASPASI:ASI01", "OWASPASI:ASI06"],
+    controls: ["ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.6.2.6", "EUAIA:Art.15(5)", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.7", "OWASPLLM:LLM01", "OWASPASI:ASI01", "OWASPASI:ASI06", "ATLAS:AML.T0051.001"],
     test: (t) => {
       const f = detectInjection(t);
       return f.length ? `injection patterns: ${f.join(", ")}` : null;
@@ -220,7 +220,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "medium",
     mode: "flag",
-    controls: ["ISO27001:8.20", "ISO27001:8.23", "SOC2:CC6.6", "ISO42001:A.9.4", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI02"],
+    controls: ["ISO27001:8.20", "ISO27001:8.23", "SOC2:CC6.6", "ISO42001:A.9.4", "EUAIA:Art.26(5)", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI02", "ATLAS:AML.T0086"],
     test: (t, ctx) => {
       const allow = ctx?.allowedDomains || [];
       if (!allow.length) return null;
@@ -234,7 +234,7 @@ export const RULES = [
     on: ["tool_call"],
     severity: "medium",
     mode: "observe",
-    controls: ["ISO27001:8.2", "ISO27001:8.18", "SOC2:CC6.1", "ISO42001:A.9.2", "ISO42001:A.9.4", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MAP 3.5", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI03", "OWASPASI:ASI10"],
+    controls: ["ISO27001:8.2", "ISO27001:8.18", "SOC2:CC6.1", "ISO42001:A.9.2", "ISO42001:A.9.4", "EUAIA:Art.14", "EUAIA:Art.26(5)", "NISTAIRMF:MAP 3.5", "NISTAIRMF:MEASURE 2.4", "OWASPLLM:LLM06", "OWASPASI:ASI03", "OWASPASI:ASI10", "ATLAS:AML.T0081"],
     test: (_t, ctx) => (ctx?.permissionMode === "bypassPermissions" ? "the agent's own permission prompts are switched off" : null)
   },
   {
@@ -243,7 +243,7 @@ export const RULES = [
     on: ["endpoint"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.16", "ISO27001:8.15", "SOC2:CC7.2", "SOC2:CC7.3", "ISO42001:A.6.2.6", "ISO42001:A.6.2.8", "EUAIA:Art.26(5)", "EUAIA:Art.12", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MEASURE 3.1", "OWASPLLM:LLM06", "OWASPASI:ASI05", "OWASPASI:ASI10"],
+    controls: ["ISO27001:8.16", "ISO27001:8.15", "SOC2:CC7.2", "SOC2:CC7.3", "ISO42001:A.6.2.6", "ISO42001:A.6.2.8", "EUAIA:Art.26(5)", "EUAIA:Art.12", "NISTAIRMF:MEASURE 2.4", "NISTAIRMF:MEASURE 3.1", "OWASPLLM:LLM06", "OWASPASI:ASI05", "OWASPASI:ASI10", "ATLAS:AML.T0050"],
     test: (_t, ctx) => (ctx?.unexplained ? "a process in an agent's tree that no recorded tool call accounts for: unreported activity, or hooks not wired" : null)
   },
   {
@@ -252,7 +252,7 @@ export const RULES = [
     on: ["endpoint"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.20", "ISO27001:5.23", "SOC2:CC6.6", "ISO42001:A.9.4", "ISO42001:A.10.3", "EUAIA:Art.12", "EUAIA:Art.26(5)", "NISTAIRMF:GOVERN 1.6", "NISTAIRMF:MEASURE 2.8", "OWASPLLM:LLM10", "OWASPASI:ASI10"],
+    controls: ["ISO27001:8.20", "ISO27001:5.23", "SOC2:CC6.6", "ISO42001:A.9.4", "ISO42001:A.10.3", "EUAIA:Art.12", "EUAIA:Art.26(5)", "NISTAIRMF:GOVERN 1.6", "NISTAIRMF:MEASURE 2.8", "OWASPLLM:LLM10", "OWASPASI:ASI10", "ATLAS:AML.T0040"],
     test: (_t, ctx) => (ctx?.providerHost ? `connection to ${ctx.providerHost}, a model provider, from outside the gateway` : null)
   },
   {
@@ -261,7 +261,7 @@ export const RULES = [
     on: ["vendor"],
     severity: "high",
     mode: "flag",
-    controls: ["ISO27001:8.2", "ISO27001:5.18", "ISO27001:8.32", "SOC2:CC6.2", "SOC2:CC6.3", "SOC2:CC8.1", "ISO42001:A.10.3", "ISO42001:A.6.2.6", "EUAIA:Art.26(5)", "NISTAIRMF:MANAGE 3.1", "OWASPLLM:LLM03", "OWASPASI:ASI03"],
+    controls: ["ISO27001:8.2", "ISO27001:5.18", "ISO27001:8.32", "SOC2:CC6.2", "SOC2:CC6.3", "SOC2:CC8.1", "ISO42001:A.10.3", "ISO42001:A.6.2.6", "EUAIA:Art.26(5)", "NISTAIRMF:MANAGE 3.1", "OWASPLLM:LLM03", "OWASPASI:ASI03", "ATLAS:AML.T0081", "ATLAS:AML.T0012"],
     test: (t) => {
       const m = String(t).match(VENDOR_PRIVILEGED);
       return m ? `vendor action looks privileged: ${m[0]}` : null;
@@ -273,7 +273,7 @@ export const RULES = [
     on: ["model_call"],
     severity: "medium",
     mode: "observe",
-    controls: ["ISO27001:5.16", "ISO27001:8.15", "SOC2:CC6.1", "ISO42001:A.6.2.8", "ISO42001:A.3.2", "EUAIA:Art.12", "NISTAIRMF:MEASURE 2.8", "OWASPASI:ASI03", "OWASPASI:ASI10"],
+    controls: ["ISO27001:5.16", "ISO27001:8.15", "SOC2:CC6.1", "ISO42001:A.6.2.8", "ISO42001:A.3.2", "EUAIA:Art.12", "NISTAIRMF:MEASURE 2.8", "OWASPASI:ASI03", "OWASPASI:ASI10", "ATLAS:AML.T0040"],
     test: (_t, ctx) => (ctx?.anonymous ? "no agent key: this call cannot be attributed to an agent" : null)
   }
 ];

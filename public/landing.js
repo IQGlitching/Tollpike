@@ -1194,7 +1194,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   /* controls and vendor chips light for the event that evidences them */
-  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl, #auCtlNist .au-ctl, #auCtlOwasp .au-ctl[data-ctl], #auCtlAsi .au-ctl[data-ctl]').map(el => [el.dataset.ctl, el]));
+  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl, #auCtlNist .au-ctl, #auCtlOwasp .au-ctl[data-ctl], #auCtlAsi .au-ctl[data-ctl], #auCtlAtlas .au-ctl').map(el => [el.dataset.ctl, el]));
   const chipEls = new Map($$('.au-chip').map(el => [el.dataset.v, el]));
   // The ISO/IEC 42001 controls each ISO 27001 control's evidence also supports,
   // as in the export's control map.
@@ -1214,6 +1214,13 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     'withheld': ['LLM01', 'ASI01', 'ASI06'], 'secret.in_prompt': ['LLM07'], 'unexplained': ['LLM06', 'ASI05', 'ASI10'],
     'privileged change': ['ASI03'], 'auth.failed': ['ASI03'], 'provider bypass': ['ASI10'], 'blocked': ['ASI05']
   };
+  // And the MITRE ATLAS techniques each kind of finding is evidence of. Every
+  // event is telemetry, so AI Telemetry Logging (AML.M0024) lights for all.
+  const ATLAS_BY_TAG = {
+    'withheld': ['AT0051'], 'blocked': ['AT0050'], 'unexplained': ['AT0050'], 'ask': ['AT0098'],
+    'secret.exposure': ['AT0055', 'AT0098'], 'secret.in_prompt': ['AT0057'], 'provider bypass': ['AT0040'],
+    'privileged change': ['AT0081'], 'auth.failed': ['AT0012']
+  };
   // And the OWASP Agentic Top 10 risks.
   const TO_ASI = { '8.18': ['ASI02'], '5.15': ['ASI03'], '8.5': ['ASI03'], '8.20': ['ASI10'], '5.23': ['ASI04'] };
   // And the NIST AI RMF subcategories.
@@ -1230,6 +1237,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     ai.push(...base.flatMap(c => TO_NIST[c] || []));
     if (e.type === 'model.call') ai.push('NG1.6', 'LLM03', 'ASI04');
     ai.push(...base.flatMap(c => TO_ASI[c] || []));
+    ai.push('AM0024', ...(ATLAS_BY_TAG[e.tag] || []));
     ai.push(...base.flatMap(c => TO_OWASP[c] || []));
     if (OWASP_BY_TAG[e.tag]) ai.push(...OWASP_BY_TAG[e.tag]);
     for (const c of [...new Set([...base, ...ai])]) {

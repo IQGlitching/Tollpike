@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **768 tests** · **19 routing
+**46 providers** (6 local runtimes) · **769 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -294,7 +294,7 @@ tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
 tollpike agents add NAME # issue an agent key (shown once); keys become mandatory
 tollpike audit           # audit coverage, gaps and rule modes
-tollpike audit export    # evidence pack mapped to seven frameworks (--from, --to, --out)
+tollpike audit export    # evidence pack mapped to eight frameworks (--from, --to, --out)
 tollpike audit grc       # compliance tests; push them to Vanta or Drata (setup, push)
 tollpike hook config     # Claude Code hooks block, so its actions are audited before they run
 tollpike mcp-proxy       # audited MCP proxy over stdio (--check to test the servers)
@@ -308,7 +308,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 768 tests
+npm test                 # 769 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -770,7 +770,13 @@ consumption (LLM10). And the OWASP Top 10 for Agentic Applications 2026 risk:
 agent goal hijack (ASI01), tool misuse and exploitation (ASI02), identity and
 privilege abuse (ASI03), unexpected code execution (ASI05) and rogue agents
 (ASI10), with supporting evidence for agentic supply chain (ASI04) and memory
-and context poisoning (ASI06).
+and context poisoning (ASI06). Each finding also names the MITRE ATLAS
+technique it is evidence of, such as indirect prompt injection
+(AML.T0051.001), data destruction via AI agent tool invocation (AML.T0101) and
+AI agent tool credential harvesting (AML.T0098), and the control map names the
+ATLAS mitigations Tollpike implements, led by AI Telemetry Logging (AML.M0024)
+and Human In-the-Loop for AI Agent Actions (AML.M0029). IDs follow ATLAS
+release 2026.09.
 
 **Agent keys.** One key per agent, so every event names the agent behind it.
 
@@ -884,21 +890,21 @@ first. It contains the chain verification, the agent register, admin changes,
 reviews, open flags, an inventory of the providers and models each agent used,
 the control mapping below, and the export's own limitations.
 
-| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 | EU AI Act | NIST AI RMF | OWASP LLM | OWASP Agentic | Evidence |
-|---|---|---|---|---|---|---|---|
-| 8.15 Logging | A.6.2.8 Recording of event logs | CC7.2 | Art. 12, 19, 26(6) | MEASURE 2.8, MANAGE 4.1 | | | the hash-chained log and its verification |
-| 8.16 Monitoring activities | A.6.2.6 Operation and monitoring | CC7.2, CC4.1 | Art. 26(5), 15(5) | MEASURE 2.4, 2.7, 3.1 | LLM01, LLM02 | ASI01, ASI06 (supporting) | rule findings on every event |
-| 5.25 Assessment of security events | A.6.2.6, A.8.4 Communication of incidents | CC7.3, CC7.4 | Art. 26(2), 73 (supporting) | MANAGE 4.3, GOVERN 4.3 | | | flagged events and their reviews |
-| 8.12 Data leakage prevention, 8.11 Data masking | A.9.2 Responsible use | C1.1, CC6.7 | | MEASURE 2.10 | LLM02, LLM07 | | credential and personal-data findings, redacted storage |
-| 5.15, 5.16, 5.18 Access control and identity | A.3.2 Roles, A.4.2 Resource documentation | CC6.1, CC6.2, CC6.3 | Art. 12 | MEASURE 2.8 | LLM06 | ASI03 | the agent register, attribution, unattributed-call count |
-| 8.5 Secure authentication | | CC6.1 | | | | ASI03 | failed and revoked-key events |
-| 8.32 Change management, 8.9 Configuration | | CC8.1 | | MANAGE 4.1 (supporting) | | | admin changes |
-| 8.18 Privileged utility programs, 8.7 Malware protection | A.9.2 Responsible use, A.9.4 Intended use | CC6.8, CC7.2 | Art. 14 Human oversight | MANAGE 2.4, MAP 3.5 | LLM06, LLM05, LLM01 | ASI02, ASI05, ASI04 (supporting) | pre-execution decisions (block, ask) and withheld results |
-| 8.16 Monitoring, 8.15 Logging (endpoint) | A.6.2.6, A.6.2.8 | CC7.2, CC7.3 | Art. 26(5) | MEASURE 2.4, 3.1 | LLM06 | ASI05, ASI10 | agent processes matched to audited actions, unexplained activity, sensor heartbeats |
-| 8.20 Networks security, 5.23 Cloud services | A.9.4 Intended use, A.4.5 Computing resources | CC6.6 | Art. 12, 26(5) | GOVERN 1.6, MEASURE 2.8 | LLM10 (supporting) | ASI10 | provider connections that bypassed the gateway |
-| 5.23 Cloud services, 8.15 Logging (vendors) | A.10.3 Suppliers, A.6.2.8 | CC9.2, CC7.2 | Art. 26(5) | MANAGE 3.1, GOVERN 6.1 | LLM03 (supporting) | ASI04 (supporting), ASI03 | hosted AI services' own audit logs, with every collection run recorded |
-| 5.9 Inventory of assets | A.4.2, A.4.4, A.4.5 AI resources | CC6.1 | Art. 6 classification (supporting) | GOVERN 1.6 Inventory of AI systems | LLM03 (supporting) | ASI04 (supporting) | the providers and models each agent used, with call counts |
-| 5.28 Collection of evidence | Clauses 7.5, 9.1 | CC2.1 | Art. 19, 26(6) | GOVERN 1.5 (supporting) | | | the export, committed to by the chain head |
+| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 | EU AI Act | NIST AI RMF | OWASP LLM | OWASP Agentic | MITRE ATLAS | Evidence |
+|---|---|---|---|---|---|---|---|---|
+| 8.15 Logging | A.6.2.8 Recording of event logs | CC7.2 | Art. 12, 19, 26(6) | MEASURE 2.8, MANAGE 4.1 | | | M0024 | the hash-chained log and its verification |
+| 8.16 Monitoring activities | A.6.2.6 Operation and monitoring | CC7.2, CC4.1 | Art. 26(5), 15(5) | MEASURE 2.4, 2.7, 3.1 | LLM01, LLM02 | ASI01, ASI06 (supporting) | M0024, M0020 | rule findings on every event |
+| 5.25 Assessment of security events | A.6.2.6, A.8.4 Communication of incidents | CC7.3, CC7.4 | Art. 26(2), 73 (supporting) | MANAGE 4.3, GOVERN 4.3 | | | | flagged events and their reviews |
+| 8.12 Data leakage prevention, 8.11 Data masking | A.9.2 Responsible use | C1.1, CC6.7 | | MEASURE 2.10 | LLM02, LLM07 | | M0020 | credential and personal-data findings, redacted storage |
+| 5.15, 5.16, 5.18 Access control and identity | A.3.2 Roles, A.4.2 Resource documentation | CC6.1, CC6.2, CC6.3 | Art. 12 | MEASURE 2.8 | LLM06 | ASI03 | M0019, M0028 | the agent register, attribution, unattributed-call count |
+| 8.5 Secure authentication | | CC6.1 | | | | ASI03 | | failed and revoked-key events |
+| 8.32 Change management, 8.9 Configuration | | CC8.1 | | MANAGE 4.1 (supporting) | | | | admin changes |
+| 8.18 Privileged utility programs, 8.7 Malware protection | A.9.2 Responsible use, A.9.4 Intended use | CC6.8, CC7.2 | Art. 14 Human oversight | MANAGE 2.4, MAP 3.5 | LLM06, LLM05, LLM01 | ASI02, ASI05, ASI04 (supporting) | M0029, M0030 | pre-execution decisions (block, ask) and withheld results |
+| 8.16 Monitoring, 8.15 Logging (endpoint) | A.6.2.6, A.6.2.8 | CC7.2, CC7.3 | Art. 26(5) | MEASURE 2.4, 3.1 | LLM06 | ASI05, ASI10 | M0024 | agent processes matched to audited actions, unexplained activity, sensor heartbeats |
+| 8.20 Networks security, 5.23 Cloud services | A.9.4 Intended use, A.4.5 Computing resources | CC6.6 | Art. 12, 26(5) | GOVERN 1.6, MEASURE 2.8 | LLM10 (supporting) | ASI10 | M0019 | provider connections that bypassed the gateway |
+| 5.23 Cloud services, 8.15 Logging (vendors) | A.10.3 Suppliers, A.6.2.8 | CC9.2, CC7.2 | Art. 26(5) | MANAGE 3.1, GOVERN 6.1 | LLM03 (supporting) | ASI04 (supporting), ASI03 | M0024 | hosted AI services' own audit logs, with every collection run recorded |
+| 5.9 Inventory of assets | A.4.2, A.4.4, A.4.5 AI resources | CC6.1 | Art. 6 classification (supporting) | GOVERN 1.6 Inventory of AI systems | LLM03 (supporting) | ASI04 (supporting) | M0023 (supporting) | the providers and models each agent used, with call counts |
+| 5.28 Collection of evidence | Clauses 7.5, 9.1 | CC2.1 | Art. 19, 26(6) | GOVERN 1.5 (supporting) | | | | the export, committed to by the chain head |
 
 **Compliance platforms (Vanta, Drata).** Tollpike can push this evidence into
 the platform where an ISO 27001, ISO 42001 or SOC 2 programme already runs. It sends
@@ -931,7 +937,10 @@ this evidences parts of MEASURE and MANAGE plus the AI inventory. The OWASP
 LLM Top 10 is a list of risks; Tollpike does nothing for data and model
 poisoning (LLM04), vector and embedding weaknesses (LLM08) or misinformation
 (LLM09), nor for insecure inter-agent communication (ASI07), cascading
-failures (ASI08) or human-agent trust exploitation (ASI09). For agents wired to neither hooks nor the MCP proxy, it
+failures (ASI08) or human-agent trust exploitation (ASI09). Of MITRE ATLAS it
+detects only techniques visible in agent traffic, hooks, endpoint telemetry
+or vendor logs; model-level attacks such as poisoning, evasion or model
+extraction are out of scope. For agents wired to neither hooks nor the MCP proxy, it
 sees only what they tell the model. On machines without an endpoint sensor it
 sees nothing of what ran there, and on machines with one it sees only agents'
 process trees and provider connections. Unless direct access is blocked, an
