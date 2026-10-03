@@ -998,6 +998,47 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
 .au-pack-l .ok { color: var(--ok); } .au-pack-l .bad { color: var(--bad); }
 .au-pack-l.dim { color: var(--txt-4); }
 @media (prefers-reduced-motion: reduce) { .au-row { animation: none; } .au-term-cmd::after { animation: none; } }
+
+/* Compliance platforms: tests resolve, then travel to Vanta and Drata. */
+.grc { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 36px; margin-top: 64px; padding-top: 44px; border-top: 1px solid var(--line); align-items: center; }
+@media (max-width: 1000px) { .grc { grid-template-columns: 1fr; gap: 32px; } }
+.grc > * { min-width: 0; }
+.grc .dev-feats { margin-top: 0; }
+.grc-cmd { margin-top: 20px; display: inline-block; max-width: 100%; overflow-x: auto; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--txt); padding: 9px 14px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--bg-deep); }
+.grc-cmd-p { color: var(--route); margin-right: 4px; }
+.grc-flow { display: flex; flex-direction: column; }
+.grc-src { border: 1px solid var(--line-2); border-radius: 12px; background: var(--bg-deep); overflow: hidden; }
+.grc-run { margin-left: auto; color: var(--txt-4); transition: color .3s var(--ease); }
+.grc-run.on { color: var(--conn); } .grc-run.done { color: var(--ok); }
+.grc-tests { padding: 8px 6px; }
+.grc-t { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 6px 10px; border-radius: 6px; font-family: var(--mono); font-size: 11px; transition: background .3s var(--ease); }
+.grc-t-n { color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grc-t-c { color: var(--txt-4); font-size: 10px; white-space: nowrap; }
+.grc-pill { font-size: 9px; letter-spacing: .12em; padding: 3px 8px; border-radius: 999px; border: 1px solid rgba(126,231,135,.4); color: var(--ok); min-width: 54px; text-align: center; transition: color .3s var(--ease), border-color .3s var(--ease); }
+.grc-t.wait .grc-pill { color: var(--txt-4); border-color: var(--line-2); }
+.grc-t.check { background: rgba(253,203,110,.06); }
+.grc-t.check .grc-pill { color: var(--conn); border-color: rgba(253,203,110,.45); }
+@media (max-width: 560px) { .grc-t-c { display: none; } }
+.grc-wire { position: relative; height: 46px; }
+.grc-wire::before { content: ""; position: absolute; left: 50%; top: 0; height: 50%; border-left: 1px solid var(--line-3); }
+.grc-wire::after { content: ""; position: absolute; top: 50%; height: 50%; left: 25%; right: 25%; border: 1px solid var(--line-3); border-bottom: 0; border-radius: 10px 10px 0 0; }
+.grc-pkt { position: absolute; left: 50%; top: 0; width: 7px; height: 7px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--route); box-shadow: 0 0 10px var(--route); opacity: 0; }
+.grc-flow.push .grc-pl { animation: grcL 1s var(--ease) forwards; }
+.grc-flow.push .grc-pr { animation: grcR 1s var(--ease) forwards; }
+@keyframes grcL { 0% { opacity: 1; left: 50%; top: 0; } 40% { left: 50%; top: 50%; } 75% { left: 25%; top: 50%; } 92% { opacity: 1; } 100% { opacity: 0; left: 25%; top: 100%; } }
+@keyframes grcR { 0% { opacity: 1; left: 50%; top: 0; } 40% { left: 50%; top: 50%; } 75% { left: 75%; top: 50%; } 92% { opacity: 1; } 100% { opacity: 0; left: 75%; top: 100%; } }
+.grc-dests { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grc-dest { border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); padding: 14px 15px; transition: border-color .5s var(--ease), box-shadow .5s var(--ease); min-width: 0; }
+.grc-dest.hit { border-color: rgba(167,139,250,.6); box-shadow: 0 0 0 3px rgba(167,139,250,.08); }
+.grc-dest-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.grc-dest-n { font-size: 15px; font-weight: 600; color: var(--txt); }
+.grc-dest-s { font-family: var(--mono); font-size: 9.5px; color: var(--txt-4); }
+.grc-dest-s b { color: var(--txt-2); font-weight: 400; }
+.grc-dl { display: flex; justify-content: space-between; gap: 10px; font-family: var(--mono); font-size: 10.5px; line-height: 1.9; color: var(--txt-3); border-top: 1px solid var(--line); }
+.grc-dl b { color: var(--txt); font-weight: 400; text-align: right; }
+.grc-dl b.ok { color: var(--ok); }
+@media (max-width: 480px) { .grc-dests { grid-template-columns: 1fr; } .grc-wire { display: none; } .grc-flow { gap: 14px; } }
+@media (prefers-reduced-motion: reduce) { .grc-pkt { display: none; } }
 </style>
 </head>
 <body>
@@ -2033,6 +2074,55 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <div class="au-pack-l">13 mappings · ISO/IEC 27001:2022 · SOC 2 TSC</div>
           <div class="au-pack-s">## Limitations</div>
           <div class="au-pack-l dim">Technical controls only. An ISMS also covers policy, risk, people and suppliers.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grc rv" id="grc">
+      <div class="grc-copy">
+        <p class="kicker sc-g" style="margin:0">COMPLIANCE PLATFORMS</p>
+        <h3 class="au-h3">Evidence that files itself in Vanta and Drata.</h3>
+        <p class="au-sub">Tollpike turns the audit record into seven pass/fail tests and pushes them,
+          with the evidence pack and the agent register, into the platform your ISO 27001 or
+          SOC 2 programme already runs on. Every 24 hours, or on demand.</p>
+        <div class="dev-feats">
+          <div class="dev-feat"><span class="df-k" style="color:var(--ok)">Continuous tests</span><span class="df-v">Chain integrity, agent attribution, review backlog, pre-execution coverage, egress and vendor collection. A test with nothing to judge reports not applicable, never a pass.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--route)">Evidence</span><span class="df-v">The evidence pack lands as a PDF on the controls you choose, with a new version every month.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--model)">Agent accounts</span><span class="df-v">Every agent key appears as a non-human account, ready for access reviews.</span></div>
+          <div class="dev-feat"><span class="df-k" style="color:var(--conn)">Sealed</span><span class="df-v">Each push is recorded in the chain. A failed push is flagged for review.</span></div>
+        </div>
+        <div class="grc-cmd"><span class="grc-cmd-p">$</span> tollpike audit grc push vanta</div>
+      </div>
+
+      <div class="grc-flow" aria-label="Tollpike pushing seven compliance tests, the evidence pack and the agent register to Vanta and Drata">
+        <div class="grc-src">
+          <div class="au-pack-bar"><span class="cdots"><i></i><i></i><i></i></span><span>tollpike audit grc</span><span class="grc-run" id="grcRun">IDLE</span></div>
+          <div class="grc-tests" id="grcTests">
+            <div class="grc-t"><span class="grc-t-n">audit.chain_intact</span><span class="grc-t-c">ISO 8.15 · CC7.2</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.chain_keyed</span><span class="grc-t-c">ISO 8.15 · CC7.2</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.agents_attributed</span><span class="grc-t-c">ISO 5.16 · CC6.1</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.review_backlog</span><span class="grc-t-c">ISO 5.25 · CC7.3</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.preexecution</span><span class="grc-t-c">ISO 8.18 · CC6.8</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.egress_enforced</span><span class="grc-t-c">ISO 8.20 · CC6.6</span><span class="grc-pill">PASS</span></div>
+            <div class="grc-t"><span class="grc-t-n">audit.vendor_collection</span><span class="grc-t-c">ISO 5.23 · CC7.2</span><span class="grc-pill">PASS</span></div>
+          </div>
+        </div>
+
+        <div class="grc-wire" aria-hidden="true"><b class="grc-pkt grc-pl"></b><b class="grc-pkt grc-pr"></b></div>
+
+        <div class="grc-dests">
+          <div class="grc-dest" id="grcVanta">
+            <div class="grc-dest-h"><span class="grc-dest-n">Vanta</span><span class="grc-dest-s">pushed <b data-ago>2h ago</b></span></div>
+            <div class="grc-dl"><span>Custom test</span><b class="ok">Passing</b></div>
+            <div class="grc-dl"><span>Evidence</span><b>PDF attached</b></div>
+            <div class="grc-dl"><span>Access review</span><b>214 non-human</b></div>
+          </div>
+          <div class="grc-dest" id="grcDrata">
+            <div class="grc-dest-h"><span class="grc-dest-n">Drata</span><span class="grc-dest-s">pushed <b data-ago>2h ago</b></span></div>
+            <div class="grc-dl"><span>Custom test</span><b class="ok">Passing</b></div>
+            <div class="grc-dl"><span>Evidence</span><b>PDF + JSON, 4 controls</b></div>
+            <div class="grc-dl"><span>Agent register</span><b>214 records</b></div>
+          </div>
         </div>
       </div>
     </div>

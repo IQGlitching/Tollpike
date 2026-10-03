@@ -1274,6 +1274,56 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
 
 })();
 
+/* ------------------------------------------------------------- GRC PUSH */
+/* The seven tests resolve one at a time, then the result travels to Vanta and
+   Drata. With reduced motion the panel stays in its settled state. */
+(() => {
+  const root = $('#grc');
+  if (!root || RM) return;
+  const flow = $('.grc-flow', root);
+  const run = $('#grcRun');
+  const tests = $$('.grc-t', root);
+  const dests = [$('#grcVanta'), $('#grcDrata')];
+  const agos = $$('[data-ago]', root);
+  let alive = false, running = false, pushedAt = 0;
+
+  const ago = () => {
+    if (!pushedAt) return;
+    const s = Math.round((Date.now() - pushedAt) / 1000);
+    agos.forEach(el => { el.textContent = s < 2 ? 'just now' : `${s}s ago`; });
+  };
+  setInterval(() => { if (alive) ago(); }, 1000);
+
+  async function cycle() {
+    run.className = 'grc-run on'; run.textContent = 'CHECKING';
+    tests.forEach(t => { t.className = 'grc-t wait'; $('.grc-pill', t).textContent = '...'; });
+    await sleep(500);
+    for (const t of tests) {
+      if (!alive) break;
+      t.className = 'grc-t check'; $('.grc-pill', t).textContent = 'CHECK';
+      await sleep(260);
+      t.className = 'grc-t'; $('.grc-pill', t).textContent = 'PASS';
+    }
+    run.textContent = 'PUSHING';
+    flow.classList.remove('push'); void flow.offsetWidth; flow.classList.add('push');
+    await sleep(1000);
+    dests.forEach(d => d.classList.add('hit'));
+    pushedAt = Date.now(); ago();
+    run.className = 'grc-run done'; run.textContent = '7 / 7 PASS';
+    await sleep(900);
+    dests.forEach(d => d.classList.remove('hit'));
+    await sleep(5200);
+  }
+
+  new IntersectionObserver(es => es.forEach(en => {
+    alive = en.isIntersecting;
+    if (alive && !running) {
+      running = true;
+      (async () => { while (alive) await cycle(); running = false; })();
+    }
+  }), { threshold: .25 }).observe(root);
+})();
+
 /* ------------------------------------------------------------- COPY BTNS */
 /* Reads the command out of the element it points at, so the text on screen and
    the text on the clipboard cannot drift apart. The `$` prompt is drawn by CSS
