@@ -8,3 +8,5 @@ data-e2e/
 # Build artefacts from `npm pack`. The publish workflow also refuses to ship
 # a tarball that contains one.
 *.tgz
+_site/
+.vercel/
