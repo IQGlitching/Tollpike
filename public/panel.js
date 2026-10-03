@@ -6563,6 +6563,7 @@ async function refresh() {
 
     paintSidebarFoot(state);
     paintCommandRail(state);
+    if (state.version) document.getElementById("sbVersion").textContent = "V" + state.version;
 
     const lock = document.getElementById("lockPill");
     lock.innerHTML = `<span class="dot ${state.gatewayAuthEnabled ? "live" : "idle"}"></span><span>${state.gatewayAuthEnabled ? "locked" : "unlocked"}</span>`;

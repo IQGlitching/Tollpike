@@ -43,6 +43,7 @@ import {
 } from "./storage/settings.js";
 import { requireGatewayKey, requireAuthenticatedOrLocal } from "./middleware/auth.js";
 import { auditContext } from "./audit/context.js";
+import { VERSION } from "./version.js";
 import * as audit from "./audit/index.js";
 import * as auditAgents from "./audit/agents.js";
 import { RULES as AUDIT_RULES } from "./audit/rules.js";
@@ -632,7 +633,7 @@ app.use("/api/chat", requireGatewayKey, rateLimiter.rateLimit);
 app.use("/api/version", requireGatewayKey);
 
 app.get("/api/tags", (req, res) => res.json(toOllamaTags(providers)));
-app.get("/api/version", (req, res) => res.json({ version: "0.1.0-tollpike" }));
+app.get("/api/version", (req, res) => res.json({ version: `${VERSION}-tollpike` }));
 
 app.post("/api/chat", async (req, res) => {
   const body = req.body || {};
@@ -822,6 +823,7 @@ app.get("/api/panel/state", (req, res) => {
     },
     proxy: proxyStatus(),
     audit: auditPulse(),
+    version: VERSION,
     gatewayAuthEnabled: Boolean(settings.gatewayApiKey)
   });
 });
@@ -1767,7 +1769,7 @@ app.use((err, req, res, next) => {
 services.installShutdownHooks();
 
 app.listen(PORT, BIND_HOST, () => {
-  audit.recordStartup({ version: "0.1.0", bind: BIND_HOST, port: Number(PORT) });
+  audit.recordStartup({ version: VERSION, bind: BIND_HOST, port: Number(PORT) });
   const vendorJobs = startVendorSchedule();
   if (vendorJobs) console.log(`  audit: pulling ${vendorJobs} vendor audit log(s) on a schedule`);
   console.log(`tollpike listening on http://${BIND_HOST}:${PORT}`);

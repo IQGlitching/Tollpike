@@ -70,6 +70,7 @@ import * as services from "../services/embedded.js";
 import * as cloud from "../agents/cloud.js";
 import { estimateTokens, promptTextOf } from "../providers/normalize.js";
 import { dataDir } from "../paths.js";
+import { VERSION } from "../version.js";
 
 const OBJECT = (properties = {}, required = []) => ({ type: "object", properties, required });
 const STR = (description) => ({ type: "string", description });
@@ -163,7 +164,7 @@ export const SCOPES = {
       version: {
         description: "Gateway version and the runtime it is on.",
         schema: OBJECT(),
-        handler: () => ({ name: "tollpike", version: "0.1.0", node: process.version, platform: process.platform })
+        handler: () => ({ name: "tollpike", version: VERSION, node: process.version, platform: process.platform })
       },
       posture: {
         description: "Security posture: bind address, whether auth is on, encryption state.",

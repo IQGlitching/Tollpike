@@ -17,6 +17,7 @@
 import { SKILLS, SKILL_IDS } from "./skills.js";
 import { getSettings } from "../storage/settings.js";
 import { providers } from "../providers/registry.js";
+import { VERSION } from "../version.js";
 
 export const A2A_VERSION = "0.2.0";
 
@@ -41,7 +42,7 @@ export function agentCard() {
       "free-quota accounting, compression and persistent memory. Optimised for cost control rather than provider reach.",
     url: `${baseUrl()}/a2a`,
     preferredTransport: "JSONRPC",
-    version: "0.1.0",
+    version: VERSION,
     provider: { organization: "self-hosted", url: baseUrl() },
     documentationUrl: `${baseUrl()}/panel`,
     capabilities: {
