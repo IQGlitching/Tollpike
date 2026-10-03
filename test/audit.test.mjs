@@ -85,7 +85,7 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+)$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+|OWASPLLM:LLM(0[1-9]|10))$/.test(c)), `${r.id}: ${r.controls}`);
     }
   });
 
@@ -124,7 +124,7 @@ describe("rules", () => {
     }
     assert.ok(audit.CONTROL_MAP.some((c) => c.euAiAct.startsWith("Art. 12")), "record-keeping is the core EU AI Act match");
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | Evidence |"));
     assert.match(md, /high-risk AI systems/);
     assert.match(md, /Most AI agent use is not high-risk/);
   });
@@ -150,6 +150,27 @@ describe("rules", () => {
     assert.ok(audit.CONTROL_MAP.some((c) => c.nistAiRmf.startsWith("GOVERN 1.6")), "the AI inventory answers GOVERN 1.6");
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
     assert.match(md, /NIST AI RMF 1\.0 \(NIST AI 100-1\) is voluntary/);
+  });
+
+  // OWASP Top 10 for LLM Applications 2025: the risks Tollpike detects, limits
+  // or supports. LLM04, LLM08 and LLM09 are out of scope and must never be
+  // claimed.
+  const OWASP_LLM = new Set(["LLM01", "LLM02", "LLM03", "LLM05", "LLM06", "LLM07", "LLM10"]);
+
+  test("rules name the OWASP LLM Top 10 risks they detect, never the out-of-scope ones", async () => {
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    const byRule = Object.fromEntries(rules.RULES.map((r) => [r.id, r.controls]));
+    assert.ok(byRule["injection.in_tool_result"].includes("OWASPLLM:LLM01"));
+    assert.ok(byRule["secret.exposure"].includes("OWASPLLM:LLM02"));
+    assert.ok(byRule["shell.destructive"].includes("OWASPLLM:LLM06"));
+    for (const t of [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("OWASPLLM:"))) {
+      assert.ok(OWASP_LLM.has(t.slice(9)), t);
+    }
+    for (const row of audit.CONTROL_MAP) {
+      for (const id of (row.owaspLlm || "").match(/LLM\d\d/g) || []) assert.ok(OWASP_LLM.has(id), `${row.iso}: ${id}`);
+    }
+    const md = audit.evidenceMarkdown(audit.exportEvidence({}));
+    assert.match(md, /It does nothing for data and model poisoning \(LLM04\)/);
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -360,7 +381,7 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | Evidence |"));
     assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
     assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
     assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));
