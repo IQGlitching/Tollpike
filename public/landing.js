@@ -1194,7 +1194,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   /* controls and vendor chips light for the event that evidences them */
-  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl, #auCtlNist .au-ctl, #auCtlOwasp .au-ctl[data-ctl]').map(el => [el.dataset.ctl, el]));
+  const ctlEls = new Map($$('#auCtl .au-ctl, #auCtl42 .au-ctl, #auCtlEu .au-ctl, #auCtlNist .au-ctl, #auCtlOwasp .au-ctl[data-ctl], #auCtlAsi .au-ctl[data-ctl]').map(el => [el.dataset.ctl, el]));
   const chipEls = new Map($$('.au-chip').map(el => [el.dataset.v, el]));
   // The ISO/IEC 42001 controls each ISO 27001 control's evidence also supports,
   // as in the export's control map.
@@ -1210,7 +1210,12 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   const EU_BY_RULE = { 'shell.remote_exec': 'EU15-5', 'injection.in_tool_result': 'EU15-5' };
   // And the OWASP LLM Top 10 risks each kind of finding catches.
   const TO_OWASP = { '8.18': ['LLM06', 'LLM05'], '8.12': ['LLM02'], '8.11': ['LLM02'], '8.20': ['LLM10'], '5.23': ['LLM03'] };
-  const OWASP_BY_TAG = { 'withheld': ['LLM01'], 'secret.in_prompt': ['LLM07'], 'unexplained': ['LLM06'] };
+  const OWASP_BY_TAG = {
+    'withheld': ['LLM01', 'ASI01', 'ASI06'], 'secret.in_prompt': ['LLM07'], 'unexplained': ['LLM06', 'ASI05', 'ASI10'],
+    'privileged change': ['ASI03'], 'auth.failed': ['ASI03'], 'provider bypass': ['ASI10'], 'blocked': ['ASI05']
+  };
+  // And the OWASP Agentic Top 10 risks.
+  const TO_ASI = { '8.18': ['ASI02'], '5.15': ['ASI03'], '8.5': ['ASI03'], '8.20': ['ASI10'], '5.23': ['ASI04'] };
   // And the NIST AI RMF subcategories.
   const TO_NIST = {
     '8.15': ['NMS2.8'], '8.16': ['NMS2.4', 'NMS3.1'], '5.25': ['NMG4.3'], '5.15': ['NMS2.8'], '8.12': ['NMS2.7'],
@@ -1223,7 +1228,8 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     ai.push(...base.flatMap(c => TO_EU[c] || []));
     if (EU_BY_RULE[e.rule]) ai.push(EU_BY_RULE[e.rule], 'NMS2.7');
     ai.push(...base.flatMap(c => TO_NIST[c] || []));
-    if (e.type === 'model.call') ai.push('NG1.6', 'LLM03');
+    if (e.type === 'model.call') ai.push('NG1.6', 'LLM03', 'ASI04');
+    ai.push(...base.flatMap(c => TO_ASI[c] || []));
     ai.push(...base.flatMap(c => TO_OWASP[c] || []));
     if (OWASP_BY_TAG[e.tag]) ai.push(...OWASP_BY_TAG[e.tag]);
     for (const c of [...new Set([...base, ...ai])]) {

@@ -1935,7 +1935,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <span class="fw"><b>SOC 2</b><i>Trust services criteria</i></span>
           <span class="fw fw-eu"><b>EU AI Act</b><i>Regulation (EU) 2024/1689</i></span>
           <span class="fw fw-nist"><b>NIST AI RMF</b><i>AI 100-1 · GenAI profile</i></span>
-          <span class="fw fw-owasp"><b>OWASP LLM Top 10</b><i>2025 risks</i></span>
+          <span class="fw fw-owasp"><b>OWASP Top 10s</b><i>LLM 2025 · Agentic 2026</i></span>
         </div>
         <p class="lede">Your agents write code, run shells, read files and call models all day.
           Tollpike records every one of those actions from four places at once, checks each
@@ -2062,7 +2062,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
         <div class="au-ev-head">
           <p class="kicker sc-g" style="margin:0">EVIDENCE</p>
           <h3 class="au-h3">Controls an auditor can open.</h3>
-          <p class="au-sub">Every finding names the ISO/IEC 42001, ISO/IEC 27001, SOC 2, EU AI Act and NIST AI RMF requirements it supports, and the OWASP LLM risk it catches. Watch them light as events land.</p>
+          <p class="au-sub">Every finding names the ISO/IEC 42001, ISO/IEC 27001, SOC 2, EU AI Act and NIST AI RMF requirements it supports, and the OWASP LLM and Agentic risks it catches. Watch them light as events land.</p>
         </div>
         <div class="fw-tabs" role="tablist" aria-label="Control framework">
           <button type="button" class="fw-tab on" role="tab" aria-selected="true" aria-controls="auCtl42" data-fw="42001">ISO/IEC 42001 <span>AI</span></button>
@@ -2070,6 +2070,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlEu" data-fw="euaia">EU AI Act</button>
           <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlNist" data-fw="nist">NIST AI RMF</button>
           <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlOwasp" data-fw="owasp">OWASP LLM</button>
+          <button type="button" class="fw-tab" role="tab" aria-selected="false" aria-controls="auCtlAsi" data-fw="asi">OWASP Agentic</button>
         </div>
         <div class="au-ctl-grid" id="auCtl42" role="tabpanel">
           <div class="au-ctl" data-ctl="A.6.2.8"><b>A.6.2.8</b><span>AI system recording of event logs</span><i>27001 8.15 · CC7.2</i></div>
@@ -2128,6 +2129,21 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           </div>
           <p class="au-eu-note">A list of risks, not controls. Tollpike catches five, supports two, and says plainly which three it does not touch.</p>
         </div>
+        <div class="au-eu" id="auCtlAsi" role="tabpanel" hidden>
+          <div class="au-ctl-grid au-owasp">
+            <div class="au-ctl" data-ctl="ASI01"><b>ASI01</b><span>Agent goal hijack</span><i>injection in what it reads</i></div>
+            <div class="au-ctl" data-ctl="ASI02"><b>ASI02</b><span>Tool misuse and exploitation</span><i>checked before it runs</i></div>
+            <div class="au-ctl" data-ctl="ASI03"><b>ASI03</b><span>Identity and privilege abuse</span><i>a key per agent · privilege changes</i></div>
+            <div class="au-ctl" data-ctl="ASI04"><b>ASI04</b><span>Agentic supply chain</span><i>supporting · MCP proxy · inventory</i></div>
+            <div class="au-ctl" data-ctl="ASI05"><b>ASI05</b><span>Unexpected code execution</span><i>download-and-run · unexplained processes</i></div>
+            <div class="au-ctl" data-ctl="ASI06"><b>ASI06</b><span>Memory and context poisoning</span><i>supporting · injected results withheld</i></div>
+            <div class="au-ctl off"><b>ASI07</b><span>Insecure inter-agent communication</span><i>out of scope</i></div>
+            <div class="au-ctl off"><b>ASI08</b><span>Cascading failures</span><i>out of scope</i></div>
+            <div class="au-ctl off"><b>ASI09</b><span>Human-agent trust exploitation</span><i>out of scope</i></div>
+            <div class="au-ctl" data-ctl="ASI10"><b>ASI10</b><span>Rogue agents</span><i>bypass · unrestricted · unexplained</i></div>
+          </div>
+          <p class="au-eu-note">A list of risks for agents that plan, use tools and act. Tollpike catches five, supports two, and names the three it does not touch.</p>
+        </div>
         <div class="au-ctl-grid" id="auCtl" role="tabpanel" hidden>
           <div class="au-ctl" data-ctl="8.15"><b>8.15</b><span>Logging</span><i>CC7.2</i></div>
           <div class="au-ctl" data-ctl="8.16"><b>8.16</b><span>Monitoring activities</span><i>CC7.2 · CC4.1</i></div>
@@ -2170,7 +2186,7 @@ html.spatial.curon, html.spatial.curon * { cursor: none !important; }
           <div class="au-pack-s">## AI systems in use</div>
           <div class="au-pack-l">214 agents · 46 providers · 69 models</div>
           <div class="au-pack-s">## Controls this evidence supports</div>
-          <div class="au-pack-l">14 mappings · ISO/IEC 42001 · ISO/IEC 27001 · SOC 2 · EU AI Act · NIST AI RMF · OWASP LLM</div>
+          <div class="au-pack-l">14 mappings · ISO/IEC 42001 · ISO/IEC 27001 · SOC 2 · EU AI Act · NIST AI RMF · OWASP LLM · OWASP Agentic</div>
           <div class="au-pack-s">## Limitations</div>
           <div class="au-pack-l dim">Technical controls only. An AIMS or ISMS also covers policy, impact assessments, people and suppliers.</div>
         </div>

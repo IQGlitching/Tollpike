@@ -85,7 +85,7 @@ describe("rules", () => {
   test("every rule names the controls it evidences", () => {
     for (const r of rules.RULES) {
       assert.ok(r.controls.length > 0, r.id);
-      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+|OWASPLLM:LLM(0[1-9]|10))$/.test(c)), `${r.id}: ${r.controls}`);
+      assert.ok(r.controls.every((c) => /^(ISO27001:\d+\.\d+|SOC2:[A-Z]+\d+\.\d+|ISO42001:A\.\d+(\.\d+){1,2}|EUAIA:Art\.\d+(\(\d+\))?|NISTAIRMF:(GOVERN|MAP|MEASURE|MANAGE) \d+\.\d+|OWASPLLM:LLM(0[1-9]|10)|OWASPASI:ASI(0[1-9]|10))$/.test(c)), `${r.id}: ${r.controls}`);
     }
   });
 
@@ -124,7 +124,7 @@ describe("rules", () => {
     }
     assert.ok(audit.CONTROL_MAP.some((c) => c.euAiAct.startsWith("Art. 12")), "record-keeping is the core EU AI Act match");
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | Evidence |"));
     assert.match(md, /high-risk AI systems/);
     assert.match(md, /Most AI agent use is not high-risk/);
   });
@@ -171,6 +171,28 @@ describe("rules", () => {
     }
     const md = audit.evidenceMarkdown(audit.exportEvidence({}));
     assert.match(md, /It does nothing for data and model poisoning \(LLM04\)/);
+  });
+
+  // OWASP Top 10 for Agentic Applications 2026: the risks Tollpike detects,
+  // limits or supports. ASI07, ASI08 and ASI09 are out of scope and must never
+  // be claimed.
+  const OWASP_ASI = new Set(["ASI01", "ASI02", "ASI03", "ASI04", "ASI05", "ASI06", "ASI10"]);
+
+  test("rules name the OWASP Agentic Top 10 risks they detect, never the out-of-scope ones", async () => {
+    const { SIGNAL_CATALOG } = await import("../src/audit/grc/signals.js");
+    const byRule = Object.fromEntries(rules.RULES.map((r) => [r.id, r.controls]));
+    assert.ok(byRule["injection.in_tool_result"].includes("OWASPASI:ASI01"));
+    assert.ok(byRule["shell.remote_exec"].includes("OWASPASI:ASI05"));
+    assert.ok(byRule["privilege.escalation"].includes("OWASPASI:ASI03"));
+    assert.ok(byRule["endpoint.direct_provider_access"].includes("OWASPASI:ASI10"));
+    for (const t of [...rules.RULES, ...SIGNAL_CATALOG].flatMap((r) => r.controls).filter((c) => c.startsWith("OWASPASI:"))) {
+      assert.ok(OWASP_ASI.has(t.slice(9)), t);
+    }
+    for (const row of audit.CONTROL_MAP) {
+      for (const id of (row.owaspAgentic || "").match(/ASI\d\d/g) || []) assert.ok(OWASP_ASI.has(id), `${row.iso}: ${id}`);
+    }
+    const md = audit.evidenceMarkdown(audit.exportEvidence({}));
+    assert.match(md, /insecure inter-agent communication \(ASI07\)/);
   });
 
   test("storage redaction masks credentials and personal data", () => {
@@ -381,7 +403,7 @@ describe("recording model calls", () => {
     assert.ok(pack.events.length > 0);
     const md = audit.evidenceMarkdown(pack);
     assert.match(md, /## Controls this evidence supports/);
-    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | Evidence |"));
+    assert.ok(md.includes("| ISO/IEC 27001:2022 Annex A | ISO/IEC 42001:2023 | SOC 2 TSC | EU AI Act | NIST AI RMF | OWASP LLM Top 10 | OWASP Agentic Top 10 | Evidence |"));
     assert.ok(md.includes("## AI systems in use (ISO/IEC 42001 A.4)"));
     assert.ok(pack.aiInventory.length > 0 && pack.aiInventory.some((r) => r.systems.some((x) => x.system === "mock / m")), JSON.stringify(pack.aiInventory));
     assert.ok(pack.limitations.some((l) => /42001/.test(l) && /impact assessments/.test(l)));

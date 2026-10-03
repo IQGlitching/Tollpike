@@ -20,15 +20,15 @@ recorded in the audit chain as `grc.push`. A failed push is flagged for review.
 
 ### The seven tests
 
-| Test | Passes when | ISO 27001 · SOC 2 | ISO 42001 | EU AI Act | NIST AI RMF | OWASP LLM |
-|---|---|---|---|---|---|---|
-| `audit.chain_intact` | the hash chain verifies and the anchor agrees | 8.15, 5.28 · CC7.2 | A.6.2.8 | Art. 12, 19, 26(6) | MEASURE 2.8 | |
-| `audit.chain_keyed` | the chain is keyed with `TOLLPIKE_SECRET` | 8.15 · CC7.2 | A.6.2.8 | Art. 12 | MEASURE 2.8 | |
-| `audit.agents_attributed` | every model call in the last 7 days carried an agent key | 5.16, 8.15 · CC6.1 | A.6.2.8, A.3.2 | Art. 12 | MEASURE 2.8 | |
-| `audit.review_backlog` | no flagged event has waited longer than `grcReviewDays` (default 7) | 5.25 · CC7.3, CC7.4 | A.6.2.6 | Art. 14, 26(2) | MANAGE 4.3, MAP 3.5 | |
-| `audit.preexecution` | Claude Code hooks or the MCP proxy reported in the last 7 days | 8.16, 8.18 · CC6.8 | A.9.2, A.9.4 | Art. 14 | MANAGE 2.4, MAP 3.5 | LLM06, LLM05 |
-| `audit.egress_enforced` | endpoint sensors saw no provider connection bypassing the gateway | 8.20, 5.23 · CC6.6 | A.9.4, A.10.3 | Art. 12, 26(5) | GOVERN 1.6, MEASURE 2.8 | LLM10 |
-| `audit.vendor_collection` | every enabled vendor log connector pulled within 48 hours | 5.23, 8.15 · CC7.2 | A.10.3, A.6.2.8 | Art. 26(5), 12 | MANAGE 3.1, GOVERN 6.1 | LLM03 |
+| Test | Passes when | ISO 27001 · SOC 2 | ISO 42001 | EU AI Act | NIST AI RMF | OWASP LLM | OWASP Agentic |
+|---|---|---|---|---|---|---|---|
+| `audit.chain_intact` | the hash chain verifies and the anchor agrees | 8.15, 5.28 · CC7.2 | A.6.2.8 | Art. 12, 19, 26(6) | MEASURE 2.8 | | |
+| `audit.chain_keyed` | the chain is keyed with `TOLLPIKE_SECRET` | 8.15 · CC7.2 | A.6.2.8 | Art. 12 | MEASURE 2.8 | | |
+| `audit.agents_attributed` | every model call in the last 7 days carried an agent key | 5.16, 8.15 · CC6.1 | A.6.2.8, A.3.2 | Art. 12 | MEASURE 2.8 | | ASI03, ASI10 |
+| `audit.review_backlog` | no flagged event has waited longer than `grcReviewDays` (default 7) | 5.25 · CC7.3, CC7.4 | A.6.2.6 | Art. 14, 26(2) | MANAGE 4.3, MAP 3.5 | | |
+| `audit.preexecution` | Claude Code hooks or the MCP proxy reported in the last 7 days | 8.16, 8.18 · CC6.8 | A.9.2, A.9.4 | Art. 14 | MANAGE 2.4, MAP 3.5 | LLM06, LLM05 | ASI02, ASI05 |
+| `audit.egress_enforced` | endpoint sensors saw no provider connection bypassing the gateway | 8.20, 5.23 · CC6.6 | A.9.4, A.10.3 | Art. 12, 26(5) | GOVERN 1.6, MEASURE 2.8 | LLM10 | ASI10 |
+| `audit.vendor_collection` | every enabled vendor log connector pulled within 48 hours | 5.23, 8.15 · CC7.2 | A.10.3, A.6.2.8 | Art. 26(5), 12 | MANAGE 3.1, GOVERN 6.1 | LLM03 | ASI04 |
 
 A test with nothing to judge, for example no endpoint sensors or no vendor
 connectors, reports **not applicable** instead of passing. A green light with
