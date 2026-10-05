@@ -452,7 +452,13 @@ describe("over HTTP", () => {
   let n = 0;
   const unique = () => `prompt-${Date.now()}-${n++}`;
 
-  const api = async (p, { key, method = "GET", body, headers = {} } = {}) => {
+  // The control plane always needs the operator key, which the gateway created
+  // on start in this suite's data dir. Sent unless a test passes its own key or
+  // noAuth to see what an unauthenticated caller gets.
+  const api = async (p, { key, method = "GET", body, headers = {}, noAuth = false } = {}) => {
+    if (!key && !noAuth && p.startsWith("/api/") && !/^\/api\/(chat|tags|version)\b/.test(p)) {
+      key = (await import("../src/storage/settings.js")).getSettings().gatewayApiKey;
+    }
     const res = await fetch(BASE + p, {
       method,
       headers: { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}), ...headers },
@@ -543,7 +549,8 @@ describe("over HTTP", () => {
   });
 
   test("the control panel stays reachable for the operator after agent keys exist", async () => {
-    assert.equal((await api("/api/panel/audit/status")).status, 200);
+    assert.equal((await api("/api/panel/audit/status")).status, 200, "with the operator key");
+    assert.equal((await api("/api/panel/audit/status", { noAuth: true })).status, 401, "never without it, even from this machine");
   });
 
   test("an agent key cannot reach the control plane", async () => {

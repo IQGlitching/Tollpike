@@ -20,10 +20,18 @@ const root = path.join(import.meta.dirname, "..");
 const DATA_DIR = path.join(root, "data-e2e");
 let proc;
 
+// The control plane always needs the operator key, which the server creates
+// on first start in this suite's own data dir (cleartext here: the suite runs
+// without TOLLPIKE_SECRET). Read fresh on every call so a rotation is followed.
+const operatorKey = () => JSON.parse(fs.readFileSync(path.join(DATA_DIR, "settings.json"), "utf8")).gatewayApiKey;
+const isControlPlane = (p) => p.startsWith("/api/") && !/^\/api\/(chat|tags|version)\b/.test(p);
+
 const api = async (p, opts = {}) => {
+  const { noAuth, ...rest } = opts;
+  const auth = !noAuth && isControlPlane(p) && !(rest.headers && rest.headers.Authorization) ? { Authorization: `Bearer ${operatorKey()}` } : {};
   const res = await fetch(BASE + p, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) }
+    ...rest,
+    headers: { "Content-Type": "application/json", ...auth, ...(rest.headers || {}) }
   });
   const text = await res.text();
   let json = null;
@@ -387,7 +395,7 @@ describe("gateway: spend reporting", () => {
   });
 
   test("ledger exports CSV as a download", async () => {
-    const res = await fetch(BASE + "/api/panel/ledger?format=csv");
+    const res = await fetch(BASE + "/api/panel/ledger?format=csv", { headers: { Authorization: `Bearer ${operatorKey()}` } });
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type") || "", /text\/csv/);
     assert.match(res.headers.get("content-disposition") || "", /attachment/);
@@ -538,22 +546,67 @@ describe("gateway: security", () => {
       body: JSON.stringify({ apiKey: "short" })
     });
     assert.equal(r.status, 400);
-    assert.equal((await api("/v1/models")).status, 200, "auth stays off after a rejected key");
+    assert.equal((await api("/v1/models")).status, 200, "local model calls are unaffected by a rejected key");
   });
 
-  test("gateway auth lifecycle: lock, reject, accept, unlock", async () => {
-    const SUITE_KEY = "suite-key-long-enough-to-accept";
-    await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: SUITE_KEY }) });
-    assert.equal((await api("/v1/models")).status, 401, "no key rejected");
-    assert.equal((await api("/v1/models", { headers: { Authorization: "Bearer wrong" } })).status, 401, "wrong key rejected");
-    assert.equal((await api("/v1/models", { headers: { Authorization: `Bearer ${SUITE_KEY}` } })).status, 200, "correct key accepted");
+  test("the operator key exists from first start and the control plane always needs it", async () => {
+    assert.match(String(operatorKey()), /^tpk_/, "created on first start, without anyone setting it");
+    assert.equal((await api("/api/panel/state", { noAuth: true })).status, 401, "no key: refused, even from this machine");
+    assert.equal((await api("/api/panel/state", { headers: { Authorization: "Bearer wrong" } })).status, 401, "wrong key refused");
+    assert.equal((await api("/api/panel/state")).status, 200, "operator key accepted");
     assert.equal((await api("/panel/index.html")).status, 200, "panel assets stay reachable");
-    await api("/api/panel/gateway-key", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${SUITE_KEY}` },
-      body: JSON.stringify({ apiKey: null })
-    });
-    assert.equal((await api("/v1/models")).status, 200, "unlocked again");
+  });
+
+  test("model endpoints take keyless calls from this machine until a key is required", async () => {
+    assert.equal((await api("/v1/models")).status, 200, "keyless from loopback");
+    assert.equal((await api("/v1/models", { headers: { "x-api-key": "placeholder" } })).status, 200, "a placeholder key from a local client is ignored, not refused");
+    await api("/api/panel/security", { method: "POST", body: JSON.stringify({ modelAuth: "required" }) });
+    assert.equal((await api("/v1/models")).status, 401, "no key rejected once required");
+    assert.equal((await api("/v1/models", { headers: { Authorization: "Bearer wrong" } })).status, 401, "wrong key rejected");
+    assert.equal((await api("/v1/models", { headers: { Authorization: `Bearer ${operatorKey()}` } })).status, 200, "operator key accepted");
+    await api("/api/panel/security", { method: "POST", body: JSON.stringify({ modelAuth: "local" }) });
+    assert.equal((await api("/v1/models")).status, 200, "keyless again");
+    assert.equal((await api("/api/panel/security", { method: "POST", body: JSON.stringify({ modelAuth: "open" }) })).status, 400);
+  });
+
+  test("the operator key can be rotated but never removed", async () => {
+    const before = operatorKey();
+    assert.equal((await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: null }) })).status, 400);
+    assert.equal((await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: "" }) })).status, 400);
+    assert.equal(operatorKey(), before, "still set");
+    const SUITE_KEY = "suite-key-long-enough-to-accept";
+    assert.equal((await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: SUITE_KEY }) })).status, 200);
+    assert.equal((await api("/api/panel/state", { headers: { Authorization: `Bearer ${before}` } })).status, 401, "the old key stops working");
+    assert.equal((await api("/api/panel/state")).status, 200, "the new one works");
+  });
+
+  test("keyless local MCP callers get the read-only tools; the operator key gets them all", async () => {
+    const list = async (headers = {}) => {
+      const r = await fetch(BASE + "/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+      });
+      const text = await r.text();
+      const payload = JSON.parse(text.includes("data:") ? text.split("\n").find((l) => l.startsWith("data:")).slice(5) : text);
+      return payload.result.tools.map((t) => t.name);
+    };
+    const anonymous = await list();
+    assert.ok(anonymous.length > 0, "keyless local callers are let in");
+    assert.ok(!anonymous.includes("settings_patch"), "but never get the mutating tools, now that a key always exists");
+    const operator = await list({ authorization: `Bearer ${operatorKey()}` });
+    assert.ok(operator.includes("settings_patch"), "the operator key unlocks them");
+  });
+
+  test("a one-time panel code opens the panel once, and only once", async () => {
+    const { json } = await api("/api/panel/login-code", { method: "POST", body: "{}" });
+    assert.ok(json.code && json.code.length >= 16);
+    assert.equal((await api("/api/panel/login-code", { method: "POST", body: "{}", noAuth: true })).status, 401, "minting a code needs the operator key");
+    const first = await api("/auth/panel-code", { method: "POST", body: JSON.stringify({ code: json.code }) });
+    assert.equal(first.status, 200);
+    assert.equal(first.json.apiKey, operatorKey());
+    assert.equal((await api("/auth/panel-code", { method: "POST", body: JSON.stringify({ code: json.code }) })).status, 401, "single use");
+    assert.equal((await api("/auth/panel-code", { method: "POST", body: JSON.stringify({ code: "not-a-real-code-000000" }) })).status, 401);
   });
 });
 

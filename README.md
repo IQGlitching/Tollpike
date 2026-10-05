@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **769 tests** · **19 routing
+**46 providers** (6 local runtimes) · **773 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -100,9 +100,17 @@ tollpike listening on http://127.0.0.1:20128
   control panel: http://127.0.0.1:20128/panel
 ```
 
-**2. Open the control panel.** <http://127.0.0.1:20128/panel>
+**2. Open the control panel.**
 
-It boots with zero keys configured. Every provider shows as `NO KEY` and the
+```bash
+tollpike panel
+```
+
+The panel and admin API are locked from the first start: the gateway creates
+an operator key and `tollpike panel` opens the panel already unlocked (see
+[Locking it down](#locking-it-down)).
+
+It boots with zero provider keys configured. Every provider shows as `NO KEY` and the
 router has nowhere to send traffic yet, which is the expected first state.
 
 **3. Add a provider key.** Either put it in the protected env file, which is
@@ -267,17 +275,33 @@ that ran.
 
 ## Locking it down
 
-The panel API is unauthenticated until you set a gateway key. Set one from
-the Access page, or:
+The control plane is never open. On first start the gateway creates an
+**operator key**, and the panel and every admin endpoint need it, even from
+this machine. Any local process could otherwise reach the panel API,
+including the agents Tollpike audits, and an agent able to change settings
+could switch off the audit watching it.
 
 ```bash
-curl -X POST http://127.0.0.1:20128/api/panel/auth/key \
-  -H "Content-Type: application/json" \
-  -d '{"key":"a-long-random-string"}'
+tollpike panel        # open the panel in your browser, already unlocked
+tollpike key          # print the operator key (for scripts and other browsers)
+tollpike key rotate   # replace it; open panels unlock again with tollpike panel
 ```
 
-After that, every `/v1/*` and `/api/*` call needs `Authorization: Bearer
-<key>`. To encrypt that key at rest rather than storing it as honest
+`tollpike panel` asks the running gateway for a one-time code that works once,
+for 60 seconds, and the browser trades it for the key, so the key never
+appears in a URL or in browser history. The gateway never prints the key in
+its own output, which tends to end up in journals and container logs. The key
+can be rotated from the Access page or the CLI, but not removed.
+
+**Model endpoints** (`/v1`, `/mcp`, `/a2a`, the Claude Code hooks) take
+keyless calls **from this machine only**, so Claude Code, Cursor and scripts
+on this machine keep working without configuration. Keyless MCP callers get
+the read-only tools. Calls from any other host need the operator key or an
+agent key. Issuing the first agent key (`tollpike agents add`) makes a key
+mandatory on the model endpoints, and the Access page can require one there
+outright ("Key required").
+
+To encrypt the operator key at rest rather than storing it as honest
 plaintext, set `TOLLPIKE_SECRET` before starting:
 
 ```bash
@@ -289,6 +313,8 @@ TOLLPIKE_SECRET=$(openssl rand -hex 32) tollpike
 ```bash
 tollpike                 # start the gateway and control panel
 tollpike start           # the same thing, explicitly
+tollpike panel           # open the control panel, already unlocked
+tollpike key             # print the operator key (key rotate: replace it)
 tollpike mcp             # serve the 112 MCP tools over stdio
 tollpike verify          # check the usage ledger's tamper-evident hash chain
 tollpike verify --seal   # retro-seal rows that predate the chain (writes a .bak)
@@ -308,7 +334,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 769 tests
+npm test                 # 773 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -323,7 +349,7 @@ Everything is optional. Tollpike boots with nothing set.
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `20128` | Listen port |
-| `BIND_HOST` | `127.0.0.1` | Listen address. Anything non-loopback prints a warning if no gateway key is set |
+| `BIND_HOST` | `127.0.0.1` | Listen address. The control plane needs the operator key on any address; keyless model calls are accepted from this machine only |
 | `TOLLPIKE_ENV_FILE` | unset | Read credentials from this file and nothing else. Suppresses both defaults |
 | `TOLLPIKE_DATA_DIR` | `./data`, or `~/.tollpike/data` via the CLI | Where `usage.jsonl` and `settings.json` live |
 | `TOLLPIKE_SECRET` | unset | Enables AES-256-GCM encryption of the stored gateway key |
@@ -349,9 +375,8 @@ section of the control panel. The network posture is on by default.
 **Always on**
 
 - **Binds loopback.** The server listens on `127.0.0.1` unless you set
-  `BIND_HOST`. The control-panel API is unauthenticated until you set a
-  gateway key, so it must not reach the network by accident; if you do bind
-  a non-loopback address with no key set, startup prints a warning.
+  `BIND_HOST`. The control plane needs the operator key wherever it is
+  bound, and keyless model calls are accepted from this machine only.
 - **Host-header guard.** Requests are answered only when addressed to
   `localhost` or an IP literal. This is the defence against DNS rebinding,
   where a page you visit points a hostname it controls at `127.0.0.1` and
@@ -486,12 +511,12 @@ A dark, terminal-styled dashboard at `/panel`, backed by `/api/panel/*`:
 - **Security controls**: toggle PII redaction, set the injection-guard
   mode, configure the rate limit, and see whether at-rest encryption is
   active.
-- **Gateway access**: optionally require `Authorization: Bearer <key>` on
-  every `/v1/*` and `/api/*` call. The key lives in `data/settings.json` on
-  the server and in your browser's `localStorage`. Nowhere else. If you
-  lose it, recovery is deleting/editing `gatewayApiKey` in
-  `data/settings.json` directly (there's no key-recovery flow by design:
-  it's a local personal-use lock, not a real auth system).
+- **Gateway access**: the operator key, created on first start, which the
+  control plane always requires (`Authorization: Bearer <key>`). Rotate it
+  here, and choose whether model endpoints also need a key. The key lives in
+  `data/settings.json` on the server (encrypted when `TOLLPIKE_SECRET` is
+  set) and in your browser's `localStorage`. Nowhere else. Lost the browser
+  copy? `tollpike key` prints it; `tollpike key rotate` issues a new one.
 
 ## How routing works
 

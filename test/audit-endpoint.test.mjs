@@ -344,7 +344,8 @@ describe("over HTTP", () => {
     const s = audit.auditStatus();
     assert.ok(s.sees.some((x) => /endpoint sensor/.test(x)));
     assert.ok(audit.CONTROL_MAP.some((c) => /endpoint/.test(c.iso)));
-    const st = await (await fetch(`${BASE}/api/panel/audit/endpoint`)).json();
+    const { getSettings } = await import("../src/storage/settings.js");
+    const st = await (await fetch(`${BASE}/api/panel/audit/endpoint`, { headers: { authorization: `Bearer ${getSettings().gatewayApiKey}` } })).json();
     assert.ok(st.sensors.some((x) => x.sensor === "laptop-sensor"));
     const v = log.verifyAudit();
     assert.equal(v.intact, true, JSON.stringify(v));

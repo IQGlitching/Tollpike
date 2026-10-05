@@ -27,6 +27,9 @@ Routing infrastructure for AI. One endpoint, every provider behind it.
 
 USAGE
   tollpike [start]        start the gateway and the control panel
+  tollpike panel          open the control panel in your browser, unlocked
+  tollpike key            print the operator key the control panel needs
+  tollpike key rotate     replace the operator key (open panels must unlock again)
   tollpike mcp            serve the 112 MCP tools over stdio, for an MCP
                           client that spawns a subprocess
   tollpike verify         check the usage ledger's tamper-evident hash chain
@@ -54,8 +57,8 @@ USAGE
   tollpike --help         this text
 
 FIRST RUN
-  1. tollpike                          start it
-  2. open http://127.0.0.1:20128/panel  the control panel
+  1. tollpike                          start it (creates the operator key)
+  2. tollpike panel                    open the control panel, unlocked
   3. add a provider key on the Providers page, or put one in
      ${path.join(HOME, ".env")}
 
@@ -91,6 +94,63 @@ await import(pathToFileURL(path.join(root, "src", "env.js")).href);
 // keeps using ./data exactly as before.
 if (!process.env.TOLLPIKE_DATA_DIR) {
   process.env.TOLLPIKE_DATA_DIR = path.join(HOME, "data");
+}
+
+// The operator key. The gateway creates it on first start; these commands
+// create it too if the gateway has never run, so `tollpike key` always has an
+// answer. The key is printed only here, on the operator's own terminal, never
+// by the gateway into its logs.
+if (cmd === "key" || cmd === "panel") {
+  const settings = await import(pathToFileURL(path.join(root, "src", "storage", "settings.js")).href);
+  const sub = argv[argv.indexOf(cmd) + 1];
+  const made = settings.ensureOperatorKey();
+  if (made.unreadable) {
+    console.error("The operator key cannot be decrypted. Set TOLLPIKE_SECRET to the value used when it was written.");
+    process.exit(1);
+  }
+  const port = process.env.PORT || 20128;
+  const host = process.env.BIND_HOST && process.env.BIND_HOST !== "0.0.0.0" ? process.env.BIND_HOST : "127.0.0.1";
+  const base = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+
+  if (cmd === "key" && sub === "rotate") {
+    const { generateApiKey } = await import(pathToFileURL(path.join(root, "src", "security", "crypto.js")).href);
+    settings.updateSettings({ gatewayApiKey: generateApiKey() });
+    console.log("Operator key replaced. Open panels must unlock again: run tollpike panel.");
+    console.log(`Anything that sent the old key (scripts, Authorization headers) needs the new one: tollpike key`);
+    process.exit(0);
+  }
+  if (cmd === "key") {
+    console.log(settings.getSettings().gatewayApiKey);
+    if (process.stdout.isTTY) console.error(settings.isKeyEncryptedAtRest() ? "(stored encrypted)" : "(stored in cleartext: set TOLLPIKE_SECRET to encrypt it)");
+    process.exit(0);
+  }
+
+  // tollpike panel: ask the running gateway for a one-time code, then open the
+  // panel with it. The browser trades the code for the key, so the key never
+  // appears in a URL or in browser history.
+  let code;
+  try {
+    const res = await fetch(`${base}/api/panel/login-code`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${settings.getSettings().gatewayApiKey}`, "content-type": "application/json" },
+      body: "{}"
+    });
+    if (!res.ok) throw new Error(`the gateway answered ${res.status}`);
+    code = (await res.json()).code;
+  } catch (err) {
+    console.error(`Could not reach the gateway at ${base} (${err.cause?.code || err.message}). Start it with: tollpike`);
+    process.exit(1);
+  }
+  const url = `${base}/panel/#code=${code}`;
+  const { spawn } = await import("node:child_process");
+  const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
+  try {
+    spawn(opener[0], opener[1], { stdio: "ignore", detached: true }).unref();
+    console.log(`Opening the control panel. The link works once, for 60 seconds.`);
+  } catch {
+    console.log(`Open this link within 60 seconds (it works once):\n  ${url}`);
+  }
+  process.exit(0);
 }
 
 if (cmd === "where") {

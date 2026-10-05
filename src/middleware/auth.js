@@ -1,22 +1,23 @@
-import { getSettings, isKeyUnreadable } from "../storage/settings.js";
+import { getSettings, isKeyUnreadable, modelKeyRequired } from "../storage/settings.js";
 import { safeCompare, fingerprint } from "../security/crypto.js";
 import { hasAgentKeys, hasSensorKeys, matchAgentKey } from "../audit/agents.js";
 import { recordAuthFailure } from "../audit/index.js";
 
-// No-op until you set a key from the control panel or settings.json.
-// Once set, every /v1/* and /api/* request needs "Authorization: Bearer <key>".
+// The control plane (the panel's API and every admin endpoint) always needs
+// the operator key, which the gateway creates on first start. Model endpoints
+// (/v1, /mcp, /a2a, hooks) take keyless calls from this machine unless the
+// operator requires a key there too (settings.modelAuth) or agent keys exist.
 // The static control panel HTML/JS is intentionally left unprotected by this
-// middleware (it has no data of its own — it just calls the protected API
-// with a key the user enters and stores in their own browser).
+// middleware (it has no data of its own: it calls the protected API with a key
+// stored in the operator's own browser).
 //
 // Agent keys (src/audit/agents.js) are a second kind of credential. Each one
 // identifies a single agent, so every audited action carries its name, and
 // each reaches the model endpoints only. Creating the first agent key makes a
 // key mandatory on those endpoints even with no operator key set: from then
 // on an agent that does not identify itself is refused, which is what turns
-// attribution from voluntary into enforced. The control plane keeps its
-// existing rule (open on loopback until an operator key is set), so issuing
-// agent keys can never lock the operator out of the panel.
+// attribution from voluntary into enforced. Agent keys never open the control
+// plane, and issuing them never locks the operator out of it.
 
 // The surfaces an agent key may call. Everything else under /api is the
 // control plane, and an agent must not be able to reconfigure the gateway
@@ -95,6 +96,25 @@ export function requireGatewayKey(req, res, next) {
     }
     req.callerId = "anonymous";
     return next();
+  }
+
+  // Keyless use of a model endpoint, when the operator allows it: from this
+  // machine only, so a gateway bound to a wider address never serves model
+  // calls to the network without a key. A token that is not the operator key
+  // is ignored rather than refused here, because local clients routinely send a
+  // placeholder (Claude Code always sends x-api-key).
+  const modelLike = isModelSurface(req) || isSensorSurface(req);
+  if (modelLike && !agentKeysRequired && !modelKeyRequired()) {
+    if (presented && safeCompare(presented, gatewayApiKey)) {
+      req.callerId = fingerprint(presented);
+      return next();
+    }
+    if (isLoopbackRequest(req)) {
+      req.callerId = "anonymous";
+      return next();
+    }
+    recordAuthFailure(req, presented ? "invalid key" : "missing key");
+    return res.status(401).json({ error: "Keyless model calls are accepted from this machine only. Send the operator key or an agent key." });
   }
 
   // Anthropic clients (Claude Code, the Anthropic SDK) authenticate with

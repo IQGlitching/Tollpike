@@ -32,6 +32,8 @@ function baseUrl() {
 
 export function agentCard() {
   const settings = getSettings();
+  // Advertise auth when a remote A2A client needs it: model endpoints take
+  // keyless calls from this machine only, so a key is the way in from elsewhere.
   const authEnabled = Boolean(settings.gatewayApiKey);
 
   return {

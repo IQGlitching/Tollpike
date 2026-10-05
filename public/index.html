@@ -2299,6 +2299,9 @@
   .au-vendor-m { font-family: var(--mono); font-size: 10px; color: var(--txt-4); margin-top: 5px; }
   .au-vendor-m .mono { color: var(--conn); }
   .au-hooks { max-height: 220px; overflow: auto; font-size: 10.5px; }
+  .au-fix { display: inline-block; margin-top: 8px; cursor: pointer; background: transparent; font-family: var(--mono); font-size: 10.5px; letter-spacing: .13em; color: var(--route); border: 1px solid rgba(167,139,250,.4); border-radius: var(--r); padding: 6px 11px; }
+  .au-fix:hover { border-color: var(--route); }
+  .au-fix:focus-visible { outline: 2px solid var(--route); outline-offset: 2px; }
   .au-sig { display: grid; grid-template-columns: 70px minmax(0,1fr); gap: 10px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
   .au-sig-t { font-size: 12px; font-weight: 500; }
   .au-sig-d { font-size: 11px; color: var(--txt-3); margin-top: 3px; line-height: 1.5; }
@@ -2499,10 +2502,9 @@
     </div>
 
     <div class="lock-foot">
-      <b>Lost it?</b> Stop the gateway, clear <span class="mono">gatewayApiKey</span> in
-      <span class="mono">data/settings.json</span>, restart, then set a new one on the
-      <span class="mono">Access</span> page. Nothing else is lost. The key is the only thing that file
-      holds which cannot be recovered from the gateway itself.
+      <b>On this machine?</b> Run <span class="mono">tollpike panel</span> to open this panel
+      unlocked, or <span class="mono">tollpike key</span> to print the key. Lost access to the
+      secret that encrypts it? <span class="mono">tollpike key rotate</span> issues a new one.
     </div>
   </div>
 </div>

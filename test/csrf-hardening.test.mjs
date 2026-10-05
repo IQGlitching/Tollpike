@@ -159,6 +159,10 @@ describe("mcp: unauthenticated HTTP transport defaults to read-only", () => {
       /return !getSettings\(\)\.gatewayApiKey/.test(server),
       "no key must mean read-only — 100+ tools reachable unauthenticated is a remote control"
     );
+    assert.ok(
+      /req\.callerId === "anonymous"/.test(server.slice(server.indexOf("function mcpReadOnly"))),
+      "a key always exists now, so a keyless caller must be read-only on its own account"
+    );
   });
 
   test("an agent key always gets the read-only surface, ahead of any env override", () => {

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { encrypt, decrypt, isEncryptionAvailable } from "../security/crypto.js";
+import { encrypt, decrypt, isEncryptionAvailable, generateApiKey } from "../security/crypto.js";
 import { dataDir } from "../paths.js";
 import { COMPRESSION_DEFAULTS, CAVEMAN_LEVELS, CAVEMAN_SCOPES } from "../compression/compress.js";
 
@@ -9,7 +9,8 @@ const settingsPath = path.join(dataDir, "settings.json");
 const DEFAULTS = {
   disabledProviders: [], // provider ids toggled off from the control panel
   budgetCapsUsd: {}, // { providerId: monthlyCapUsd }
-  gatewayApiKey: null, // if set, /v1/* and /api/* require Authorization: Bearer <key>
+  gatewayApiKey: null, // the operator key; created on first start (ensureOperatorKey) and always required by the control plane
+  modelAuth: null, // "local": model endpoints take keyless calls from this machine; "required": they need a key; null: derived (see modelKeyRequired)
   proxies: {}, // { "*": "http://host:port" } global, or { providerId: url } per-provider
   proxyCategories: {}, // { frontier: url } — level 2 of proxy resolution
   tlsProfile: "default", // outbound TLS fingerprint shaping; see routing/tls.js
@@ -398,6 +399,33 @@ export function isKeyUnreadable() {
 
 // True only when the stored key is actually encrypted on disk, so the panel
 // can report the real state instead of "is a secret configured".
+// The control plane is never open. On first start the gateway creates an
+// operator key, so the panel and admin API need it even from this machine:
+// any local process, including the agents being audited, could otherwise
+// switch off the audit watching it. The key is never printed to the gateway's
+// own output (which ends up in journals and container logs); `tollpike key`
+// shows it and `tollpike panel` opens the panel unlocked.
+//
+// A key that exists but cannot be decrypted is left alone: overwriting it
+// would destroy the ciphertext the operator can still recover by restoring
+// TOLLPIKE_SECRET.
+export function ensureOperatorKey() {
+  if (getSettings().gatewayApiKey) return { created: false };
+  if (isKeyUnreadable()) return { created: false, unreadable: true };
+  const s = updateSettings({ gatewayApiKey: generateApiKey(), modelAuth: getSettings().modelAuth || "local" });
+  return { created: Boolean(s.gatewayApiKey), encrypted: isKeyEncryptedAtRest() };
+}
+
+// Whether the model endpoints (/v1, /mcp, /a2a, hooks) need a key. A key the
+// gateway created for itself does not change them ("local"), so tools on this
+// machine keep working. A settings file from before this field existed, with a
+// key the operator set deliberately, keeps the stricter behaviour it had.
+export function modelKeyRequired(s = getSettings()) {
+  if (s.modelAuth === "required") return true;
+  if (s.modelAuth === "local") return false;
+  return Boolean(s.gatewayApiKey);
+}
+
 export function isKeyEncryptedAtRest() {
   const raw = readRaw();
   const v = raw.gatewayApiKey;

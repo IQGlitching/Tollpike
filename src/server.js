@@ -38,6 +38,8 @@ import {
   setBudgetCap,
   updateSettings,
   isKeyEncryptedAtRest,
+  ensureOperatorKey,
+  modelKeyRequired,
   validateCompression,
   validateAudit
 } from "./storage/settings.js";
@@ -138,7 +140,7 @@ const PORT = process.env.PORT || 20128;
 
 // Defaults to loopback. The previous `app.listen(PORT)` bound every
 // interface — including the LAN — while the banner and README both said
-// "localhost", and the control plane is unauthenticated until a key is set.
+// "localhost". The control plane needs the operator key wherever it is bound.
 // Exposing this deliberately is fine; doing it by accident is not.
 const BIND_HOST = process.env.BIND_HOST || "127.0.0.1";
 const isLoopbackBind = ["127.0.0.1", "::1", "localhost"].includes(BIND_HOST);
@@ -148,6 +150,22 @@ app.use(hostGuard);
 // requireGatewayKey looks for one. Off unless ALLOW_PATH_TOKEN=true.
 app.use(pathToken);
 app.use(express.json({ limit: process.env.MAX_BODY_SIZE || "10mb" }));
+
+// One-time codes that open the panel unlocked (`tollpike panel`). The CLI,
+// holding the operator key, asks for a code; the browser trades it here for
+// the key. The key itself never sits in a URL, so it stays out of browser
+// history. A code is random, single use and lives 60 seconds.
+const panelCodes = new Map();
+const PANEL_CODE_TTL_MS = 60_000;
+app.post("/auth/panel-code", csrfGuard, (req, res) => {
+  const code = String(req.body?.code || "");
+  const entry = panelCodes.get(code);
+  panelCodes.delete(code);
+  if (!entry || entry.expires < Date.now()) return res.status(401).json({ error: "That link has expired. Run tollpike panel again." });
+  const { gatewayApiKey } = getSettings();
+  if (!gatewayApiKey) return res.status(409).json({ error: "No operator key is set." });
+  res.json({ apiKey: gatewayApiKey });
+});
 
 // express.json's own parse failures otherwise surface as an HTML error page.
 app.use((err, req, res, next) => {
@@ -779,6 +797,7 @@ app.get("/api/panel/state", (req, res) => {
       // while the key sat in settings.json as plaintext.
       encryptionAvailable: isEncryptionAvailable(),
       keyEncryptedAtRest: isKeyEncryptedAtRest(),
+      modelKeyRequired: modelKeyRequired(settings),
       boundHost: BIND_HOST,
       exposedBeyondLoopback: !isLoopbackBind,
       // Named so the panel can state what each guard covers without keeping
@@ -1333,17 +1352,20 @@ app.get("/api/panel/credential-location", (req, res) => {
 });
 
 app.post("/api/panel/gateway-key", requireAuthenticatedOrLocal, (req, res) => {
-  const { apiKey } = req.body || {}; // null/empty disables gateway auth
-  if (apiKey !== null && apiKey !== undefined && apiKey !== "") {
-    if (typeof apiKey !== "string") {
-      return res.status(400).json({ error: "apiKey must be a string, or null to disable auth" });
-    }
-    // Short keys make the constant-time compare pointless.
-    if (apiKey.length < 16) {
-      return res.status(400).json({ error: "apiKey must be at least 16 characters" });
-    }
+  const { apiKey } = req.body || {};
+  // The operator key can be replaced but never removed: without it the control
+  // plane would be open to every process on the machine.
+  if (apiKey === null || apiKey === undefined || apiKey === "") {
+    return res.status(400).json({ error: "The operator key can be rotated but not removed. Send a new key, or run tollpike key rotate." });
   }
-  const settings = updateSettings({ gatewayApiKey: apiKey || null });
+  if (typeof apiKey !== "string") {
+    return res.status(400).json({ error: "apiKey must be a string" });
+  }
+  // Short keys make the constant-time compare pointless.
+  if (apiKey.length < 16) {
+    return res.status(400).json({ error: "apiKey must be at least 16 characters" });
+  }
+  const settings = updateSettings({ gatewayApiKey: apiKey });
   res.json({
     ok: true,
     gatewayAuthEnabled: Boolean(settings.gatewayApiKey),
@@ -1352,8 +1374,14 @@ app.post("/api/panel/gateway-key", requireAuthenticatedOrLocal, (req, res) => {
 });
 
 app.post("/api/panel/security", (req, res) => {
-  const { redactPii, injectionMode, rateLimit: rl } = req.body || {};
+  const { redactPii, injectionMode, rateLimit: rl, modelAuth } = req.body || {};
   const patch = {};
+  if (modelAuth !== undefined) {
+    if (!["local", "required"].includes(modelAuth)) {
+      return res.status(400).json({ error: 'modelAuth must be "local" or "required"' });
+    }
+    patch.modelAuth = modelAuth;
+  }
   if (redactPii !== undefined) patch.redactPii = Boolean(redactPii);
   if (injectionMode !== undefined) {
     if (!["off", "flag", "block"].includes(injectionMode)) {
@@ -1372,7 +1400,8 @@ app.post("/api/panel/security", (req, res) => {
     security: {
       redactPii: settings.redactPii === true,
       injectionMode: settings.injectionMode || "off",
-      rateLimit: rateLimiter.getConfig()
+      rateLimit: rateLimiter.getConfig(),
+      modelKeyRequired: modelKeyRequired(settings)
     }
   });
 });
@@ -1555,6 +1584,13 @@ app.get("/api/panel/protocols", (req, res) => {
   res.json({ mcp: mcpStatus(), a2a: a2aStatus() });
 });
 
+app.post("/api/panel/login-code", (req, res) => {
+  for (const [c, e] of panelCodes) if (e.expires < Date.now()) panelCodes.delete(c);
+  const code = generateApiKey().slice(4);
+  panelCodes.set(code, { expires: Date.now() + PANEL_CODE_TTL_MS });
+  res.json({ code, expiresInSeconds: PANEL_CODE_TTL_MS / 1000 });
+});
+
 app.post("/api/panel/generate-key", (req, res) => {
   res.json({ apiKey: generateApiKey() });
 });
@@ -1605,7 +1641,9 @@ function mcpReadOnly(req) {
   if (req?.agent) return true;
   if (process.env.MCP_READ_ONLY === "true") return true;
   if (process.env.MCP_READ_ONLY === "false") return false;
-  return !getSettings().gatewayApiKey;
+  // Only a caller holding the operator key gets the mutating tools. Keyless
+  // local callers are allowed in, but read-only.
+  return !getSettings().gatewayApiKey || !req?.callerId || req.callerId === "anonymous";
 }
 
 // ---- Audit: capture points that see actions before they run ----
@@ -1780,6 +1818,8 @@ app.use((err, req, res, next) => {
 // the operator cannot see in the dashboard that started it.
 services.installShutdownHooks();
 
+const operatorKey = ensureOperatorKey();
+
 app.listen(PORT, BIND_HOST, () => {
   audit.recordStartup({ version: VERSION, bind: BIND_HOST, port: Number(PORT) });
   const vendorJobs = startVendorSchedule();
@@ -1828,12 +1868,25 @@ app.listen(PORT, BIND_HOST, () => {
     }${env.secretConfigured ? " · at-rest encryption available" : " · TOLLPIKE_SECRET unset, keys stored in cleartext"}`
   );
 
-  if (!isLoopbackBind && !settings.gatewayApiKey) {
+  // The key itself is never printed: the gateway's output ends up in journals
+  // and container logs. The CLI shows it to the operator on request.
+  if (operatorKey.created) {
+    console.log(
+      `\n  Operator key created${operatorKey.encrypted ? " and stored encrypted" : ""}. The control panel needs it.\n` +
+        "  Open the panel unlocked:  tollpike panel\n" +
+        "  Print the key:            tollpike key\n"
+    );
+  }
+  if (operatorKey.unreadable) {
     console.warn(
-      "\n  WARNING: bound to a non-loopback address with no gateway API key set.\n" +
-        "  The control panel API (provider toggles, budget caps, egress proxy,\n" +
-        "  test completions) is reachable by anyone who can reach this port.\n" +
-        "  Set a key from the panel, or bind to 127.0.0.1.\n"
+      "\n  WARNING: the operator key cannot be decrypted. Restore TOLLPIKE_SECRET to the\n" +
+        "  value used when it was written. The control plane stays locked until then.\n"
+    );
+  }
+  if (!isLoopbackBind && !modelKeyRequired()) {
+    console.log(
+      "\n  NOTE: bound beyond loopback. Model endpoints accept keyless calls from this\n" +
+        "  machine only; other hosts need the operator key or an agent key.\n"
     );
   }
 

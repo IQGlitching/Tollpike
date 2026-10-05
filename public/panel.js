@@ -1,5 +1,27 @@
 const AUTH_STORAGE_KEY = "tollpike_panel_key";
 
+// `tollpike panel` opens /panel/#code=<one-time code>. Trade it for the
+// operator key, keep the key in this browser, and drop the code from the
+// address bar and history before anything else reads the hash. Handled on
+// load and on hashchange, because the link can land in a tab that already has
+// the panel open; this listener is registered before the router's, so it runs
+// first.
+function consumePanelCode() {
+  const m = location.hash.match(/^#code=([A-Za-z0-9_-]{16,})$/);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search + "#home");
+  fetch("/auth/panel-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: m[1] }) })
+    .then((r) => r.json())
+    .then((j) => {
+      if (!j.apiKey) throw new Error(j.error || "That link did not work.");
+      localStorage.setItem(AUTH_STORAGE_KEY, j.apiKey);
+      location.reload();
+    })
+    .catch((err) => alert(`${err.message} Run tollpike panel again, or unlock with the key from tollpike key.`));
+}
+consumePanelCode();
+window.addEventListener("hashchange", consumePanelCode);
+
 // Everything rendered here is untrusted to some degree: provider ids and
 // model names travel from the request through the usage log, and the test
 // consoles render model output. All of it goes through esc(), and model
@@ -3151,8 +3173,20 @@ PAGES.ledger = (el, s) => {
       </div>
     </section>`;
 
-  el.querySelector("#csvBtn").addEventListener("click", () => {
-    window.location.href = `/api/panel/ledger?format=csv&month=${encodeURIComponent(ledgerMonth)}`;
+  // Fetched with the key and saved as a blob: navigating to the URL would send
+  // no Authorization header, and the control plane always needs one.
+  el.querySelector("#csvBtn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/panel/ledger?format=csv&month=${encodeURIComponent(ledgerMonth)}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`gateway answered ${res.status}`);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `tollpike-ledger-${ledgerMonth}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) { alert(err.message); }
   });
   el.querySelector("#monthPrev").addEventListener("click", () => {
     ledgerMonth = shiftMonth(ledgerMonth, -1);
@@ -4196,6 +4230,7 @@ PAGES.access = (el, s) => {
   const rl = sec.rateLimit || {};
   const exposed = sec.exposedBeyondLoopback;
   const locked = s.gatewayAuthEnabled;
+  const modelLocked = sec.modelKeyRequired === true;
 
   el.innerHTML = `
     ${exposed && !locked ? `<div class="alerts-band"><div class="alert bad">
@@ -4214,17 +4249,23 @@ PAGES.access = (el, s) => {
         <div class="lock-state ${locked ? "on" : "off"}">
           <div class="ls-v">${locked ? "LOCKED" : "OPEN"}</div>
           <div class="ls-n">${locked
-            ? "Every <em>/v1</em>, <em>/mcp</em>, <em>/a2a</em> and <em>/api</em> request needs <em>Authorization: Bearer &lt;key&gt;</em>. Comparison is constant-time."
-            : "No key is set, so every surface below that says <em>key</em> is currently answering anyone who can reach this port."}</div>
+            ? `The control panel and admin API always need the operator key, even from this machine, so no agent can reconfigure the gateway auditing it. ${modelLocked
+                ? "Model endpoints (<em>/v1</em>, <em>/mcp</em>, <em>/a2a</em>) need a key too."
+                : "Model endpoints (<em>/v1</em>, <em>/mcp</em>, <em>/a2a</em>) take keyless calls from this machine only, read-only on MCP."} Comparison is constant-time.`
+            : "No operator key is set, so every surface below that says <em>key</em> is currently answering anyone who can reach this port. Restart the gateway to create one."}</div>
         </div>
         <div class="row" style="margin-top:16px">
-          <input type="password" id="gatewayKeyInput" placeholder="${locked ? "locked · enter a new key to replace" : "unlocked · set a key to lock"}" />
+          <input type="password" id="gatewayKeyInput" placeholder="${locked ? "enter or generate a new key to rotate" : "set a key to lock"}" />
           <button class="sm nowrap" id="gatewayKeyGen">Generate</button>
-          <button class="sm primary nowrap" id="gatewayKeySave">Save</button>
-          <button class="sm danger nowrap" id="gatewayKeyClear">Clear</button>
+          <button class="sm primary nowrap" id="gatewayKeySave">Rotate</button>
         </div>
-        <div class="lock-hint">Minimum 16 characters. Saving one here also stores it in this browser, so the panel
-          keeps working without a reload.</div>
+        <div class="lock-hint">The key can be rotated but not removed. Rotating stores the new one in this browser too.
+          On this machine, <span class="mono">tollpike key</span> prints it and <span class="mono">tollpike panel</span> opens this panel unlocked.</div>
+        <div class="row" style="margin-top:14px;align-items:center;gap:10px">
+          <span class="lock-hint" style="margin:0">Model endpoints</span>
+          <button class="sm nowrap ${modelLocked ? "" : "primary"}" data-model-auth="local" aria-pressed="${!modelLocked}">Keyless from this machine</button>
+          <button class="sm nowrap ${modelLocked ? "primary" : ""}" data-model-auth="required" aria-pressed="${modelLocked}">Key required</button>
+        </div>
 
         <div class="cov-head">SURFACE COVERAGE</div>
         <div class="surf">
@@ -4314,17 +4355,17 @@ PAGES.access = (el, s) => {
   });
   el.querySelector("#gatewayKeySave").addEventListener("click", async () => {
     const value = el.querySelector("#gatewayKeyInput").value;
+    if (!value) return alert("Enter a new key, or press Generate first.");
     try {
-      await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: value || null }) });
+      await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: value }) });
       if (value) localStorage.setItem(AUTH_STORAGE_KEY, value);
       refresh();
     } catch (err) { alert(err.message); }
   });
-  el.querySelector("#gatewayKeyClear").addEventListener("click", async () => {
-    await api("/api/panel/gateway-key", { method: "POST", body: JSON.stringify({ apiKey: null }) });
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    refresh();
-  });
+  el.querySelectorAll("[data-model-auth]").forEach((btn) => btn.addEventListener("click", () => {
+    if (btn.dataset.modelAuth === "required" && !confirm("Tools that call /v1, /mcp or /a2a without a key (Claude Code, Cursor, scripts) will be refused until they send the operator key or an agent key. Continue?")) return;
+    saveSecurity({ modelAuth: btn.dataset.modelAuth });
+  }));
   el.querySelector("#toggleRateLimit").addEventListener("click", (e) => {
     const rpm = Number(el.querySelector("#rateLimitRpm").value) || 60;
     saveSecurity({ rateLimit: { enabled: !e.currentTarget.classList.contains("on"), capacity: rpm, refillPerMinute: rpm } });
@@ -6168,9 +6209,13 @@ function paintAudit(root, d) {
 
   const gaps = (status.gaps || []).map((g) => {
     const bad = /OFF|not set|failed|open to anyone/i.test(g);
+    // The one gap the operator can close from the panel itself gets a way there.
+    const fix = /operator \(gateway\) key/i.test(g)
+      ? `<button type="button" class="au-fix" data-goto-page="access">SET AN OPERATOR KEY ON THE ACCESS PAGE &#8594;</button>`
+      : "";
     return `<div class="alert" style="border-left-color:var(--${bad ? "bad" : "conn"})">
         <div class="ai" style="background:var(--${bad ? "bad" : "conn"}-dim);color:var(--${bad ? "bad" : "conn"})">!</div>
-        <div><div class="ab" style="margin-top:0">${esc(g)}</div></div></div>`;
+        <div><div class="ab" style="margin-top:0">${esc(g)}</div>${fix}</div></div>`;
   }).join("");
 
   root.innerHTML = `
@@ -6429,6 +6474,7 @@ function paintAudit(root, d) {
     catch (err) { alert(err.message); }
   }));
 
+  root.querySelectorAll("[data-goto-page]").forEach((btn) => btn.addEventListener("click", () => navigate(btn.dataset.gotoPage)));
   root.querySelectorAll("[data-grc-push]").forEach((btn) => btn.addEventListener("click", async () => {
     const id = btn.dataset.grcPush;
     const m = root.querySelector(`[data-gmsg="${id}"]`);
