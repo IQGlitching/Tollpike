@@ -6,6 +6,7 @@ import express from "express";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { dataDir } from "./paths.js";
 import {
   routeChatCompletion,
   routeChatCompletionStream,
@@ -340,9 +341,12 @@ async function prepare(payload, { sessionId = "default" } = {}) {
       model: payload.model,
       messages: guard.messages,
       temperature: payload.temperature,
-      max_tokens: payload.max_tokens,
+      // Newer OpenAI clients send max_completion_tokens instead. It was dropped,
+      // so their output limit never reached a provider: unbounded spend.
+      max_tokens: payload.max_tokens ?? payload.max_completion_tokens,
       tools: payload.tools,
       tool_choice: payload.tool_choice,
+      ...(payload.stream && payload.stream_options && typeof payload.stream_options === "object" ? { stream_options: payload.stream_options } : {}),
       ...pickSampling(payload)
     }
   };
@@ -433,6 +437,10 @@ app.post("/v1/chat/completions", async (req, res) => {
           .status(err.status || 502)
           .json({ error: err.message, attempts: publicAttempts(err.attempts) });
       } else {
+        // The status line went out as 200 with the first chunk. Ending quietly
+        // made a stream that died halfway look complete; say so in the stream,
+        // the way OpenAI reports an error once streaming has begun.
+        if (!err.clientGone) res.write(`data: ${JSON.stringify({ error: { message: err.message, type: "upstream_error" } })}\n\n`);
         res.end();
       }
     }
@@ -797,7 +805,11 @@ app.get("/api/panel/state", (req, res) => {
       // while the key sat in settings.json as plaintext.
       encryptionAvailable: isEncryptionAvailable(),
       keyEncryptedAtRest: isKeyEncryptedAtRest(),
-      modelKeyRequired: modelKeyRequired(settings),
+      // What auth actually enforces: an active agent key makes a key mandatory
+      // on the model endpoints whatever the setting says. Reporting only the
+      // setting showed "keyless from this machine" while keyless calls failed.
+      modelKeyRequired: modelKeyRequired(settings) || auditAgents.hasAgentKeys(),
+      agentKeysActive: auditAgents.hasAgentKeys(),
       boundHost: BIND_HOST,
       exposedBeyondLoopback: !isLoopbackBind,
       // Named so the panel can state what each guard covers without keeping
@@ -1625,12 +1637,12 @@ app.post("/api/panel/test", async (req, res) => {
 // Whether the HTTP MCP transport refuses mutating tools, resolved per request
 // so setting a gateway key from the panel takes effect without a restart.
 //
-// The default is tied to auth rather than being a flat "off". Unauthenticated
-// MCP over HTTP is a remote control for 100+ tools — settings_patch, proxy_set,
-// services_start, completions_chat — available to anything that can reach the
-// port. Defaulting that to fully writable meant the safe configuration was the
-// one an operator had to know to ask for. Now it inverts: no key means
-// read-only, and MCP_READ_ONLY=false is how you say you meant it.
+// Only the operator key gets the mutating tools. Unauthenticated MCP over HTTP
+// is a remote control for 100+ tools (settings_patch, proxy_set,
+// services_start) and an agent able to change settings could switch off the
+// audit watching it. MCP_READ_ONLY=true takes them from the operator too;
+// there is no setting that hands them to a keyless caller. (Before 0.10 there
+// could be no operator key, and MCP_READ_ONLY=false opened them to anyone.)
 //
 // The stdio transport is deliberately unaffected. It is spawned as a subprocess
 // by a client the operator already trusts with their shell, so there is no
@@ -1640,9 +1652,6 @@ function mcpReadOnly(req) {
   // agent able to change settings could switch off the audit watching it.
   if (req?.agent) return true;
   if (process.env.MCP_READ_ONLY === "true") return true;
-  if (process.env.MCP_READ_ONLY === "false") return false;
-  // Only a caller holding the operator key gets the mutating tools. Keyless
-  // local callers are allowed in, but read-only.
   return !getSettings().gatewayApiKey || !req?.callerId || req.callerId === "anonymous";
 }
 
@@ -1674,10 +1683,10 @@ app.post("/mcp-proxy", async (req, res) => {
 });
 // Endpoint telemetry from OS sensors. JSON arrives parsed by the global
 // body parser; auditd text, NDJSON and Sysmon XML arrive as text. Larger limit
-// than the API's: a collector batches.
+// than the API's: a collector batches (tail sends at most 4 MB at a time).
 app.post(
   "/audit/endpoint/events",
-  express.text({ type: ["text/*", "application/x-ndjson", "application/xml"], limit: process.env.MAX_ENDPOINT_BATCH || "20mb" }),
+  express.text({ type: ["text/*", "application/x-ndjson", "application/xml"], limit: process.env.MAX_ENDPOINT_BATCH || "5mb" }),
   (req, res) => {
     const format = String(req.query.format || "");
     if (!ENDPOINT_FORMATS[format]) return res.status(400).json({ error: `?format= must be one of: ${Object.keys(ENDPOINT_FORMATS).join(", ")}` });
@@ -1896,8 +1905,8 @@ app.listen(PORT, BIND_HOST, () => {
   // rather than after the file has been copied into a backup or a bug report.
   if (settings.gatewayApiKey && !isKeyEncryptedAtRest()) {
     console.warn(
-      "\n  NOTE: the gateway API key is stored in cleartext in data/settings.json.\n" +
-        "  Set TOLLPIKE_SECRET and re-save the key from the panel to encrypt it at rest.\n"
+      `\n  NOTE: the operator key is stored in cleartext in ${path.join(dataDir, "settings.json")}.\n` +
+        "  Set TOLLPIKE_SECRET, then run tollpike key rotate to store a new key encrypted.\n"
     );
   }
 });

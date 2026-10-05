@@ -157,6 +157,20 @@ describe("recall", () => {
     await assert.rejects(() => memory.recall("x", { mode: "telepathy" }), (err) => err.status === 400);
   });
 
+  test("over MCP a caller other than the operator recalls only its own partition", async () => {
+    const { callTool } = await import("../src/mcp/scopes.js");
+    const { runWithContext } = await import("../src/audit/context.js");
+    store.remember({ sessionId: "agent:victim", role: "user", text: "the launch password is zebra-orchid" });
+    store.remember({ sessionId: "agent:me", role: "user", text: "my own zebra-orchid note" });
+    const asCaller = (args) => runWithContext({ callerId: "agent:me" }, () => callTool("memory_recall", args, { readOnly: true }));
+    for (const args of [{ query: "zebra-orchid", crossSession: true }, { query: "zebra-orchid", sessionId: "agent:victim" }]) {
+      const found = await asCaller(args);
+      assert.ok(!found.results.some((r) => /launch password/.test(r.text)), `another caller's memory leaked with ${JSON.stringify(args)}`);
+    }
+    assert.ok((await asCaller({ query: "zebra-orchid" })).results.some((r) => /my own/.test(r.text)), "a caller still recalls its own turns");
+    await assert.rejects(() => runWithContext({ callerId: "agent:me" }, () => callTool("sessions_search", { query: "zebra" }, { readOnly: true })), /operator only/);
+  });
+
   test("an empty query recalls nothing rather than everything", async () => {
     store.remember({ sessionId: "s1", role: "user", text: "something" });
     const found = await memory.recall("   ", { sessionId: "s1" });

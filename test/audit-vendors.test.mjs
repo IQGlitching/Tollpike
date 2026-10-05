@@ -394,6 +394,35 @@ describe("connectors against documented response shapes", () => {
 });
 
 describe("integrity", () => {
+  // A connector that only yields its cursor on the last page, with more pages
+  // than one run reads: the cursor still moves, and for a newest-first reader
+  // the skipped window is on the record.
+  test("a backlog longer than one run moves the cursor and records the gap", async () => {
+    const { CONNECTORS } = await import("../src/audit/vendors/connectors.js");
+    const { readState } = await import("../src/audit/vendors/framework.js");
+    const BASE_TS = Date.now() - 3_600_000;
+    const fake = (id, ascending) => ({
+      id, name: id, product: id, credentials: [], ascending, defaultIntervalMinutes: 60,
+      async *pages({ state }) {
+        for (let p = 0; p < 10; p++) yield { records: [{ vendorId: `${id}-${state.cursor || "none"}-${p}`, ts: new Date(BASE_TS + p * 1000).toISOString(), action: "x" }] };
+        yield { records: [], cursor: "final" };
+      }
+    });
+    try {
+      for (const [id, asc] of [["fake-desc", false], ["fake-asc", true]]) {
+        CONNECTORS[id] = fake(id, asc);
+        const r = await vendors.pullVendor(id, { maxPages: 3 });
+        assert.equal(r.ok, true, JSON.stringify(r));
+        assert.equal(readState()[id].cursor, new Date(BASE_TS + 2000).toISOString(), "cursor is the newest record read");
+        const pull = events().filter((e) => e.type === "vendor.pull" && e.vendor === id).at(-1);
+        assert.equal(Boolean(pull.findings?.some((f) => f.rule === "vendor.backlog_skipped")), !asc);
+      }
+    } finally {
+      delete CONNECTORS["fake-desc"];
+      delete CONNECTORS["fake-asc"];
+    }
+  });
+
   test("every run is on the record, and no credential reached the log or the state file", () => {
     const pulls = events().filter((e) => e.type === "vendor.pull");
     assert.ok(pulls.length >= 9);

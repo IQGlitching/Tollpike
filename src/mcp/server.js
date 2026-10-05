@@ -38,7 +38,7 @@ export function createMcpServer({ readOnly = false } = {}) {
   // throws "Schema is missing a method literal" at import time.
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: listTools()
-      .filter((tool) => !(readOnly && tool.mutates))
+      .filter((tool) => !(readOnly && (tool.mutates || tool.operatorOnly)))
       .map((tool) => ({
         name: tool.name,
         // The mutation marker is in the description because MCP has no field for

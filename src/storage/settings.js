@@ -190,8 +190,8 @@ export function validateCompression(patch = {}) {
   if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled);
   if (patch.historyWindow !== undefined) {
     const n = Number(patch.historyWindow);
-    if (!Number.isInteger(n) || n < 1 || n > 500) {
-      return { ok: false, error: "historyWindow must be an integer between 1 and 500" };
+    if (!Number.isInteger(n) || n < 0 || n > 500) {
+      return { ok: false, error: "historyWindow must be an integer between 0 (keep every message) and 500" };
     }
     next.historyWindow = n;
   }

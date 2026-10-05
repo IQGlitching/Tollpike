@@ -23,7 +23,8 @@ import { getSettings } from "../../storage/settings.js";
 import { parseEndpoint } from "./parsers.js";
 import { ProcessTables, findExplanation } from "./correlate.js";
 import { evaluate } from "../rules.js";
-import { recordEndpointEvent, recentActions, auditEnabled } from "../index.js";
+import { recordEndpointEvent, recentActions, auditEnabled, originOf } from "../index.js";
+import { currentContext } from "../context.js";
 import { appendEvent, readEvents } from "../log.js";
 import { providerHosts } from "../egress.js";
 
@@ -90,7 +91,8 @@ export function ingestEndpoint({ format, body, host, sensor = "anonymous" }) {
   if (!auditEnabled()) return { ok: true, received: parsed.events.length, recorded: 0, note: "auditing is off" };
 
   const t = processTables();
-  const actions = recentActions();
+  const origin = originOf(currentContext()?.ip);
+  const actions = recentActions().filter((a) => !a.origin || a.origin === origin);
   const cfg = getSettings().audit || {};
   const ruleCtx = { modes: cfg.ruleModes || {}, disabled: cfg.disabledRules || [], allowedDomains: cfg.allowedDomains || [] };
   const counts = { received: parsed.events.length, recorded: 0, unexplained: 0, ignored: 0, orphaned: 0, skipped: parsed.skipped };

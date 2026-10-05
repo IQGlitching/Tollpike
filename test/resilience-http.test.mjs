@@ -43,6 +43,7 @@ const MODEL = "local-model";      // its one configured model
 let server;
 let mode = "ok";
 let hits = [];
+let hangClosedAt = [];
 let originalBaseURL;
 
 const ask = (content) =>
@@ -75,6 +76,20 @@ before(async () => {
         res.writeHead(code, { "Content-Type": "application/json" });
         res.end(JSON.stringify(payload));
       };
+      if (mode === "sse") {
+        // Two frames, the provider's own [DONE], and a last frame with no
+        // newline after it.
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        const frame = (d, finish = null) => `data: ${JSON.stringify({ id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: d, finish_reason: finish }] })}`;
+        res.write(frame({ content: "hel" }) + "\n\n");
+        res.write("data: [DONE]\n\n");
+        return res.end(frame({ content: "lo" }, "length"));
+      }
+      if (mode === "hang") {
+        // Never answers. Records when the gateway drops the connection.
+        res.on("close", () => hangClosedAt.push(Date.now()));
+        return;
+      }
       if (mode !== "ok") return send(Number(mode), { error: { message: `mock ${mode}` } });
       send(200, {
         id: "chatcmpl-mock",
@@ -218,6 +233,48 @@ describe("resilience over HTTP: an upstream status becomes isolation state", () 
     const before = hits.length;
     await expectFailure();
     assert.equal(hits.length, before, "a lane that is out does not get dialled");
+  });
+});
+
+describe("a request every provider refuses", () => {
+  test("comes back as that 4xx, not a 502 to retry", async () => {
+    mode = "422";
+    await assert.rejects(() => ask(unique()), (err) => err.status === 422 && /rejected the request as invalid/.test(err.message));
+    mode = "503";
+    await assert.rejects(() => ask(unique()), (err) => err.status === 502, "a provider outage is still a 502");
+  });
+});
+
+describe("an OpenAI-compatible stream passes through whole", () => {
+  test("the provider's [DONE] is not forwarded and a last frame without a newline is kept", async () => {
+    const { routeChatCompletionStream } = await import("../src/routing/router.js");
+    mode = "sse";
+    const lines = [];
+    for await (const ev of routeChatCompletionStream({ model: `${PROVIDER}/${MODEL}`, stream: true, messages: [{ role: "user", content: unique() }] })) {
+      if (ev.type === "raw-line") lines.push(ev.line);
+    }
+    assert.ok(!lines.some((l) => l.includes("[DONE]")), "the route adds the one [DONE]");
+    assert.ok(lines.some((l) => l.includes('"finish_reason":"length"')), "the tail frame was lost");
+  });
+});
+
+describe("a client that hangs up", () => {
+  test("stops the upstream call, without retrying or marking the provider down", async () => {
+    const { runWithContext } = await import("../src/audit/context.js");
+    mode = "hang";
+    hangClosedAt = [];
+    const client = new AbortController();
+    const started = Date.now();
+    const pending = runWithContext({ signal: client.signal }, () => ask(unique()));
+    setTimeout(() => client.abort(), 150);
+    await assert.rejects(pending, (err) => err.clientGone === true);
+    assert.ok(Date.now() - started < 5_000, "the call ran on after the client left");
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(hangClosedAt.length, 1, "the upstream connection was not closed, or was retried");
+    assert.equal(hits.length, 1);
+    const snap = resilience.snapshot();
+    assert.deepEqual(snap.connections, {}, "a client hang-up is not the provider's failure");
+    assert.equal(resilience.isProviderAvailable(PROVIDER), true);
   });
 });
 

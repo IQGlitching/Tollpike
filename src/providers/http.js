@@ -1,4 +1,6 @@
 // Shared upstream HTTP concerns: error shape and timeouts.
+
+import { currentContext } from "../audit/context.js";
 //
 // There was previously no timeout anywhere in the adapters. `fetch` has no
 // default one, so a provider that accepted the connection and then stopped
@@ -27,6 +29,19 @@ export class ProviderError extends Error {
   }
 }
 
+// The client disconnected. Not the provider's fault: never retried, never
+// counted against the provider's health, and it ends the fallback chain.
+export class ClientGoneError extends Error {
+  constructor(providerId) {
+    super("The client disconnected before the response was ready");
+    this.name = "ClientGoneError";
+    this.providerId = providerId;
+    this.status = 499;
+    this.retryable = false;
+    this.clientGone = true;
+  }
+}
+
 // A timeout is deliberately NOT retryable. Retrying the same unresponsive
 // provider twice with backoff would triple the wait before the fallback
 // chain gets a turn; moving on immediately is the whole point of having one.
@@ -45,6 +60,11 @@ export class UpstreamTimeoutError extends ProviderError {
 // through the body either.
 export async function fetchUpstream(providerId, url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
+  // The client that asked for this may hang up. Following its signal stops
+  // the provider generating (and charging) for a response nobody will read.
+  const client = currentContext()?.signal;
+  if (client?.aborted) throw new ClientGoneError(providerId);
+  client?.addEventListener("abort", () => controller.abort(), { once: true });
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -56,6 +76,7 @@ export async function fetchUpstream(providerId, url, options, timeoutMs = REQUES
     return { res, done: () => clearTimeout(timer), controller, timedOut: () => timedOut };
   } catch (err) {
     clearTimeout(timer);
+    if (client?.aborted) throw new ClientGoneError(providerId);
     if (timedOut) throw new UpstreamTimeoutError(providerId, timeoutMs, "connect");
     // Connection refused / DNS failure / TLS error: real, immediate, and
     // not worth retrying the same endpoint over.

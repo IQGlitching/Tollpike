@@ -64,6 +64,7 @@ import { generateApiKey, isEncryptionAvailable } from "../security/crypto.js";
 import * as rateLimiter from "../middleware/rateLimit.js";
 import { compressMessagesWithStats, CAVEMAN_LEVELS, CAVEMAN_SCOPES } from "../compression/compress.js";
 import * as memory from "../memory/index.js";
+import { currentContext } from "../audit/context.js";
 import * as notion from "../knowledge/notion.js";
 import * as obsidian from "../knowledge/obsidian.js";
 import * as services from "../services/embedded.js";
@@ -123,14 +124,24 @@ const PATCHABLE_SETTINGS = new Set([
   "gamification"
 ]);
 
-function redactedSettings() {
+// Settings as a tool may show them. Secrets carried inside ordinary-looking
+// fields are masked: proxy URLs and the vector store URL routinely hold a
+// user:password. The audit section (which rules are switched off, the domain
+// allowlist, compliance platform ids) is for the operator only: an agent that
+// can read it knows exactly which of its actions go unflagged.
+function redactedSettings({ operator = false } = {}) {
   const settings = getSettings();
-  return {
+  const maskMap = (m) => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, redactProxyUrl(v)]));
+  const out = {
     ...settings,
     // Presence, never the value. Even the length is a hint worth withholding.
     gatewayApiKey: settings.gatewayApiKey ? "<set>" : null,
-    memory: { ...settings.memory }
+    proxies: maskMap(settings.proxies),
+    proxyCategories: maskMap(settings.proxyCategories),
+    memory: { ...settings.memory, qdrantUrl: redactProxyUrl(settings.memory?.qdrantUrl) }
   };
+  if (!operator) delete out.audit;
+  return out;
 }
 
 export const SCOPES = {
@@ -823,13 +834,19 @@ export const SCOPES = {
           },
           ["query"]
         ),
-        handler: ({ query, sessionId = "mcp", mode, limit = 6, crossSession = false }) =>
-          memory.recall(query, {
-            sessionId,
+        // Over HTTP, anyone but the operator reads only their own partition,
+        // the one the chat endpoints write for them: memory is conversation
+        // history, and a sessionId or crossSession from the caller used to
+        // reach every other caller's turns.
+        handler: ({ query, sessionId = "mcp", mode, limit = 6, crossSession = false }, ctx) => {
+          const confined = ctx?.readOnly && currentContext();
+          return memory.recall(query, {
+            sessionId: confined ? callerPartition(sessionId === "mcp" ? null : sessionId) : sessionId,
             mode: mode || getSettings().memory.recall,
             limit: Math.min(Math.max(Number(limit) || 6, 1), 50),
-            crossSession: crossSession === true
-          })
+            crossSession: !confined && crossSession === true
+          });
+        }
       },
       forget: {
         description: "Delete one memory, a whole session, or everything. Destructive.",
@@ -903,17 +920,20 @@ export const SCOPES = {
   // writable here (settings_patch does not allowlist it either): the rules
   // watching agents are changed by the operator, from the panel or CLI.
   audit: {
-    description: "The agent audit trail: events, findings, reviews, chain integrity.",
+    description: "The agent audit trail: events, findings, reviews, chain integrity. Operator only.",
+    // An agent must never read the record watching it, nor learn which rules
+    // are switched off: keyless and agent callers do not see this scope.
+    operatorOnly: true,
     tools: {
       status: {
         description: "Audit coverage: what is recorded, what this layer cannot see, configuration gaps, rule modes.",
         schema: OBJECT(),
-        handler: () => audit.auditStatus()
+        handler: async () => (await auditModule()).auditStatus()
       },
       summary: {
         description: "Counts for a period: events by type and agent, findings by rule, top tools, unattributed calls, review backlog.",
         schema: OBJECT({ from: STR("Start date (YYYY-MM-DD or ISO)"), to: STR("End date") }),
-        handler: ({ from, to }) => audit.auditSummary({ from, to })
+        handler: async ({ from, to }) => (await auditModule()).auditSummary({ from, to })
       },
       events: {
         description: "Query audit events, newest first. Filter by period, type (model, tool, auth, admin, review), agent, tool, severity, flagged.",
@@ -928,12 +948,12 @@ export const SCOPES = {
           unreviewedOnly: BOOL("Only flagged events nobody has reviewed"),
           limit: NUM("Max events (default 100)")
         }),
-        handler: (q) => audit.queryEvents(q)
+        handler: async (q) => (await auditModule()).queryEvents(q)
       },
       verify: {
         description: "Verify the audit log's hash chain and anchor: edits, deletions and rollbacks are reported.",
         schema: OBJECT(),
-        handler: () => audit.verifyAudit()
+        handler: async () => (await auditModule()).verifyAudit()
       },
       compliance: {
         description: "The continuous compliance tests (chain intact, agents attributed, review backlog, egress, vendor collection) and the Vanta/Drata push status.",
@@ -954,7 +974,7 @@ export const SCOPES = {
       agents: {
         description: "The agent key register: names, ids, created and revoked dates. Never any key material.",
         schema: OBJECT(),
-        handler: () => ({ agents: auditAgents.listAgents() })
+        handler: async () => ({ agents: (await import("../audit/agents.js")).listAgents() })
       },
       review: {
         description: "Sign off a flagged event: acknowledged, false_positive, escalated or resolved, with reviewer and note. Appends a review record.",
@@ -968,7 +988,7 @@ export const SCOPES = {
           ["eventId", "reviewer", "decision"]
         ),
         mutates: true,
-        handler: (args) => audit.reviewEvent(args)
+        handler: async (args) => (await auditModule()).reviewEvent(args)
       }
     }
   },
@@ -1364,7 +1384,7 @@ export const SCOPES = {
       get: {
         description: "All settings, with the gateway key reduced to a presence flag.",
         schema: OBJECT(),
-        handler: () => redactedSettings()
+        handler: (_args, ctx) => redactedSettings({ operator: !ctx?.readOnly })
       },
       patch: {
         description: "Update settings. Only an allowlisted set of keys is writable.",
@@ -1380,7 +1400,7 @@ export const SCOPES = {
             );
           }
           updateSettings(patch);
-          return { ok: true, settings: redactedSettings() };
+          return { ok: true, settings: redactedSettings({ operator: true }) };
         }
       }
     }
@@ -1488,6 +1508,7 @@ export const SCOPES = {
       search: {
         description: "Keyword search across every session. Ignores session partitioning, so use it deliberately.",
         schema: OBJECT({ query: STR("Search text"), limit: NUM("Max results") }, ["query"]),
+        operatorOnly: true,
         handler: ({ query, limit = 10 }) =>
           memory.keywordSearch(query, { limit: Math.min(Number(limit) || 10, 50), crossSession: true })
       }
@@ -1567,6 +1588,18 @@ export const SCOPES = {
 };
 
 // Flat tool list. `name` is what MCP sees, `scope` is retained for grouping.
+// The audit module is loaded on first use: importing it at the top would make
+// a cycle with the modules it records from. Six audit tools referenced it as a
+// global that was never imported and failed with "audit is not defined".
+const auditModule = () => import("../audit/index.js");
+
+// The memory partition of the current HTTP caller, as server.js sessionOf()
+// builds it: the caller id, narrowed by a session name but never widened.
+function callerPartition(session) {
+  const caller = currentContext()?.callerId || "anonymous";
+  return session ? `${caller}:${String(session).slice(0, 64).replace(/[^\w.-]/g, "_")}` : caller;
+}
+
 export function listTools() {
   const out = [];
   for (const [scopeName, scope] of Object.entries(SCOPES)) {
@@ -1577,6 +1610,7 @@ export function listTools() {
         description: tool.description,
         inputSchema: tool.schema,
         mutates: tool.mutates === true,
+        operatorOnly: scope.operatorOnly === true || tool.operatorOnly === true,
         handler: tool.handler
       });
     }
@@ -1604,5 +1638,8 @@ export async function callTool(name, args = {}, { readOnly = false } = {}) {
   if (readOnly && tool.mutates) {
     throw new Error(`"${name}" changes gateway state and this transport is read-only.`);
   }
-  return tool.handler(args || {});
+  if (readOnly && tool.operatorOnly) {
+    throw new Error(`"${name}" is available to the operator only.`);
+  }
+  return tool.handler(args || {}, { readOnly });
 }

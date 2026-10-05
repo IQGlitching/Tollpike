@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **775 tests** · **19 routing
+**46 providers** (6 local runtimes) · **811 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -61,6 +61,14 @@ caps, gateway key) across restarts and rebuilds, a healthcheck hits
 `/health` every 30s, and `restart: unless-stopped` brings it back after a
 host reboot or crash. Runs as a non-root user inside the container.
 
+Calls from the host reach the container through Docker's network, not
+loopback, so the model endpoints want a key there. The CLI is in the image:
+
+```bash
+docker exec tollpike tollpike key                 # the operator key
+docker exec tollpike tollpike agents add my-agent # an agent key, shown once
+```
+
 ### Option D: from source
 
 ```bash
@@ -74,7 +82,8 @@ npm start
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin tollpike
-sudo mkdir -p /opt/tollpike && sudo cp -r . /opt/tollpike
+sudo mkdir -p /opt/tollpike
+git archive HEAD | sudo tar -x -C /opt/tollpike   # tracked files only: not your data/ or .env
 sudo chown -R tollpike:tollpike /opt/tollpike
 cd /opt/tollpike && npm ci --omit=dev
 sudo cp deploy/tollpike.service /etc/systemd/system/
@@ -175,7 +184,7 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   baseURL: "http://127.0.0.1:20128/v1",
-  apiKey: "unused"            // or your gateway key, if you set one
+  apiKey: "unused"            // fine from this machine; elsewhere, an agent key
 });
 
 const res = await client.chat.completions.create({
@@ -335,7 +344,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 775 tests
+npm test                 # 811 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached
@@ -358,13 +367,15 @@ Everything is optional. Tollpike boots with nothing set.
 | `ALLOW_UNLISTED_MODELS` | `false` | Allow models not listed for a provider in `config/providers.json` |
 | `UPSTREAM_TIMEOUT_MS` | see `src/providers/http.js` | Per-request deadline |
 | `UPSTREAM_STALL_TIMEOUT_MS` | see `src/providers/http.js` | Per-chunk stall watchdog for streams |
-| `MCP_READ_ONLY` | `false` | Hide and refuse every mutating MCP tool |
+| `MCP_READ_ONLY` | unset | `true` hides and refuses every mutating MCP tool, for the operator too. Over HTTP only the operator key ever gets them |
 | `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` | unset | Egress proxy, overridden by per-provider settings |
 | `<PROVIDER>_API_KEY` | unset | Credentials. Comma-separate for multiple keys per provider |
 
 Credentials resolve in this order, first match per variable winning:
 `TOLLPIKE_ENV_FILE` if set (and then nothing else), otherwise
-`~/.tollpike/.env` and then `./.env`. A variable already present in the real
+`~/.tollpike/.env` and then the `.env` in the Tollpike directory itself (a
+checkout, or `/app` in the image; never the directory you run the CLI
+from). A variable already present in the real
 environment beats every file, which is what keeps `docker run -e` and
 systemd's `EnvironmentFile` working.
 
@@ -771,7 +782,7 @@ Every agent has to call a model, and every model call through Tollpike is
 recorded: who called, on which API format, which model was asked for and which
 served it, the tool results the agent reported back, and the tool calls the
 model proposed. The record is a hash-chained, append-only log
-(`data/audit.jsonl`) that shows any edit, deletion or rollback, and it exports
+(`data/audit.jsonl`) that shows any edit or deletion, and it exports
 as evidence for the logging, monitoring and access controls of ISO/IEC 27001
 and SOC 2, and for the AI-specific controls of ISO/IEC 42001, the AI
 management system standard: event logging (A.6.2.8), operation and
@@ -974,7 +985,11 @@ agent can still call a provider directly; a sensor will flag it, but only
 after the fact. Making Tollpike the only way out is a network and key-custody
 control, and [docs/audit-egress.md](docs/audit-egress.md) covers both;
 `tollpike audit egress-hosts` prints the provider hosts to block. Set
-`TOLLPIKE_SECRET`, or the chain is unkeyed and only detects naive edits.
+`TOLLPIKE_SECRET`, or the chain is unkeyed and only detects naive edits. The
+log and its anchor sit in the same directory, so replacing both with an older
+copy rolls the record back without breaking the chain; to catch that, keep
+the head that `tollpike audit verify` prints somewhere else (the evidence
+export and the Vanta or Drata push carry it too) and compare.
 
 | Variable or setting | Effect |
 |---|---|

@@ -172,6 +172,9 @@ describe("continuous tests", () => {
     const a = grc.computeSignals().find((x) => x.id === "audit.agents_attributed");
     assert.equal(a.status, "fail");
     assert.equal(a.metrics.unattributed, 1);
+    runWithContext({ source: "openai", agent: { id: "operator", name: "operator" } }, () => audit.recordModelCall({ model: "m", messages: [] }, { choices: [{ message: { content: "ok" } }] }));
+    audit.recordModelCall({ model: "m", messages: [] }, { choices: [{ message: { content: "ok" } }] });
+    assert.equal(grc.computeSignals().find((x) => x.id === "audit.agents_attributed").metrics.unattributed, 3, "the operator key and an in-process call are not agent identities");
   });
 
   test("the review backlog fails when a flag outlives the allowed days", async () => {

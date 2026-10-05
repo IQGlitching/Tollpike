@@ -120,7 +120,9 @@ async function api(path, options = {}, retried = false) {
     return api(path, options, true);
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `${res.status}`);
+  // The body rides on the error: a failed trial's response lists every lane it
+  // tried, and dropping it left only "All candidate providers failed".
+  if (!res.ok) throw Object.assign(new Error(body.error || `${res.status}`), { status: res.status, body });
   return body;
 }
 
@@ -265,6 +267,8 @@ const openCards = new Set();
 
 function renderNav() {
   const nav = document.getElementById("nav");
+  // Rebuilt on every poll: keep keyboard focus on the entry that had it.
+  const focused = nav.contains(document.activeElement) ? document.activeElement.dataset?.page : null;
   const hot = new Set(["resilience", "audit"]);
   nav.innerHTML = NAV.map((g) => {
     const items = g.items.map((it) => {
@@ -286,6 +290,10 @@ function renderNav() {
   nav.querySelectorAll(".nav-item").forEach((el) => {
     el.addEventListener("click", () => navigate(el.dataset.page));
   });
+  if (focused) {
+    makeOperable(nav);
+    nav.querySelector(`.nav-item[data-page="${CSS.escape(focused)}"]`)?.focus();
+  }
 }
 
 function navigate(page) {
@@ -1758,7 +1766,7 @@ function paintPulse(s) {
     { nm: "Cache", st: cache.entries ? "ok" : "", txt: `${cache.entries || 0} entries`, v: cache.hitRatePct == null ? "—" : `${cache.hitRatePct}%`, vc: "" },
     { nm: "Compression", st: comp.enabled ? "ok" : "", txt: comp.enabled ? `rtk ${comp.rtk?.enabled ? "on" : "off"} · caveman ${comp.caveman?.enabled ? comp.caveman.level : "off"}` : "off", v: comp.enabled ? "on" : "off", vc: comp.enabled ? "ok" : "" },
     { nm: "Guards", st: sec.redactPii || (sec.injectionMode && sec.injectionMode !== "off") ? "ok" : "warn", txt: `pii ${sec.redactPii ? "redacted" : "off"} · injection ${sec.injectionMode || "off"}`, v: sec.redactPii ? "armed" : "open", vc: sec.redactPii ? "ok" : "warn" },
-    { nm: "Egress", st: "ok", txt: proxyLevels ? `${proxyLevels} proxy rule(s) · tls ${proxy.tls?.profile || "default"}` : "direct · tls not shaped", v: proxyLevels ? "proxied" : "direct", vc: "" },
+    { nm: "Egress", st: "ok", txt: proxyLevels ? `${proxyLevels} proxy rule(s) · tls ${proxy.tls?.active || "default"}` : "direct · tls not shaped", v: proxyLevels ? "proxied" : "direct", vc: "" },
     { nm: "Access", st: sec.exposedBeyondLoopback && !s.gatewayAuthEnabled ? "bad" : s.gatewayAuthEnabled ? "ok" : "warn", txt: `${sec.boundHost || "?"} · key ${s.gatewayAuthEnabled ? (sec.keyEncryptedAtRest ? "encrypted" : "plaintext") : "unset"}`, v: s.gatewayAuthEnabled ? "locked" : "open", vc: s.gatewayAuthEnabled ? "ok" : sec.exposedBeyondLoopback ? "bad" : "warn" }
   ];
 
@@ -2717,7 +2725,13 @@ async function runTrial() {
     };
     paintTrial();
   } catch (err) {
-    lastTrial = { error: err.message, meta: "FAILED" };
+    const tried = (err.body?.attempts || []).filter((a) => !a.skipped);
+    for (const attempt of tried) {
+      const node = [...document.querySelectorAll(".walk-row")].find((n) => n.dataset.providerId === attempt.provider);
+      node?.classList.add("failed");
+    }
+    const why = tried.map((a) => `${a.provider}: ${a.error || "failed"}`).join("\n");
+    lastTrial = { error: why ? `${err.message}\n${why}` : err.message, meta: tried.length ? `FAILED · ${tried.length} LANE(S) CALLED` : "FAILED" };
     paintTrial();
   } finally {
     btn.disabled = false;
@@ -3896,7 +3910,7 @@ PAGES.compression = (el, s) => {
         </div>
         <div class="setrow">
           <div><div class="nm">History window</div><div class="hh">Most recent non-system messages kept. The system prompt is always preserved regardless. This is forgetting, not compression, usually the single largest saving.</div></div>
-          <input type="number" min="1" max="500" id="historyWindow" value="${esc(c.historyWindow ?? 12)}" style="width:96px" />
+          <input type="number" min="0" max="500" id="historyWindow" value="${esc(c.historyWindow ?? 0)}" title="0 keeps every message" style="width:96px" />
         </div>
       </div>
 
@@ -4016,7 +4030,7 @@ function paintPipeline(s) {
 
   const layers = [
     { k: "BASE", id: "truncation", ink: SCOPE.ok, on: c.enabled,
-      state: c.enabled ? `history window ${c.historyWindow ?? 12}` : "off",
+      state: c.enabled ? (c.historyWindow > 0 ? `history window ${c.historyWindow}` : "full history") : "off",
       n: "Whitespace, duplicate lines and anything past the history window." },
     { k: "RTK", id: "rtk", ink: SCOPE.model, on: c.enabled && rtk.enabled,
       state: rtk.enabled
@@ -4214,9 +4228,9 @@ const SURFACES = [
   { path: "/v1/*", key: true, limit: true, csrf: true,
     n: "OpenAI-compatible completions. The surface that spends money." },
   { path: "/mcp", key: true, limit: true, csrf: true,
-    n: "MCP over HTTP. An unauthenticated one is a remote control for this gateway's spend." },
+    n: "MCP over HTTP. Keyless from this machine gets the read-only tools; only the operator key gets the ones that change settings or spend." },
   { path: "/a2a", key: true, limit: true, csrf: true,
-    n: "Agent-to-agent. An unauthenticated one lets any peer run completions on your keys." },
+    n: "Agent-to-agent. Off this machine it needs a key, so no peer can run completions on your credentials." },
   { path: "/api/panel/*", key: true, limit: false, csrf: true,
     n: "The control plane. Deliberately NOT rate limited. The request that turns the limiter off must never be the one it rejects." },
   { path: "/panel", key: false, limit: false, csrf: false,
@@ -4231,6 +4245,7 @@ PAGES.access = (el, s) => {
   const exposed = sec.exposedBeyondLoopback;
   const locked = s.gatewayAuthEnabled;
   const modelLocked = sec.modelKeyRequired === true;
+  const lockedByAgents = sec.agentKeysActive === true;
 
   el.innerHTML = `
     ${exposed && !locked ? `<div class="alerts-band"><div class="alert bad">
@@ -4250,7 +4265,7 @@ PAGES.access = (el, s) => {
           <div class="ls-v">${locked ? "LOCKED" : "OPEN"}</div>
           <div class="ls-n">${locked
             ? `The control panel and admin API always need the operator key, even from this machine, so no agent can reconfigure the gateway auditing it. ${modelLocked
-                ? "Model endpoints (<em>/v1</em>, <em>/mcp</em>, <em>/a2a</em>) need a key too."
+                ? `Model endpoints (<em>/v1</em>, <em>/mcp</em>, <em>/a2a</em>) need a key too${lockedByAgents ? ", because agent keys exist: every call must say which agent it is" : ""}.`
                 : "Model endpoints (<em>/v1</em>, <em>/mcp</em>, <em>/a2a</em>) take keyless calls from this machine only, read-only on MCP."} Comparison is constant-time.`
             : "No operator key is set, so every surface below that says <em>key</em> is currently answering anyone who can reach this port. Restart the gateway to create one."}</div>
         </div>
@@ -4263,7 +4278,7 @@ PAGES.access = (el, s) => {
           On this machine, <span class="mono">tollpike key</span> prints it and <span class="mono">tollpike panel</span> opens this panel unlocked.</div>
         <div class="row" style="margin-top:14px;align-items:center;gap:10px">
           <span class="lock-hint" style="margin:0">Model endpoints</span>
-          <button class="sm nowrap ${modelLocked ? "" : "primary"}" data-model-auth="local" aria-pressed="${!modelLocked}">Keyless from this machine</button>
+          <button class="sm nowrap ${modelLocked ? "" : "primary"}" data-model-auth="local" aria-pressed="${!modelLocked}"${lockedByAgents ? ' disabled title="Agent keys exist, so every model call needs a key. Revoke them all to allow keyless calls again."' : ""}>Keyless from this machine</button>
           <button class="sm nowrap ${modelLocked ? "primary" : ""}" data-model-auth="required" aria-pressed="${modelLocked}">Key required</button>
         </div>
 
@@ -4289,7 +4304,7 @@ PAGES.access = (el, s) => {
           <div class="pr-k">BOUND HOST</div>
           <div class="pr-v">${esc(sec.boundHost || "?")}</div>
           <div class="pr-n">${exposed
-            ? "Reachable from the network. Loopback is the default precisely because the panel API is unauthenticated until a key is set."
+            ? "Reachable from the network. The panel API still needs the operator key, and model endpoints refuse keyless calls from other machines, but loopback is the safer default."
             : "Loopback only. Nothing off this machine can reach the gateway. Set <em>BIND_HOST</em> to change."}</div>
         </div>
         <div class="post-row ok">
@@ -4663,7 +4678,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
       <div class="pane">
         <div class="p-head">
           <span class="p-t">Connect</span>
-          <span class="p-s">OPENAI-COMPATIBLE &#183; ${locked ? "KEY REQUIRED" : "NO KEY SET"}</span>
+          <span class="p-s">OPENAI-COMPATIBLE &#183; ${s.security?.modelKeyRequired ? "KEY REQUIRED" : "KEYLESS LOCALLY"}</span>
         </div>
         <div class="conn-lede">
           <div class="cl-k">API BASE</div>
@@ -4672,7 +4687,7 @@ OPENAI_API_KEY=${locked ? "…your gateway key…" : "unused"}` }
         </div>
         <div class="conn-note">Point any OpenAI-compatible client at that URL. Use <em>auto</em> as the model to walk
           the fallback chain, or <em>${esc(sample)}</em> to pin one lane.
-          ${locked ? "Every request needs <em>Authorization: Bearer &lt;key&gt;</em>." : "No key is set, so the bearer header is optional, and so is everyone else's."}</div>
+          ${s.security?.modelKeyRequired ? "Every request needs <em>Authorization: Bearer &lt;key&gt;</em>: an agent key, or the operator key." : "From this machine the bearer header is optional; from anywhere else it needs an agent key or the operator key."}</div>
 
         <div class="seg" id="snipSeg" style="margin-top:18px">${SNIPPETS.map((x, i) =>
           `<b data-snip="${esc(x.id)}"${i === 0 ? ' class="on"' : ""}>${esc(x.label)}</b>`).join("")}</div>
@@ -5355,10 +5370,24 @@ PAGES.memory = (el) =>
         qdrantUrl: root.querySelector("#qdrantUrl").value.trim() || null
       }));
     root.querySelector("#syncVectors").addEventListener("click", async () => {
-      const result = await api("/api/panel/memory/sync-vectors", { method: "POST", body: "{}" });
-      alert(result.ok ? `Embedded ${result.embedded}` : result.reason);
+      try {
+        const result = await api("/api/panel/memory/sync-vectors", { method: "POST", body: "{}" });
+        alert(result.ok ? `Embedded ${result.embedded}` : result.reason);
+      } catch (err) { alert(err.message); }
       renderPage("memory");
     });
+    // These two buttons were rendered with no handler at all, so "Forget"
+    // looked like it worked and deleted nothing.
+    const forget = async (scope, question) => {
+      if (!confirm(question)) return;
+      try {
+        const r = await api("/api/panel/memory/forget", { method: "POST", body: JSON.stringify({ scope }) });
+        alert(`Deleted ${r.deleted ?? 0} memor${r.deleted === 1 ? "y" : "ies"}.`);
+      } catch (err) { alert(err.message); }
+      renderPage("memory");
+    };
+    root.querySelector("#forgetSession").addEventListener("click", () => forget("session", "Delete every memory in your session? This cannot be undone."));
+    root.querySelector("#forgetAll").addEventListener("click", () => forget("all", "Delete EVERY memory in EVERY session? There is no undo and no export first."));
 
     const q = root.querySelector("#memQuery");
     q.addEventListener("input", () => { memLastQuery = q.value; });
@@ -5574,8 +5603,8 @@ PAGES.protocols = (el) =>
               <span><i class="ro"></i>${esc(readOnly)} READ-ONLY</span>
               <span><i class="rw"></i>${esc(mcp.mutatingTools ?? 0)} MUTATING</span>
             </div>
-            <div class="mix-n">A mutating tool changes configuration or spends money. Unauthenticated MCP-over-HTTP
-              defaults to the read-only set, so a peer that has not proved anything cannot reach the other ${esc(mcp.mutatingTools ?? 0)}.</div>
+            <div class="mix-n">A mutating tool changes configuration or spends money. Over HTTP only the operator key reaches
+              them: a keyless caller or an agent key gets the read-only set and cannot reach the other ${esc(mcp.mutatingTools ?? 0)}.</div>
           </div>
 
           <div class="cov-head">SCOPES</div>
@@ -5638,14 +5667,13 @@ PAGES.protocols = (el) =>
               <div><div class="nm">Same key, same limiter</div>
                 <div class="hh">MCP and A2A sit behind the gateway key and the rate limiter exactly as
                   <span class="mono">/v1</span> does. Both can reach the router, so leaving either off the limiter
-                  would leave a way around the one control that stops a runaway agent loop, and an
-                  unauthenticated MCP endpoint is a remote control for this gateway's spend.</div></div>
+                  would leave a way around the one control that stops a runaway agent loop.</div></div>
               <span class="badge on">enforced</span>
             </div>
             <div class="setrow">
               <div><div class="nm">Cross-site guard runs first</div>
-                <div class="hh">Ahead of authentication on both, because the case it exists for is the one where
-                  auth is a no-op: with no key set, a form on any page you visit could otherwise drive them.</div></div>
+                <div class="hh">Ahead of authentication on both, because keyless calls from this machine are
+                  allowed: without it, a form on any page you visit could drive them from your browser.</div></div>
               <span class="badge on">enforced</span>
             </div>
           </div>
@@ -6302,7 +6330,7 @@ function paintAudit(root, d) {
           <div class="au-rule">
             <span class="au-sev ${esc(SEV_CLASS[r.severity] || "")}">${esc(r.severity)}</span>
             <span class="au-rule-n">${esc(r.title)}<span class="mono dim"> ${esc(r.id)}</span></span>
-            <select data-rule="${esc(r.id)}">${AUDIT_MODES.map((m) => `<option value="${m}"${r.mode === m ? " selected" : ""}>${m}</option>`).join("")}</select>
+            <select data-rule="${esc(r.id)}">${[...AUDIT_MODES, "disabled"].map((m) => `<option value="${m}"${r.mode === m ? " selected" : ""}>${m}</option>`).join("")}</select>
           </div>`).join("")}</div>
         <div class="au-hint">Observe records the finding. Flag also queues it for review. Ask makes Claude Code prompt the person; block refuses the action. Both take effect at Claude Code hooks and the MCP proxy only, and are recorded as flags elsewhere. Start in flag and promote what you trust.</div>
       </div>
@@ -6468,9 +6496,20 @@ function paintAudit(root, d) {
   }));
 
   root.querySelectorAll("[data-rule]").forEach((sel) => sel.addEventListener("change", async () => {
+    // "disabled" lives in its own list, not among the modes. With no option
+    // for it, a disabled rule showed as "observe" and could not be re-enabled
+    // from here.
+    const id = sel.dataset.rule;
     const modes = Object.fromEntries((status.rules || []).filter((r) => r.mode !== r.defaultMode && r.mode !== "disabled").map((r) => [r.id, r.mode]));
-    modes[sel.dataset.rule] = sel.value;
-    try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ ruleModes: modes }) }); document.activeElement?.blur?.(); rerender(); }
+    const disabled = new Set((status.rules || []).filter((r) => r.mode === "disabled").map((r) => r.id));
+    if (sel.value === "disabled") {
+      disabled.add(id);
+      delete modes[id];
+    } else {
+      disabled.delete(id);
+      modes[id] = sel.value;
+    }
+    try { await api("/api/panel/audit/settings", { method: "POST", body: JSON.stringify({ ruleModes: modes, disabledRules: [...disabled] }) }); document.activeElement?.blur?.(); rerender(); }
     catch (err) { alert(err.message); }
   }));
 
@@ -6614,7 +6653,7 @@ function railCells(s) {
       ["COMPRESSION", comp.enabled ? "ON" : "OFF", comp.enabled ? "ok" : "warn"],
       ["RTK", comp.rtk?.enabled ? "ON" : "OFF", comp.rtk?.enabled ? "ok" : ""],
       ["CAVEMAN", comp.caveman?.enabled ? esc(String(comp.caveman.level || "on")) : "OFF", comp.caveman?.enabled ? "warn" : "", true],
-      ["HISTORY", `${comp.historyWindow ?? 12}<small> msg</small>`, "", true]];
+      ["HISTORY", comp.historyWindow > 0 ? `${comp.historyWindow}<small> msg</small>` : "all", "", true]];
     case "audit": return [
       ["RECORD", s.audit?.intact === false ? "BROKEN" : s.audit?.intact ? "INTACT" : "EMPTY", s.audit?.intact === false ? "bad" : s.audit?.intact ? "ok" : ""],
       ["CHAIN", s.audit?.keyed ? "KEYED" : "UNKEYED", s.audit?.keyed ? "ok" : "warn", true],
@@ -6633,7 +6672,7 @@ function railCells(s) {
     case "proxy": return [
       ["EGRESS", Object.keys(proxy.configured || {}).length ? "PROXIED" : "DIRECT"],
       ["RULES", String(Object.keys(proxy.configured || {}).length + Object.keys(proxy.categories || {}).length)],
-      ["TLS", esc(String(proxy.tls?.profile || "default")), "", true],
+      ["TLS", esc(String(proxy.tls?.active || "default")), "", true],
       ["AGENT", proxy.available ? "READY" : "UNAVAILABLE", proxy.available ? "ok" : "bad", true]];
     case "endpoints": return [
       ["GATEWAY", s.gatewayAuthEnabled ? "LOCKED" : "OPEN", s.gatewayAuthEnabled ? "ok" : "warn"],
@@ -6655,7 +6694,39 @@ function paintCommandRail(s) {
   ).join("");
 }
 
-async function refresh() {
+// True while the person is part-way through a form on the current page: a
+// field has focus, or holds a value different from what was rendered. The
+// eight-second poll re-rendered the whole page and threw that input away.
+function editingPage() {
+  const el = document.getElementById("page-" + current);
+  if (!el) return false;
+  const active = document.activeElement;
+  if (active && el.contains(active) && active.matches("input, textarea, select, [contenteditable]")) return true;
+  for (const f of el.querySelectorAll("input, textarea, select")) {
+    if (f.type === "checkbox" || f.type === "radio") {
+      if (f.checked !== f.defaultChecked) return true;
+    } else if (f.tagName === "SELECT") {
+      const def = [...f.options].find((o) => o.defaultSelected) || f.options[0];
+      if (def && f.value !== def.value) return true;
+    } else if (f.type !== "button" && f.type !== "submit" && f.type !== "hidden" && f.value !== f.defaultValue) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// One poll at a time: a slow gateway (or the lock screen, where every call
+// waits on a key) let the eight-second timer stack requests behind each other.
+let refreshing = null;
+// Explicit calls (after a save, the refresh button) always repaint; only the
+// background poll holds back while someone is typing.
+async function refresh({ force = true } = {}) {
+  if (refreshing) return force ? refreshing.then(() => refresh({ force: true })) : refreshing;
+  refreshing = doRefresh(force).finally(() => (refreshing = null));
+  return refreshing;
+}
+
+async function doRefresh(force) {
   try {
     state = await api("/api/panel/state");
 
@@ -6667,7 +6738,7 @@ async function refresh() {
     lock.innerHTML = `<span class="dot ${state.gatewayAuthEnabled ? "live" : "idle"}"></span><span>${state.gatewayAuthEnabled ? "locked" : "unlocked"}</span>`;
 
     renderNav();
-    renderPage(current);
+    if (force || !editingPage()) renderPage(current);
   } catch (err) {
     const dot = document.querySelector("#sbFoot .dot");
     if (dot) dot.className = "dot warn";
@@ -6685,15 +6756,40 @@ window.addEventListener("hashchange", () => {
   const next = location.hash.slice(1) || "home";
   if (next !== current) navigate(next);
 });
-document.getElementById("refreshBtn").addEventListener("click", refresh);
+document.getElementById("refreshBtn").addEventListener("click", () => refresh());
+
+// Keyboard access for the controls drawn as divs: the sidebar entries and
+// the on/off switches. They took clicks only, so neither could be reached or
+// used without a mouse. Every render is covered by watching the DOM rather
+// than remembering it in each of the places that draw one.
+function makeOperable(root) {
+  root.querySelectorAll(".nav-item:not([tabindex]), .switch:not([tabindex])").forEach((el) => {
+    el.tabIndex = 0;
+    el.setAttribute("role", el.classList.contains("switch") ? "switch" : "link");
+  });
+  root.querySelectorAll(".switch").forEach((el) => el.setAttribute("aria-checked", String(el.classList.contains("on"))));
+  root.querySelectorAll(".nav-item").forEach((el) => {
+    if (el.classList.contains("active")) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
+  });
+}
+new MutationObserver(() => makeOperable(document)).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+makeOperable(document);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target;
+  if (!(el instanceof HTMLElement) || !el.matches(".nav-item, .switch")) return;
+  e.preventDefault();
+  el.click();
+});
 
 navigate(current);
 refresh();
-setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 8000);
+setInterval(() => { if (document.visibilityState === "visible") refresh({ force: false }); }, 8000);
 
 // Polling pauses while the tab is hidden, so coming back could otherwise
 // leave up to eight seconds of stale figures — and a pixel-laid-out chart
 // stretched to whatever width the window changed to in the meantime.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") refresh();
+  if (document.visibilityState === "visible") refresh({ force: false });
 });

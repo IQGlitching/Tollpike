@@ -60,6 +60,11 @@ export function pathToken(req, res, next) {
     req.headers.authorization = `Bearer ${rewritten.token}`;
   }
   req.url = rewritten.path;
+  // originalUrl too. Auth decides which surface a request is on from it, the
+  // audit context names the source from it, and a failed attempt records it:
+  // left alone, a key-in-path call was judged as an unknown surface and a
+  // mistyped key was written into the audit log in full.
+  req.originalUrl = rewritten.path;
   req.pathTokenUsed = true;
   next();
 }

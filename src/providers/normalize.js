@@ -65,6 +65,19 @@ export function promptTextOf(request) {
   }
 }
 
+// Every system instruction in a chat, as one string. OpenAI allows several
+// system messages, and "developer" is its newer name for the same thing;
+// Anthropic and Gemini take one top-level instruction. Only the first used to
+// be sent, so a client that split its instructions lost the rest silently.
+export const SYSTEM_ROLES = new Set(["system", "developer"]);
+export function systemTextOf(messages) {
+  const parts = (messages || [])
+    .filter((m) => SYSTEM_ROLES.has(m?.role))
+    .map((m) => (typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((p) => (typeof p === "string" ? p : p?.text ?? "")).join("") : ""))
+    .filter(Boolean);
+  return parts.length ? parts.join("\n\n") : undefined;
+}
+
 // Cheap fallback estimator when a provider doesn't report usage.
 // ~4 chars/token is the standard rough heuristic for English text.
 export function estimateTokens(text) {

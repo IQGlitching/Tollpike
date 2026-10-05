@@ -8,11 +8,13 @@
 // Everything here is a pure function so it can be tested without touching
 // the network — see the inline tests run during development in the README.
 
+import { SYSTEM_ROLES } from "./normalize.js";
+
 export function toAnthropicMessages(messages) {
   const raw = [];
 
   for (const m of messages) {
-    if (m.role === "system") continue; // handled separately as top-level `system`
+    if (SYSTEM_ROLES.has(m.role)) continue; // handled separately as top-level `system`
 
     if (m.role === "tool") {
       // OpenAI: {role:"tool", tool_call_id, content}
@@ -84,7 +86,9 @@ export function toAnthropicTools(openAiTools) {
 
 export function toAnthropicToolChoice(openAiToolChoice) {
   if (!openAiToolChoice || openAiToolChoice === "auto") return undefined;
-  if (openAiToolChoice === "none") return { type: "auto" }; // Anthropic has no hard "none"; closest is not forcing
+  // Anthropic has had a real "none" since 2025. Mapping it to "auto" let the
+  // model call tools the caller had just said it must not.
+  if (openAiToolChoice === "none") return { type: "none" };
   if (openAiToolChoice === "required") return { type: "any" };
   if (typeof openAiToolChoice === "object" && openAiToolChoice.function?.name) {
     return { type: "tool", name: openAiToolChoice.function.name };
@@ -114,6 +118,26 @@ export function fromAnthropicContent(contentBlocks, anthropicStopReason) {
   return {
     content: textParts.join("\n") || null,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    finishReason: anthropicStopReason === "tool_use" ? "tool_calls" : "stop"
+    finishReason: finishFromAnthropic(anthropicStopReason)
   };
+}
+
+// Prompt tokens as billed. Anthropic reports cache writes and cache reads
+// apart from input_tokens; counting only input_tokens left a prompt-cached
+// conversation looking almost free against the budget cap. They are counted
+// here as prompt tokens (as OpenAI's prompt_tokens include cached ones), which
+// errs high for cache reads rather than low for everything.
+export function anthropicPromptTokens(u) {
+  if (!u || u.input_tokens == null) return null;
+  return (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+}
+
+// Anthropic's stop_reason in OpenAI's vocabulary. "max_tokens" must stay
+// "length": mapped to "stop", a reply cut off mid-sentence looked finished and
+// no client could tell it to continue.
+export function finishFromAnthropic(stopReason) {
+  if (stopReason === "tool_use") return "tool_calls";
+  if (stopReason === "max_tokens" || stopReason === "model_context_window_exceeded") return "length";
+  if (stopReason === "refusal") return "content_filter";
+  return "stop";
 }

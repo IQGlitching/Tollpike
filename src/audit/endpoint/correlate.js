@@ -97,10 +97,33 @@ export class ProcessTables {
     };
     // A new process with a pid already in the table is pid reuse: the old
     // entry is dead, and keeping its explanation would hand it to a stranger.
+    // A snapshot row for the same process (same image and parent) is not: the
+    // collector restarted and listed what is still running, and resetting the
+    // explanation would flag a long-running, already explained process.
+    const prev = t.get(e.pid);
+    if (prev && e.kind === "snapshot" && prev.image === entry.image && prev.ppid === entry.ppid) {
+      entry.explainedBy = prev.explainedBy;
+      entry.ts = prev.ts || entry.ts;
+    }
     t.delete(e.pid);
     t.set(e.pid, entry);
-    if (t.size > MAX_PER_HOST) t.delete(t.keys().next().value);
+    if (t.size > MAX_PER_HOST) this.evict(t);
     return entry;
+  }
+
+  // Oldest first, but agent runtimes stay: a session open for days is the
+  // root every later process is traced to, and losing it would make all of
+  // its children look like they belong to no agent.
+  evict(t) {
+    let scanned = 0;
+    for (const [pid, entry] of t) {
+      if (!entry.runtime) {
+        t.delete(pid);
+        return;
+      }
+      if (++scanned > 1000) break;
+    }
+    t.delete(t.keys().next().value);
   }
 
   get(host, pid) {

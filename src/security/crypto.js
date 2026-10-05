@@ -32,9 +32,18 @@ function getMasterKey() {
   if (!secret) return null;
 
   // scrypt is deliberately slow/memory-hard, so a stolen data/ directory
-  // can't be brute-forced cheaply.
-  return crypto.scryptSync(secret, loadSalt(), KEY_LENGTH);
+  // can't be brute-forced cheaply. That cost protects the file, not the
+  // process, so the result is derived once per secret and salt and reused.
+  // Re-deriving it on every call took about 45ms of blocking CPU each time,
+  // and settings are decrypted several times per request and the audit and
+  // ledger chains derive a key on every append: under TOLLPIKE_SECRET every
+  // request stalled the whole gateway.
+  const salt = loadSalt();
+  const id = crypto.createHash("sha256").update(secret).update("\0").update(salt).digest("hex");
+  if (masterCache.id !== id) masterCache = { id, key: crypto.scryptSync(secret, salt, KEY_LENGTH) };
+  return masterCache.key;
 }
+let masterCache = { id: null, key: null };
 
 // A separate key for the usage-ledger hash chain. Derived from the same
 // secret and salt as the AES key above, but domain-separated through an HMAC
@@ -54,9 +63,8 @@ export function auditKey() {
 }
 
 function chainKey(label) {
-  const secret = process.env.TOLLPIKE_SECRET;
-  if (!secret) return null;
-  const master = crypto.scryptSync(secret, loadSalt(), KEY_LENGTH);
+  const master = getMasterKey();
+  if (!master) return null;
   return crypto.createHmac("sha256", master).update(label).digest();
 }
 

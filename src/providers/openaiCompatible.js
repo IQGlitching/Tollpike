@@ -76,8 +76,11 @@ export async function streamOpenAICompatible(provider, request, apiKey) {
       // before. That matters here: the note below is about not adding fields
       // nobody asked for.
       ...pickSampling(request),
-      stream: true
-      // Deliberately NOT sending `stream_options: {include_usage: true}`.
+      stream: true,
+      // Forwarded when the caller asked for it: they get the usage frame they
+      // expect, and the router reads exact streamed spend from it.
+      ...(request.stream_options && typeof request.stream_options === "object" ? { stream_options: request.stream_options } : {})
+      // Deliberately NOT adding `stream_options: {include_usage: true}`.
       // It would give exact streamed spend, but strict providers reject
       // unknown body fields, and none of the 30 openai-compatible entries
       // here have been exercised against a live API. The router reads a

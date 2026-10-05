@@ -165,16 +165,14 @@ describe("mcp: unauthenticated HTTP transport defaults to read-only", () => {
     );
   });
 
-  test("an agent key always gets the read-only surface, ahead of any env override", () => {
+  test("an agent key always gets the read-only surface", () => {
     const body = server.slice(server.indexOf("function mcpReadOnly(req)"));
-    const agentLine = body.indexOf("if (req?.agent) return true;");
-    const envLine = body.indexOf('process.env.MCP_READ_ONLY === "false"');
-    assert.ok(agentLine !== -1, "agents must be forced read-only: an agent able to change settings could switch off its own audit");
-    assert.ok(agentLine < envLine, "the agent check must run before MCP_READ_ONLY=false can opt back in");
+    assert.ok(body.indexOf("if (req?.agent) return true;") !== -1, "agents must be forced read-only: an agent able to change settings could switch off its own audit");
   });
 
-  test("MCP_READ_ONLY=false is an explicit opt back in", () => {
-    assert.ok(/MCP_READ_ONLY === "false"/.test(server));
+  test("no environment setting hands the mutating tools to a keyless caller", () => {
+    const body = server.slice(server.indexOf("function mcpReadOnly(req)"), server.indexOf("function mcpReadOnly(req)") + 600);
+    assert.ok(!/MCP_READ_ONLY === "false"/.test(body), "MCP_READ_ONLY=false used to open settings_patch and the rest to anyone who could reach the port");
   });
 
   test("the transport resolves the mode per request, not once at mount", async () => {

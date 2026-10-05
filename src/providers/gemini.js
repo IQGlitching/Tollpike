@@ -1,6 +1,6 @@
-import { normalizedResponse, promptTextOf } from "./normalize.js";
+import { normalizedResponse, promptTextOf, systemTextOf } from "./normalize.js";
 import { requestJson, openStream, readWithStallTimeout } from "./http.js";
-import { toGeminiTools, toGeminiToolConfig, toGeminiContents, fromGeminiParts } from "./geminiTranslate.js";
+import { toGeminiTools, toGeminiToolConfig, toGeminiContents, fromGeminiParts, finishFromGemini, geminiCompletionTokens } from "./geminiTranslate.js";
 import { proxyDispatcher } from "../routing/proxy.js";
 import { wantsJson } from "../routing/sampling.js";
 
@@ -35,7 +35,7 @@ function generationConfig(request) {
 }
 
 export async function callGemini(provider, request, apiKey) {
-  const systemMsg = request.messages.find((m) => m.role === "system");
+  const system = systemTextOf(request.messages);
   const contents = toGeminiContents(request.messages);
 
   const url = `${provider.baseURL}/models/${encodeModel(request.resolvedModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -46,7 +46,7 @@ export async function callGemini(provider, request, apiKey) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents,
-      systemInstruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
+      systemInstruction: system ? { parts: [{ text: system }] } : undefined,
       tools: toGeminiTools(request.tools),
       toolConfig: toGeminiToolConfig(request.tool_choice),
       generationConfig: generationConfig(request)
@@ -67,7 +67,7 @@ export async function callGemini(provider, request, apiKey) {
     finishReason,
     usage: {
       prompt_tokens: data.usageMetadata?.promptTokenCount,
-      completion_tokens: data.usageMetadata?.candidatesTokenCount
+      completion_tokens: geminiCompletionTokens(data.usageMetadata) ?? undefined
     },
     promptText: promptTextOf(request),
     raw: data
@@ -80,7 +80,7 @@ export async function callGemini(provider, request, apiKey) {
 // call to yield only the new text — otherwise the client would see the
 // whole response repeated on every chunk.
 export async function* streamGemini(provider, request, apiKey) {
-  const systemMsg = request.messages.find((m) => m.role === "system");
+  const system = systemTextOf(request.messages);
   const contents = toGeminiContents(request.messages);
 
   const url = `${provider.baseURL}/models/${encodeModel(request.resolvedModel)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
@@ -91,7 +91,7 @@ export async function* streamGemini(provider, request, apiKey) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents,
-      systemInstruction: systemMsg ? { parts: [{ text: systemMsg.content }] } : undefined,
+      systemInstruction: system ? { parts: [{ text: system }] } : undefined,
       tools: toGeminiTools(request.tools),
       toolConfig: toGeminiToolConfig(request.tool_choice),
       generationConfig: generationConfig(request)
@@ -126,7 +126,7 @@ export async function* streamGemini(provider, request, apiKey) {
 
       if (event.usageMetadata) {
         usage.prompt_tokens = event.usageMetadata.promptTokenCount ?? usage.prompt_tokens;
-        usage.completion_tokens = event.usageMetadata.candidatesTokenCount ?? usage.completion_tokens;
+        usage.completion_tokens = geminiCompletionTokens(event.usageMetadata) ?? usage.completion_tokens;
       }
 
       const parts = event.candidates?.[0]?.content?.parts || [];
@@ -171,7 +171,7 @@ export async function* streamGemini(provider, request, apiKey) {
       if (event.candidates?.[0]?.finishReason) {
         yield {
           choices: [
-            { delta: {}, index: 0, finish_reason: emittedToolCalls > 0 ? "tool_calls" : "stop" }
+            { delta: {}, index: 0, finish_reason: finishFromGemini(event.candidates[0].finishReason, emittedToolCalls > 0) }
           ]
         };
       }

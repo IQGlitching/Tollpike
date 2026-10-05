@@ -1,6 +1,6 @@
-import { normalizedResponse, promptTextOf } from "./normalize.js";
+import { normalizedResponse, promptTextOf, systemTextOf } from "./normalize.js";
 import { requestJson, openStream, readWithStallTimeout } from "./http.js";
-import { toAnthropicMessages, toAnthropicTools, toAnthropicToolChoice, fromAnthropicContent } from "./anthropicTranslate.js";
+import { toAnthropicMessages, toAnthropicTools, toAnthropicToolChoice, fromAnthropicContent, finishFromAnthropic, anthropicPromptTokens } from "./anthropicTranslate.js";
 import { proxyDispatcher } from "../routing/proxy.js";
 
 // The two sampling parameters the Messages API actually has. The rest of the
@@ -19,7 +19,7 @@ function anthropicSampling(request) {
 }
 
 export async function callAnthropic(provider, request, apiKey) {
-  const systemMsg = request.messages.find((m) => m.role === "system");
+  const system = systemTextOf(request.messages);
 
   const data = await requestJson(provider.id, `${provider.baseURL}/messages`, {
     ...proxyDispatcher(provider.id),
@@ -31,7 +31,7 @@ export async function callAnthropic(provider, request, apiKey) {
     },
     body: JSON.stringify({
       model: request.resolvedModel,
-      system: systemMsg?.content,
+      system,
       messages: toAnthropicMessages(request.messages),
       tools: toAnthropicTools(request.tools),
       tool_choice: toAnthropicToolChoice(request.tool_choice),
@@ -51,7 +51,7 @@ export async function callAnthropic(provider, request, apiKey) {
     toolCalls,
     finishReason,
     usage: {
-      prompt_tokens: data.usage?.input_tokens,
+      prompt_tokens: anthropicPromptTokens(data.usage) ?? undefined,
       completion_tokens: data.usage?.output_tokens
     },
     promptText: promptTextOf(request),
@@ -67,7 +67,7 @@ export async function callAnthropic(provider, request, apiKey) {
 // validated before any translation starts, same fallback-safety guarantee
 // as the OpenAI adapter.
 export async function* streamAnthropic(provider, request, apiKey) {
-  const systemMsg = request.messages.find((m) => m.role === "system");
+  const system = systemTextOf(request.messages);
 
   const { body, controller } = await openStream(provider.id, `${provider.baseURL}/messages`, {
     ...proxyDispatcher(provider.id),
@@ -79,7 +79,7 @@ export async function* streamAnthropic(provider, request, apiKey) {
     },
     body: JSON.stringify({
       model: request.resolvedModel,
-      system: systemMsg?.content,
+      system,
       messages: toAnthropicMessages(request.messages),
       tools: toAnthropicTools(request.tools),
       tool_choice: toAnthropicToolChoice(request.tool_choice),
@@ -125,13 +125,15 @@ export async function* streamAnthropic(provider, request, apiKey) {
       }
 
       if (event.type === "message_start" && event.message?.usage) {
-        usage.prompt_tokens = event.message.usage.input_tokens ?? null;
+        usage.prompt_tokens = anthropicPromptTokens(event.message.usage);
         usage.completion_tokens = event.message.usage.output_tokens ?? null;
       }
 
       if (event.type === "message_delta" && event.usage) {
-        // message_delta carries the running output total.
+        // message_delta carries the running output total, and newer API
+        // versions the final input figures too.
         usage.completion_tokens = event.usage.output_tokens ?? usage.completion_tokens;
+        usage.prompt_tokens = anthropicPromptTokens(event.usage) ?? usage.prompt_tokens;
       }
 
       if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
@@ -181,7 +183,7 @@ export async function* streamAnthropic(provider, request, apiKey) {
       }
 
       if (event.type === "message_delta" && event.delta?.stop_reason) {
-        const finishReason = event.delta.stop_reason === "tool_use" ? "tool_calls" : "stop";
+        const finishReason = finishFromAnthropic(event.delta.stop_reason);
         yield { choices: [{ delta: {}, index: 0, finish_reason: finishReason }] };
       }
     }

@@ -22,8 +22,10 @@
 //   processes holding ports is worse than no supervisor: the next start fails
 //   with EADDRINUSE against a process nobody can see.
 
+import { baseChildEnv } from "../security/childEnv.js";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { dataDir } from "../paths.js";
 import path from "node:path";
 
 const MAX_LOG_LINES = 300;
@@ -74,7 +76,8 @@ export const CLUSTER_PROFILES = {
 const running = new Map();
 
 function resolveBinary(definition, override) {
-  if (override) return existsSync(override) ? override : null;
+  // Absolute, because the child runs in the data directory, not here.
+  if (override) return existsSync(override) ? path.resolve(override) : null;
   // No PATH search here: spawn does that, and a `which` implementation that
   // disagrees with what spawn resolves is a bug generator. `available` reports
   // "explicitly configured and present" or "will be looked up on PATH".
@@ -137,8 +140,14 @@ export function startService(id, { port, binary = null, args = null, env = {} } 
   const argv = (args || definition.defaultArgs).map((a) => a.replace("{port}", String(resolvedPort)));
 
   // Only string values, and only keys that look like env vars. This object
-  // reaches a child process's environment.
-  const childEnv = { ...process.env };
+  // reaches a child process's environment. It starts from a base set plus the
+  // provider keys (these sidecars are relays to the providers and read them
+  // from the environment), never the gateway's own: TOLLPIKE_SECRET decrypts
+  // the settings file, and the vendor audit credentials are not theirs.
+  const childEnv = baseChildEnv();
+  for (const [key, value] of Object.entries(process.env)) {
+    if (/_API_KEY$/i.test(key) && !/^TOLLPIKE_|ADMIN/i.test(key) && typeof value === "string") childEnv[key] = value;
+  }
   for (const [key, value] of Object.entries(env)) {
     if (/^[A-Z_][A-Z0-9_]*$/.test(key) && typeof value === "string") childEnv[key] = value;
   }
@@ -149,7 +158,11 @@ export function startService(id, { port, binary = null, args = null, env = {} } 
       shell: false, // never. see the header comment.
       stdio: ["ignore", "pipe", "pipe"],
       env: childEnv,
-      cwd: path.resolve(".")
+      // Windows looks for a bare command name in the working directory before
+      // PATH. Starting in whatever directory the gateway was launched from (a
+      // downloaded repo, say) let a file there named like the service run in
+      // its place. The data directory is the user's own and holds no binaries.
+      cwd: (mkdirSync(dataDir, { recursive: true }), dataDir)
     });
   } catch (err) {
     return { ok: false, error: `spawn failed: ${err.message}` };

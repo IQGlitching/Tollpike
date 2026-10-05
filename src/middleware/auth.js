@@ -152,12 +152,11 @@ export function isLoopbackRequest(req) {
 // For the two endpoints that write secrets: setting a provider credential and
 // setting the gateway key itself.
 //
-// requireGatewayKey deliberately waves everything through when no key is set —
-// an unauthenticated gateway on loopback is a supported way to run this thing,
-// and demanding a key before you can set one would be a bootstrap deadlock. But
-// "no key set" must not also mean "anyone who can reach the port may write my
-// credentials". So when auth is off, these endpoints accept the request only
-// from the machine itself.
+// The operator key is created on first start, so normally it is set. If it is
+// not (a data directory from before 0.10, or one edited by hand),
+// requireGatewayKey waves requests through, and "no key set" must not also mean
+// "anyone who can reach the port may write my credentials". So when auth is
+// off, these endpoints accept the request only from the machine itself.
 //
 // By the time a request reaches here, requireGatewayKey has already run on
 // /api and rejected any invalid token, so a configured key means the caller

@@ -116,7 +116,7 @@ export function fromAnthropicRequest(body = {}) {
 // --- Response: internal (OpenAI-shaped) -> Anthropic ---------------------
 
 const stopReasonFor = (finish) =>
-  finish === "tool_calls" ? "tool_use" : finish === "length" ? "max_tokens" : "end_turn";
+  finish === "tool_calls" ? "tool_use" : finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : "end_turn";
 
 export function toAnthropicResponse(response, requestedModel) {
   const choice = response.choices?.[0] || {};
@@ -178,13 +178,22 @@ function deltaFromRouterEvent(event) {
 export async function* toAnthropicStream(routerStream, requestedModel) {
   const messageId = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
   let started = false;
-  let textOpen = false;
-  let blockIndex = 0;
+  // The one block open right now ({ kind, index }), and the index the next
+  // block takes. Every block gets its own index and is closed before the next
+  // opens: two tool calls used to share an index and the first was never
+  // closed, which an Anthropic client cannot parse.
+  let open = null;
+  let nextIndex = 0;
   let stopReason = "end_turn";
   let outputTokens = 0;
   let inputTokens = 0;
   // OpenAI tool_call index -> our content-block index
   const toolBlocks = new Map();
+  const close = function* () {
+    if (!open) return;
+    yield sse("content_block_stop", { type: "content_block_stop", index: open.index });
+    open = null;
+  };
 
   const start = () => {
     started = true;
@@ -215,26 +224,25 @@ export async function* toAnthropicStream(routerStream, requestedModel) {
 
       const text = choice.delta?.content;
       if (text) {
-        if (!textOpen) {
-          yield sse("content_block_start", { type: "content_block_start", index: blockIndex, content_block: { type: "text", text: "" } });
-          textOpen = true;
+        if (open?.kind !== "text") {
+          yield* close();
+          open = { kind: "text", index: nextIndex++ };
+          yield sse("content_block_start", { type: "content_block_start", index: open.index, content_block: { type: "text", text: "" } });
         }
         outputTokens += 1; // rough; replaced by the provider's count if it sends one
-        yield sse("content_block_delta", { type: "content_block_delta", index: blockIndex, delta: { type: "text_delta", text } });
+        yield sse("content_block_delta", { type: "content_block_delta", index: open.index, delta: { type: "text_delta", text } });
       }
 
       for (const call of choice.delta?.tool_calls || []) {
-        // A tool call means the text block (if any) is finished.
-        if (textOpen) {
-          yield sse("content_block_stop", { type: "content_block_stop", index: blockIndex });
-          textOpen = false;
-          blockIndex += 1;
-        }
-        if (!toolBlocks.has(call.index)) {
-          toolBlocks.set(call.index, blockIndex);
+        // Adapters that send each call whole may leave out `index`.
+        const key = Number.isInteger(call.index) ? call.index : call.id || toolBlocks.size;
+        if (!toolBlocks.has(key)) {
+          yield* close();
+          open = { kind: "tool", index: nextIndex++ };
+          toolBlocks.set(key, open.index);
           yield sse("content_block_start", {
             type: "content_block_start",
-            index: blockIndex,
+            index: open.index,
             content_block: { type: "tool_use", id: call.id || `toolu_${randomUUID().slice(0, 8)}`, name: call.function?.name || "", input: {} }
           });
         }
@@ -242,7 +250,7 @@ export async function* toAnthropicStream(routerStream, requestedModel) {
         if (args) {
           yield sse("content_block_delta", {
             type: "content_block_delta",
-            index: toolBlocks.get(call.index),
+            index: toolBlocks.get(key),
             delta: { type: "input_json_delta", partial_json: args }
           });
         }
@@ -252,9 +260,7 @@ export async function* toAnthropicStream(routerStream, requestedModel) {
     }
 
     if (!started) yield start();
-    if (textOpen || toolBlocks.size) {
-      yield sse("content_block_stop", { type: "content_block_stop", index: blockIndex });
-    }
+    yield* close();
     yield sse("message_delta", {
       type: "message_delta",
       delta: { stop_reason: stopReason, stop_sequence: null },

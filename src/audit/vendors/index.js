@@ -61,8 +61,13 @@ export async function pullVendor(id, { maxPages = MAX_PAGES_PER_RUN } = {}) {
   const startedAt = new Date().toISOString();
   let error = null;
 
+  let gap = null;
   try {
     const seen = new Set(state.seen || []);
+    const startCursor = state.cursor;
+    let cursorMoved = false;
+    let newestTs = null;
+    let capped = false;
     for await (const page of connector.pages({ state, config })) {
       counts.pages += 1;
       const fresh = [];
@@ -72,19 +77,41 @@ export async function pullVendor(id, { maxPages = MAX_PAGES_PER_RUN } = {}) {
           counts.duplicates += 1;
           continue;
         }
+        if (r.ts && (!newestTs || r.ts > newestTs)) newestTs = r.ts;
+        if (auditEnabled()) {
+          const findings = [
+            ...evaluate("vendor", `${r.action || ""} ${JSON.stringify(r.details || {})}`, ruleCtx),
+            ...(r.content ? evaluate("prompt", r.content, ruleCtx) : [])
+          ];
+          // A record that could not be written is not marked seen, so the next
+          // pull offers it again instead of losing it for good.
+          if (!recordVendorEvent({ ...r, vendor: id, product: r.product || connector.product }, findings)) {
+            counts.failed = (counts.failed || 0) + 1;
+            continue;
+          }
+          counts.recorded += 1;
+        }
         seen.add(r.vendorId);
         fresh.push(r.vendorId);
-        if (!auditEnabled()) continue;
-        const findings = [
-          ...evaluate("vendor", `${r.action || ""} ${JSON.stringify(r.details || {})}`, ruleCtx),
-          ...(r.content ? evaluate("prompt", r.content, ruleCtx) : [])
-        ];
-        recordVendorEvent({ ...r, vendor: id, product: r.product || connector.product }, findings);
-        counts.recorded += 1;
       }
+      if (page.cursor) cursorMoved = true;
       state = { ...state, ...(page.cursor ? { cursor: page.cursor } : {}), seen: rememberSeen(state, fresh), lastPullAt: new Date().toISOString() };
       writeState(id, state);
-      if (counts.pages >= maxPages) break;
+      if (counts.pages >= maxPages) {
+        capped = true;
+        break;
+      }
+    }
+    // Most connectors only hand back a cursor on their last page. A backlog
+    // longer than one run then restarted from the same cursor every time and
+    // never caught up. Move the cursor to the newest record read instead. For
+    // a connector that reads oldest first nothing is lost; for one that reads
+    // newest first the older part of the backlog is skipped, and that window
+    // is recorded as a finding rather than dropped silently.
+    if (capped && !cursorMoved && newestTs) {
+      state = { ...state, cursor: connector.cursorFromTs ? connector.cursorFromTs(newestTs) : newestTs };
+      writeState(id, state);
+      if (!connector.ascending) gap = { from: startCursor || null, to: newestTs };
     }
   } catch (err) {
     error = String(err?.message || err).slice(0, 300);
@@ -93,7 +120,7 @@ export async function pullVendor(id, { maxPages = MAX_PAGES_PER_RUN } = {}) {
   }
 
   const idleTooLong = Date.now() - Date.parse(state.lastRecordedRunAt || 0) > IDLE_HEARTBEAT_MS;
-  if (counts.fetched || error || idleTooLong) {
+  if (counts.fetched || error || idleTooLong || gap) {
     appendEvent({
       type: "vendor.pull",
       source: `vendor:${id}`,
@@ -103,6 +130,8 @@ export async function pullVendor(id, { maxPages = MAX_PAGES_PER_RUN } = {}) {
       ...counts,
       outcome: error ? "failed" : "ok",
       error: error || undefined,
+      gap: gap || undefined,
+      ...(gap && !error ? { findings: [{ rule: "vendor.backlog_skipped", title: "Vendor backlog larger than one pull; part of it was skipped", severity: "medium", mode: "flag", controls: ["ISO27001:8.15", "SOC2:CC7.2"], detail: `More than ${maxPages} pages were waiting. The cursor moved to ${gap.to} so collection keeps up; older records after ${gap.from || "the first pull"} that were not read in this run were not collected.` }], flagged: true, severity: "medium" } : {}),
       ...(error ? { findings: [{ rule: "vendor.pull_failed", title: "Vendor audit log could not be collected", severity: "medium", mode: "flag", controls: ["ISO27001:8.15", "ISO27001:8.16", "SOC2:CC7.2", "ISO42001:A.10.3", "EUAIA:Art.26(5)", "NISTAIRMF:MANAGE 3.1"], detail: error }], flagged: true, severity: "medium" } : {})
     });
     writeState(id, { ...state, lastRecordedRunAt: new Date().toISOString() });

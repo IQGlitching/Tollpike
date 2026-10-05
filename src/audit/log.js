@@ -14,7 +14,8 @@
 // edit to the original, so the record of what happened and the record of
 // who looked at it are both preserved.
 //
-// Single writer: one process per data directory, as for the ledger.
+// Several processes may write (the gateway, the CLI, hooks): appends take a
+// lock file so each one chains from the true head.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -108,23 +109,89 @@ export function newEventId() {
  */
 let writeFailures = 0;
 export function appendEvent(event) {
-  if (state && fileSize() !== state.size) state = null;
-  const s = load();
   const row = { v: 1, id: event.id || newEventId(), ts: new Date().toISOString(), ...event };
   delete row.h;
-  const h = chainHashWith(auditKey(), s.head, canonicalPayload(row));
+  let h = "";
+  let release = null;
   try {
     ensureDir();
-    fs.appendFileSync(logPath, JSON.stringify({ ...row, h }) + "\n", { mode: 0o600 });
+    release = acquireLock();
+    // Read the head and append under one lock. Checking the size first and
+    // appending later left a window in which the gateway and the CLI could
+    // both append after the same head, forking the chain for good.
+    if (state && fileSize() !== state.size) state = null;
+    const s = load();
+    h = chainHashWith(auditKey(), s.head, canonicalPayload(row));
+    // A crash mid-write can leave a last line with no newline. Appending
+    // straight after it would glue this row onto the torn one, and both
+    // would be lost; start on a fresh line instead.
+    const lead = s.size > 0 && !endsWithNewline() ? "\n" : "";
+    fs.appendFileSync(logPath, lead + JSON.stringify({ ...row, h }) + "\n", { mode: 0o600 });
     s.head = h;
-    s.count += 1;
+    s.count += 1; // a torn line was already counted when the file was read
     s.size = fileSize();
     writeAnchor(s.count, s.head);
   } catch (err) {
     writeFailures += 1;
     console.error(`[audit] failed to append an event: ${err.message}`);
+  } finally {
+    release?.();
   }
   return { ...row, h };
+}
+
+function endsWithNewline() {
+  let fd;
+  try {
+    fd = fs.openSync(logPath, "r");
+    const size = fs.fstatSync(fd).size;
+    if (!size) return true;
+    const b = Buffer.alloc(1);
+    fs.readSync(fd, b, 0, 1, size - 1);
+    return b[0] === 0x0a;
+  } catch {
+    return true;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+// A lock file shared by every process writing this data directory. Appends
+// are a few milliseconds, so a holder older than LOCK_STALE_MS crashed while
+// holding it and the lock is taken over. If the lock cannot be had in
+// LOCK_WAIT_MS the append goes ahead anyway: a rare fork, which verify then
+// reports, is better than losing the event.
+const lockPath = path.join(dataDir, "audit.lock");
+const LOCK_WAIT_MS = 2_000;
+const LOCK_STALE_MS = 10_000;
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
+function acquireLock() {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = fs.openSync(lockPath, "wx", 0o600);
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return () => fs.rmSync(lockPath, { force: true });
+    } catch (err) {
+      // Windows answers EPERM or EACCES, not EEXIST, while another process's
+      // lock file is still being deleted: that is "busy", not "no locking".
+      if (!["EEXIST", "EPERM", "EACCES", "EBUSY"].includes(err.code)) return null;
+      if (Date.now() > deadline) {
+        console.error("[audit] the audit log lock is held by another process; appending without it");
+        return null;
+      }
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(lockPath, { force: true });
+          continue;
+        }
+      } catch {
+        // released between the open and the stat, or still being deleted
+      }
+      Atomics.wait(sleeper, 0, 0, 5);
+    }
+  }
 }
 
 export function writeFailureCount() {

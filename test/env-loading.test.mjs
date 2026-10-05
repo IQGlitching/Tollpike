@@ -1,4 +1,4 @@
-import { test, describe } from "node:test";
+import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -18,11 +18,21 @@ import { pathToFileURL } from "node:url";
 const root = path.join(import.meta.dirname, "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-env-"));
 
+// The project .env is the one beside the package, not the one in the working
+// directory. A copy of env.js in a scratch package makes "the package's .env"
+// a file this suite controls, and keeps the checkout's own .env (real
+// credentials, on a developer machine) out of every probe.
+const PKG = path.join(tmp, "pkg");
+fs.mkdirSync(path.join(PKG, "src"), { recursive: true });
+fs.copyFileSync(path.join(root, "src", "env.js"), path.join(PKG, "src", "env.js"));
+fs.symlinkSync(path.join(root, "node_modules"), path.join(PKG, "node_modules"), "junction");
+beforeEach(() => fs.rmSync(path.join(PKG, ".env"), { force: true }));
+
 // Reports the resolved value without ever printing it to a shared log.
 // A file:// URL, not a bare path: on Windows an absolute path like C:/... is
 // rejected by the ESM loader as an unsupported URL scheme.
 const PROBE = `
-import { envStatus } from ${JSON.stringify(pathToFileURL(path.join(root, "src", "env.js")).href)};
+import { envStatus } from ${JSON.stringify(pathToFileURL(path.join(PKG, "src", "env.js")).href)};
 console.log(JSON.stringify({
   status: envStatus(),
   probe: process.env.TOLLPIKE_TEST_PROBE ?? null,
@@ -59,7 +69,7 @@ const writeEnvFile = (dir, contents) => {
 describe("env loading: resolution order", () => {
   test("the project .env is still read when nothing else exists", () => {
     const cwd = fs.mkdtempSync(path.join(tmp, "proj-"));
-    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_TEST_PROBE=from-project\n");
     const result = runProbe({ cwd });
     assert.equal(result.probe, "from-project");
     assert.ok(result.status.loadedFrom.some((l) => l.source === "project"));
@@ -69,7 +79,7 @@ describe("env loading: resolution order", () => {
     const home = fs.mkdtempSync(path.join(tmp, "home-"));
     const cwd = fs.mkdtempSync(path.join(tmp, "proj-"));
     writeEnvFile(path.join(home, ".tollpike"), "TOLLPIKE_TEST_PROBE=from-protected\n");
-    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_TEST_PROBE=from-project\n");
 
     const result = runProbe({ cwd, env: { HOME: home, USERPROFILE: home } });
     assert.equal(
@@ -85,7 +95,7 @@ describe("env loading: resolution order", () => {
     const explicit = path.join(tmp, "explicit.env");
     fs.writeFileSync(explicit, "TOLLPIKE_TEST_PROBE=from-explicit\n");
     writeEnvFile(path.join(home, ".tollpike"), "TOLLPIKE_TEST_PROBE=from-protected\n");
-    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_TEST_PROBE=from-project\n");
 
     const result = runProbe({ cwd, env: { HOME: home, USERPROFILE: home, TOLLPIKE_ENV_FILE: explicit } });
     assert.equal(result.probe, "from-explicit");
@@ -101,7 +111,7 @@ describe("env loading: resolution order", () => {
     const explicit = path.join(tmp, "only.env");
     fs.writeFileSync(explicit, "TOLLPIKE_TEST_PROBE=from-explicit\n");
     writeEnvFile(path.join(home, ".tollpike"), "TOLLPIKE_SECRET=leaked-from-home\n");
-    writeEnvFile(cwd, "TOLLPIKE_SECRET=leaked-from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_SECRET=leaked-from-project\n");
 
     const result = runProbe({ cwd, env: { HOME: home, USERPROFILE: home, TOLLPIKE_ENV_FILE: explicit } });
     assert.equal(result.secret, null, "no variable from either default file may leak through");
@@ -112,7 +122,7 @@ describe("env loading: resolution order", () => {
     const home = fs.mkdtempSync(path.join(tmp, "home-"));
     const cwd = fs.mkdtempSync(path.join(tmp, "proj-"));
     writeEnvFile(path.join(home, ".tollpike"), "TOLLPIKE_SECRET=leaked-from-home\n");
-    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=leaked-from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_TEST_PROBE=leaked-from-project\n");
 
     const result = runProbe({
       cwd,
@@ -140,12 +150,19 @@ describe("env loading: resolution order", () => {
     const home = fs.mkdtempSync(path.join(tmp, "home-"));
     const cwd = fs.mkdtempSync(path.join(tmp, "proj-"));
     writeEnvFile(path.join(home, ".tollpike"), "TOLLPIKE_SECRET=secret-from-protected\n");
-    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=port-from-project\n");
+    writeEnvFile(PKG, "TOLLPIKE_TEST_PROBE=port-from-project\n");
 
     const result = runProbe({ cwd, env: { HOME: home, USERPROFILE: home } });
     assert.equal(result.secret, "secret-from-protected", "the secret comes from the protected file");
     assert.equal(result.probe, "port-from-project", "non-secret settings still come from the project file");
     assert.equal(result.status.loadedFrom.length, 2, "both files contribute");
+  });
+
+  test("a .env in whatever directory the CLI runs from is not read", () => {
+    const cwd = fs.mkdtempSync(path.join(tmp, "someone-elses-repo-"));
+    writeEnvFile(cwd, "TOLLPIKE_TEST_PROBE=from-a-cloned-repo\n");
+    const result = runProbe({ cwd });
+    assert.equal(result.probe, null, "a project the CLI happened to run in set the gateway's environment");
   });
 
   test("a missing project .env is not an error", () => {

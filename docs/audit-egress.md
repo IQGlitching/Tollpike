@@ -72,9 +72,9 @@ networks:
   outside: {}
 ```
 
-Bind Tollpike to an address the agents can reach (`BIND_HOST`), and set an
-operator key before you do: an agent key never opens the control panel, but
-with no operator key the panel is open to anyone who can reach the port.
+Bind Tollpike to an address the agents can reach (`BIND_HOST`). The control
+panel always needs the operator key (created on first start), an agent key
+never opens it, and other machines need a key for the model endpoints.
 
 ## 3. Detection: prove nothing went around it
 

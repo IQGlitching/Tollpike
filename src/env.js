@@ -14,9 +14,13 @@
 //                          repo, outside Downloads, and created with inherited
 //                          permissions stripped so only the owner and SYSTEM
 //                          can read it.
-//   2. ./.env              still honoured, and deliberately LAST. Docker
-//                          Compose mounts one, CI writes one, and breaking
-//                          those to move a local file would be a bad trade.
+//   2. <package>/.env      the .env beside the package (a checkout, or /app
+//                          in the image), deliberately LAST. Docker Compose
+//                          mounts one there, CI writes one there. It used to
+//                          be ./.env in the working directory, so the global
+//                          CLI run inside any project loaded that project's
+//                          .env: a cloned repository could point a provider's
+//                          base URL, or the data directory, wherever it liked.
 //
 // dotenv does not overwrite a variable that is already set, so an earlier
 // source wins and the layering is free: shared non-secret defaults in the
@@ -36,10 +40,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
 export const PROTECTED_ENV_DIR = path.join(os.homedir(), ".tollpike");
 export const PROTECTED_ENV_FILE = path.join(PROTECTED_ENV_DIR, ".env");
+const PACKAGE_ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 function candidates() {
   // Naming a file means that file and nothing else — see the header note.
@@ -48,7 +54,7 @@ function candidates() {
   }
   return [
     { path: PROTECTED_ENV_FILE, source: "protected" },
-    { path: path.resolve(process.cwd(), ".env"), source: "project" }
+    { path: path.join(PACKAGE_ROOT, ".env"), source: "project" }
   ];
 }
 

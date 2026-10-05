@@ -2,8 +2,8 @@ import net from "node:net";
 
 // DNS-rebinding guard.
 //
-// The control plane is reachable without a gateway key by default, and the
-// browser same-origin policy is not a defence here: an attacker's page can
+// Model endpoints take keyless calls from this machine, and the browser
+// same-origin policy is not a defence here: an attacker's page can
 // point a hostname they control at 127.0.0.1, wait for the DNS TTL to
 // expire, and then read and write this API from that origin as if it were
 // their own. The Host header is the part they cannot forge away — a

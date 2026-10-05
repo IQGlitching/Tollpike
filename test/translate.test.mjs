@@ -133,3 +133,56 @@ describe("gemini translation", () => {
     assert.equal(r.toolCalls[0].function.name, "f");
   });
 });
+
+// A reply cut off by the token limit has to say so. Mapped to "stop", it
+// looked complete and no client could ask for the rest.
+describe("finish reasons survive translation", () => {
+  test("Anthropic stop reasons", () => {
+    assert.equal(anth.finishFromAnthropic("max_tokens"), "length");
+    assert.equal(anth.finishFromAnthropic("tool_use"), "tool_calls");
+    assert.equal(anth.finishFromAnthropic("refusal"), "content_filter");
+    assert.equal(anth.finishFromAnthropic("end_turn"), "stop");
+    assert.equal(anth.fromAnthropicContent([{ type: "text", text: "half a sen" }], "max_tokens").finishReason, "length");
+  });
+
+  test("Gemini finish reasons", () => {
+    assert.equal(gem.finishFromGemini("MAX_TOKENS", false), "length");
+    assert.equal(gem.finishFromGemini("SAFETY", false), "content_filter");
+    assert.equal(gem.finishFromGemini("STOP", true), "tool_calls");
+    assert.equal(gem.fromGeminiParts([{ text: "half" }], "MAX_TOKENS").finishReason, "length");
+  });
+});
+
+describe("system instructions and tool choice", () => {
+  test("every system and developer message reaches the provider, in order", async () => {
+    const { systemTextOf } = await import("../src/providers/normalize.js");
+    const msgs = [
+      { role: "system", content: "Be brief." },
+      { role: "developer", content: [{ type: "text", text: "Answer in Dutch." }] },
+      { role: "user", content: "hi" },
+      { role: "system", content: "Never guess." }
+    ];
+    assert.equal(systemTextOf(msgs), "Be brief.\n\nAnswer in Dutch.\n\nNever guess.");
+    assert.equal(systemTextOf([{ role: "user", content: "hi" }]), undefined);
+    assert.ok(!anth.toAnthropicMessages(msgs).some((m) => m.role === "developer" || m.role === "system"));
+    assert.ok(!gem.toGeminiContents(msgs).some((m) => m.role === "developer" || m.role === "system"));
+  });
+
+  test("tool_choice none stays none", () => {
+    assert.deepEqual(anth.toAnthropicToolChoice("none"), { type: "none" });
+    assert.deepEqual(gem.toGeminiToolConfig("none"), { functionCallingConfig: { mode: "NONE" } });
+  });
+});
+
+describe("usage as billed", () => {
+  test("Anthropic cache writes and reads count as prompt tokens", () => {
+    assert.equal(anth.anthropicPromptTokens({ input_tokens: 10, cache_creation_input_tokens: 2000, cache_read_input_tokens: 30000 }), 32010);
+    assert.equal(anth.anthropicPromptTokens({ input_tokens: 7 }), 7);
+    assert.equal(anth.anthropicPromptTokens({ output_tokens: 3 }), null, "no input figure is not zero");
+  });
+
+  test("Gemini thinking tokens count as output", () => {
+    assert.equal(gem.geminiCompletionTokens({ candidatesTokenCount: 40, thoughtsTokenCount: 900 }), 940);
+    assert.equal(gem.geminiCompletionTokens({ promptTokenCount: 5 }), null);
+  });
+});

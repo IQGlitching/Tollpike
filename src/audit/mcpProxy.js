@@ -22,6 +22,7 @@
 // the gateway's own variables as ${NAME}, so a token can stay in the
 // environment instead of in the file.
 
+import { baseChildEnv } from "../security/childEnv.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -130,7 +131,10 @@ export class ProxyHub {
             command: cfg.command,
             args: cfg.args,
             cwd: cfg.cwd,
-            env: { ...process.env, ...Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, expand(v)])) },
+            // A base environment plus what the server's own config names, never
+            // the gateway's: that holds every provider key and TOLLPIKE_SECRET.
+            // A server that needs a token gets it as "env": { "X": "${X}" }.
+            env: { ...baseChildEnv(), ...Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, expand(v)])) },
             stderr: "pipe"
           })
         : new StreamableHTTPClientTransport(new URL(cfg.url), {
@@ -200,6 +204,7 @@ export class ProxyHub {
       source: "mcp-proxy",
       tool: label,
       output: textOfResult(result),
+      canWithhold: true,
       status: result?.isError ? "error" : "success",
       durationMs: Date.now() - startedAt
     });

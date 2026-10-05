@@ -133,3 +133,11 @@ describe("responseCache: the hit rate does not overstate its inputs", () => {
     assert.ok(cache.stats().hitRatePct > 0);
   });
 });
+
+describe("responseCache: temperature is part of the key", () => {
+  test("unset and 0 are different requests", () => {
+    const base = { model: "m", messages: [{ role: "user", content: "hi" }] };
+    assert.notEqual(cache.cacheKey(base), cache.cacheKey({ ...base, temperature: 0 }));
+    assert.equal(cache.cacheKey({ ...base, temperature: null }), cache.cacheKey(base));
+  });
+});

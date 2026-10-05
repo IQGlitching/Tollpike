@@ -8,7 +8,9 @@ Type=simple
 # user should own the process (don't run this as root).
 User=tollpike
 WorkingDirectory=/opt/tollpike
-EnvironmentFile=/opt/tollpike/.env
+# The leading "-" makes the file optional: without it the unit fails to start
+# when there is no .env, which is the normal case once keys live elsewhere.
+EnvironmentFile=-/opt/tollpike/.env
 ExecStart=/usr/bin/node src/server.js
 Restart=on-failure
 RestartSec=5

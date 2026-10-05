@@ -67,12 +67,15 @@ export function computeSignals({ windowDays = 7, reviewDays = getSettings().audi
   out.push(result("audit.chain_keyed", v.keyed ? "pass" : "fail", v.keyed ? "HMAC-SHA256 keyed with a secret held outside the data directory." : "TOLLPIKE_SECRET is not set: the chain detects damage but a local editor could rewrite it."));
 
   const calls = inWindow.filter((e) => e.type === "model.call");
-  const anonymous = calls.filter((e) => !e.agent).length;
+  // Only an agent key is an agent identity. The operator key and an in-process
+  // call identify a person or the machine, not which agent acted, so they do
+  // not count as attributed.
+  const anonymous = calls.filter((e) => !String(e.agent?.id || "").startsWith("agt_")).length;
   out.push(
     !calls.length
       ? result("audit.agents_attributed", "not_applicable", `No model calls in the last ${windowDays} days.`, { calls: 0 })
       : result("audit.agents_attributed", anonymous === 0 && hasAgentKeys() ? "pass" : "fail",
-          anonymous === 0 ? `${calls.length} model calls, all attributed.` : `${anonymous} of ${calls.length} model calls carried no agent identity.`,
+          anonymous === 0 ? `${calls.length} model calls, all attributed.` : `${anonymous} of ${calls.length} model calls carried no agent key (unkeyed, the operator key, or an in-process call).`,
           { calls: calls.length, unattributed: anonymous })
   );
 
@@ -88,11 +91,14 @@ export function computeSignals({ windowDays = 7, reviewDays = getSettings().audi
     pre ? `${pre} pre-execution events from Claude Code hooks or the MCP proxy in ${windowDays} days.` : `No Claude Code hook or MCP proxy events in ${windowDays} days: actions are recorded only as the model reported them.`,
     { events: pre }));
 
-  const heartbeats = inWindow.filter((e) => e.type === "endpoint.sensor").length;
+  // Only a sensor holding a sensor key (or the operator) can vouch that
+  // monitoring ran. Keyless ingest is accepted from this machine, which is
+  // also where the agents run, so an anonymous heartbeat proves nothing.
+  const heartbeats = inWindow.filter((e) => e.type === "endpoint.sensor" && e.sensor && e.sensor !== "anonymous").length;
   const bypass = inWindow.filter((e) => (e.findings || []).some((f) => f.rule === "endpoint.direct_provider_access")).length;
   out.push(
     !heartbeats && !bypass
-      ? result("audit.egress_enforced", "not_applicable", `No endpoint sensor reported in ${windowDays} days, so bypass cannot be measured.`, { sensorsReporting: 0 })
+      ? result("audit.egress_enforced", "not_applicable", `No keyed endpoint sensor reported in ${windowDays} days, so bypass cannot be measured.`, { sensorsReporting: 0 })
       : result("audit.egress_enforced", bypass ? "fail" : "pass",
           bypass ? `${bypass} model-provider connection(s) bypassed the gateway in ${windowDays} days.` : `Endpoint sensors reported; no gateway bypass seen in ${windowDays} days.`,
           { bypassEvents: bypass, heartbeats })

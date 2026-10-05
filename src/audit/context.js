@@ -19,6 +19,11 @@ export function currentContext() {
   return store.getStore() || null;
 }
 
+/** True once the client of the current request has disconnected. */
+export function clientGone() {
+  return store.getStore()?.signal?.aborted === true;
+}
+
 export function runWithContext(ctx, fn) {
   return store.run({ ...ctx }, fn);
 }
@@ -59,5 +64,13 @@ export function auditContext(req, res, next) {
     session: req.get?.("X-Tollpike-Session") ? String(req.get("X-Tollpike-Session")).slice(0, 64) : null
   };
   res.set("X-Tollpike-Audit-Request", ctx.requestId);
+  // Aborted when the client goes away before the response is finished, so
+  // the upstream call it was waiting for stops too (see providers/http.js)
+  // instead of running, and billing, to the end for nobody.
+  const gone = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) gone.abort();
+  });
+  ctx.signal = gone.signal;
   store.run(ctx, next);
 }

@@ -10,7 +10,10 @@
 //                       puts a permission prompt in front of the person.
 //   PostToolUse(Failure) tool.executed, with the real result. A result rule in
 //                       block mode (prompt injection in what came back)
-//                       answers decision "block", so the model never reads it.
+//                       answers decision "block" with a warning. The tool has
+//                       already run and its output is already in the
+//                       conversation, so this cannot withhold it; only the MCP
+//                       proxy can. The record says "warned", not "withheld".
 //   UserPromptSubmit    prompt.submitted. Block mode on a prompt rule (a
 //                       credential pasted into a prompt) stops it being sent.
 //   SessionStart/End    session lifecycle.

@@ -11,7 +11,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-audit3-"));
-const PORT = 20793;
+const { freePort } = await import("./fixtures/free-port.mjs");
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 const root = path.join(import.meta.dirname, "..");
 process.env.TOLLPIKE_DATA_DIR = DATA_DIR;
@@ -197,6 +198,22 @@ describe("correlation", () => {
     assert.equal(second.explainedBy, null);
   });
 
+  test("a snapshot of a process still running keeps its explanation", () => {
+    const t = new ProcessTables();
+    const p = t.upsert({ kind: "process", host: h, pid: 88, ppid: 1, image: "bash", ts: ts(0) });
+    p.explainedBy = { eventId: "evt_y" };
+    assert.equal(t.upsert({ kind: "snapshot", host: h, pid: 88, ppid: 1, image: "bash", ts: ts(600) }).explainedBy?.eventId, "evt_y");
+    assert.equal(t.upsert({ kind: "snapshot", host: h, pid: 88, ppid: 1, image: "curl", ts: ts(700) }).explainedBy, null, "a different image is pid reuse");
+  });
+
+  test("a full table evicts ordinary processes before agent runtimes", () => {
+    const t = new ProcessTables();
+    t.upsert({ host: h, pid: 1, ppid: 0, image: "C:\\bin\\claude.exe", ts: ts(0) });
+    for (let pid = 2; pid <= 50_001; pid++) t.upsert({ host: h, pid, ppid: 1, image: "x", ts: ts(0) });
+    assert.ok(t.get(h, 1), "the runtime root was evicted");
+    assert.equal(t.get(h, 2), null);
+  });
+
   test("a parent cycle in bad data does not hang", () => {
     const t = new ProcessTables();
     t.upsert({ host: h, pid: 1, ppid: 2, image: "a", ts: ts(0) });
@@ -210,6 +227,26 @@ describe("correlation", () => {
     assert.equal(findExplanation({ commandLine: "rm -rf build", ts: ts(1) }, actions)?.eventId, "evt_a");
     assert.equal(findExplanation({ commandLine: "rm -rf build", ts: ts(1000) }, actions), null, "too long after the action");
     assert.equal(findExplanation({ commandLine: "node", ts: ts(1) }, [{ ts: ts(0), command: "node build.js", eventId: "evt_b" }]), null, "a short command line is not a piece of everything");
+  });
+
+  test("an action on one machine never explains a process on another", async () => {
+    const { runWithContext } = await import("../src/audit/context.js");
+    const audit = await import("../src/audit/index.js");
+    const { ingestEndpoint } = await import("../src/audit/endpoint/index.js");
+    const cmd = `npm run cross-host-${Date.now()}`;
+    runWithContext({ ip: "10.0.0.5", source: "claude-code" }, () => audit.recordToolRequest({ source: "claude-code", tool: "Bash", input: { command: cmd }, toolUseId: "tu_cross" }));
+    const at = new Date().toISOString();
+    const batch = (pidBase) => [
+      { kind: "snapshot", pid: pidBase, ppid: 0, image: "C:\\Users\\x\\.local\\bin\\claude.exe", ts: at },
+      { kind: "process", pid: pidBase + 1, ppid: pidBase, image: "C:\\Git\\bin\\bash.exe", commandLine: `bash -c "${cmd}"`, ts: at }
+    ];
+    const ingest = (ip, pidBase) => runWithContext({ ip, source: "endpoint" }, () => ingestEndpoint({ format: "native", body: batch(pidBase), host: `host-${ip}`, sensor: "test" }));
+    ingest("127.0.0.1", 91000);
+    const local = ofType("endpoint.process").find((e) => e.pid === 91001);
+    assert.equal(local.explainedBy, null, "a sensor on this machine was explained by a hook from 10.0.0.5");
+    ingest("10.0.0.5", 92000);
+    const remote = ofType("endpoint.process").find((e) => e.pid === 92001);
+    assert.ok(remote.explainedBy?.eventId, "the sensor on the hook's own machine is explained");
   });
 });
 
@@ -358,7 +395,7 @@ describe("over HTTP", () => {
   test("each sensor leaves a heartbeat, so the record shows monitoring ran", () => {
     const hb = ofType("endpoint.sensor");
     assert.ok(hb.length >= 1);
-    assert.equal(hb[0].sensor, "laptop-sensor");
+    assert.ok(hb.some((e) => e.sensor === "laptop-sensor"));
   });
 
   test("the send CLI ships a file and prints the counts", async () => {

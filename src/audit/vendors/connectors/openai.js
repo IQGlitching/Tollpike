@@ -32,6 +32,7 @@ export const openaiPlatform = {
   credentials: [{ env: "OPENAI_ADMIN_KEY", description: "OpenAI organization Admin key with Audit Logs: Read" }],
   settings: [{ key: "includeTenant", description: 'Set to "true" to also pull tenant-scoped events (SSO connections, tenant roles, policies)' }],
   defaultIntervalMinutes: 15,
+  cursorFromTs: (ts) => String(Math.floor(Date.parse(ts) / 1000)),
 
   async *pages({ state, config }) {
     const base = envBaseUrl(this.id, "https://api.openai.com");

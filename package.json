@@ -1,6 +1,6 @@
 {
   "name": "tollpike",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Routing infrastructure for AI. One OpenAI-compatible endpoint across 46 providers, with cost caps, 3-layer resilience, caching and guardrails.",
   "author": "IQGlitching",
   "type": "module",
@@ -29,7 +29,7 @@
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f tollpike",
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "npm run test:unit && npm run test:integration",
     "test:watch": "node --test --watch \"test/*.test.mjs\"",
     "test:unit": "node --test --test-concurrency=1 test/cache.test.mjs test/compression-dos.test.mjs test/compression-layers.test.mjs test/compression.test.mjs test/credential-endpoint-auth.test.mjs test/credential-store.test.mjs test/crypto.test.mjs test/csrf-hardening.test.mjs test/guardrails.test.mjs test/inbound.test.mjs test/ledger-chain.test.mjs test/memory.test.mjs test/quota.test.mjs test/request-shape.test.mjs test/resilience.test.mjs test/security-invariants.test.mjs test/strategies.test.mjs test/translate.test.mjs",
     "test:integration": "node --test --test-concurrency=1 test/env-loading.test.mjs test/adapters.integration.test.mjs test/resilience-http.test.mjs test/protocols.test.mjs test/hardening.test.mjs test/subsystems.test.mjs test/gateway.e2e.test.mjs test/audit.test.mjs test/audit-layer2.test.mjs test/audit-endpoint.test.mjs test/audit-vendors.test.mjs test/audit-grc.test.mjs",
@@ -65,10 +65,10 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "undici": "^6.28.0"
+    "express": "^4.22.3",
+    "undici": "^6.29.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.17"
   }
 }

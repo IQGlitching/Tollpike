@@ -183,7 +183,7 @@ describe("compression: output is unchanged by the rewrite", () => {
     ["trailing whitespace before newline", "a   \nb\t\t\nc", "a\nb\nc"],
     ["three or more newlines collapse to two", "a\n\n\n\n\nb", "a\n\nb"],
     ["exactly two newlines are preserved", "a\n\nb", "a\n\nb"],
-    ["consecutive duplicate lines collapse", "x\nx\nx\ny", "x\ny"],
+    ["consecutive duplicate lines are kept (collapsing them changed meaning)", "x\nx\nx\ny", "x\nx\nx\ny"],
     ["a whitespace-only line becomes a kept blank", "a\n \na", "a\n\na"],
     ["text needing no change is returned as-is", "hello world", "hello world"],
     ["a leading blank line is preserved", "\na", "\na"],

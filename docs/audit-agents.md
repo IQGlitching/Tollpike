@@ -96,7 +96,7 @@ record it. Choose it where an unrecorded action is worse than a stopped one.
 | Claude Code event | Recorded as | What Tollpike can do |
 |---|---|---|
 | `PreToolUse` | `tool.requested`, with the permission mode | `block` answers deny with the reason, `ask` forces a permission prompt |
-| `PostToolUse` | `tool.executed`, with the real result | a result rule in `block` (prompt injection in what came back) keeps the result from the model |
+| `PostToolUse` | `tool.executed`, with the real result | a result rule in `block` (prompt injection in what came back) answers `block` with a warning to the model; the result has already reached Claude Code, so it is recorded as warned, not withheld (the MCP proxy can withhold) |
 | `PostToolUseFailure` | `tool.executed`, status error | records only |
 | `UserPromptSubmit` | `prompt.submitted`, stored as a hash | `block` on a prompt rule (a credential pasted in) stops it being sent |
 | `SessionStart`, `SessionEnd` | `session.start`, `session.end` | records only |
@@ -130,7 +130,10 @@ call on the way down and back.
 ```
 
 `${NAME}` is filled from the environment of the process running the proxy, so
-tokens can stay in the environment instead of in the file. This file is
+tokens can stay in the environment instead of in the file. A stdio server
+starts with a base environment (PATH, temp and home directories, locale,
+proxy and CA settings) plus the variables its `env` names, never the
+gateway's own: provider keys and `TOLLPIKE_SECRET` are not passed on. This file is
 operator configuration: no agent and no MCP tool can write it. Check it with:
 
 ```bash
@@ -166,7 +169,7 @@ tollpike mcp-proxy --check
 - Hook events are reported by the agent's runtime. A compromised machine
   could send false ones, but only under its own agent key, so attribution
   holds. The MCP proxy executes the call itself, so its record is first-hand.
-- With no agent keys and no operator key, the hook endpoint accepts anyone
-  who can reach the port. Issue agent keys before relying on the record.
+- With no agent keys, the hook endpoint accepts keyless events from this
+  machine, unattributed. Issue agent keys before relying on the record.
 - Neither capture point covers activity on the machine outside an agent's
   tools. Endpoint logs are the next layer.

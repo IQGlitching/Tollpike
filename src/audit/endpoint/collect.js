@@ -263,7 +263,7 @@ export async function tailFile({ file, format, url, key, fromStart = false, inte
       state = { identity, offset: !state && !fromStart ? st.size : 0 };
     }
     if (st.size > state.offset) {
-      const length = Math.min(st.size - state.offset, 8 * 1024 * 1024);
+      const length = Math.min(st.size - state.offset, 4 * 1024 * 1024);
       const fd = fs.openSync(file, "r");
       const buf = Buffer.alloc(length);
       fs.readSync(fd, buf, 0, length, state.offset);

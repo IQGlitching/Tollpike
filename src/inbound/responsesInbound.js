@@ -30,11 +30,13 @@ function inputToMessages(input) {
       continue;
     }
     if (item.type === "function_call") {
-      out.push({
-        role: "assistant",
-        content: null,
-        tool_calls: [{ id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments || "{}" } }]
-      });
+      const call = { id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments || "{}" } };
+      // Parallel calls arrive as consecutive items, and a chat history needs
+      // them on ONE assistant turn: one assistant message per call, each
+      // followed by nothing, is rejected by every provider.
+      const prev = out[out.length - 1];
+      if (prev?.role === "assistant") prev.tool_calls = [...(prev.tool_calls || []), call];
+      else out.push({ role: "assistant", content: null, tool_calls: [call] });
       continue;
     }
 
@@ -64,13 +66,21 @@ export function fromResponsesRequest(body = {}) {
             function: { name: t.name, description: t.description, parameters: t.parameters }
           }))
       : undefined,
-    tool_choice: body.tool_choice,
+    tool_choice: toolChoiceOf(body.tool_choice),
     top_p: body.top_p,
     // Responses spells JSON mode as text.format rather than response_format.
     // Dropping it here would put this dialect back where the other three were:
     // accepting the request and answering with prose.
     response_format: responseFormatOf(body.text?.format)
   };
+}
+
+// Responses names a forced function flat ({ type, name }); chat nests it.
+function toolChoiceOf(choice) {
+  if (choice && typeof choice === "object" && choice.type === "function" && choice.name && !choice.function) {
+    return { type: "function", function: { name: choice.name } };
+  }
+  return choice;
 }
 
 // text.format carries the schema flat; chat nests it under json_schema.
@@ -131,25 +141,42 @@ export function toResponsesResponse(response, requestedModel) {
 
 const sse = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
+// Each output item (the text message, every function call) is announced,
+// streamed and closed in the order the Responses API defines. Function calls
+// used to be dropped from the stream entirely, so Codex, which streams, never
+// saw a tool call it had been given.
 export async function* toResponsesStream(routerStream, requestedModel) {
   const responseId = `resp_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
-  const itemId = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const newId = (prefix) => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
   const base = { id: responseId, object: "response", model: requestedModel, status: "in_progress" };
   let seq = 0;
-  let text = "";
-  let started = false;
+  const ev = (type, data) => sse(type, { type, sequence_number: seq++, ...data });
+  const items = []; // in output order: { kind, index, id, ...state }
+  let message = null; // the text item, once text arrives
+  let current = null; // the item being streamed now
+  const calls = new Map(); // tool_call index -> item
+  let usage = null;
+  let finish = null;
+
+  const closeItem = function* (item) {
+    if (!item || item.closed) return;
+    item.closed = true;
+    if (item.kind === "message") {
+      yield ev("response.output_text.done", { item_id: item.id, output_index: item.index, content_index: 0, text: item.text });
+      yield ev("response.content_part.done", { item_id: item.id, output_index: item.index, content_index: 0, part: { type: "output_text", text: item.text, annotations: [] } });
+    } else {
+      yield ev("response.function_call_arguments.done", { item_id: item.id, output_index: item.index, arguments: item.arguments });
+    }
+    yield ev("response.output_item.done", { output_index: item.index, item: finalItem(item) });
+  };
+  const finalItem = (item) =>
+    item.kind === "message"
+      ? { type: "message", id: item.id, status: "completed", role: "assistant", content: [{ type: "output_text", text: item.text, annotations: [] }] }
+      : { type: "function_call", id: item.id, call_id: item.callId, name: item.name, arguments: item.arguments || "{}", status: "completed" };
 
   try {
+    yield ev("response.created", { response: { ...base, output: [] } });
     for await (const event of routerStream) {
-      if (!started) {
-        started = true;
-        yield sse("response.created", { type: "response.created", sequence_number: seq++, response: { ...base, output: [] } });
-        yield sse("response.output_item.added", {
-          type: "response.output_item.added", sequence_number: seq++, output_index: 0,
-          item: { type: "message", id: itemId, status: "in_progress", role: "assistant", content: [] }
-        });
-      }
-
       let delta = null;
       if (event.type === "chunk") delta = event.chunk;
       else if (event.type === "raw-line") {
@@ -160,30 +187,56 @@ export async function* toResponsesStream(routerStream, requestedModel) {
         try { delta = JSON.parse(payload); } catch { continue; }
       }
       if (!delta) continue;
+      if (delta.usage) usage = delta.usage;
+      const choice = delta.choices?.[0];
+      if (choice?.finish_reason) finish = choice.finish_reason;
 
-      const chunk = delta.choices?.[0]?.delta?.content;
+      const chunk = choice?.delta?.content;
       if (chunk) {
-        text += chunk;
-        yield sse("response.output_text.delta", {
-          type: "response.output_text.delta", sequence_number: seq++,
-          item_id: itemId, output_index: 0, content_index: 0, delta: chunk
-        });
+        // Text after a tool call starts a new message item; a closed one
+        // takes no more deltas.
+        if (!message || message.closed) {
+          yield* closeItem(current);
+          message = { kind: "message", index: items.length, id: newId("msg"), text: "" };
+          items.push(message);
+          current = message;
+          yield ev("response.output_item.added", { output_index: message.index, item: { type: "message", id: message.id, status: "in_progress", role: "assistant", content: [] } });
+          yield ev("response.content_part.added", { item_id: message.id, output_index: message.index, content_index: 0, part: { type: "output_text", text: "", annotations: [] } });
+        }
+        message.text += chunk;
+        yield ev("response.output_text.delta", { item_id: message.id, output_index: message.index, content_index: 0, delta: chunk });
+      }
+
+      for (const tc of choice?.delta?.tool_calls || []) {
+        const key = Number.isInteger(tc.index) ? tc.index : tc.id || calls.size;
+        let item = calls.get(key);
+        if (!item) {
+          yield* closeItem(current);
+          item = { kind: "call", index: items.length, id: newId("fc"), callId: tc.id || newId("call"), name: tc.function?.name || "", arguments: "" };
+          calls.set(key, item);
+          items.push(item);
+          current = item;
+          yield ev("response.output_item.added", { output_index: item.index, item: { type: "function_call", id: item.id, call_id: item.callId, name: item.name, arguments: "", status: "in_progress" } });
+        }
+        const args = tc.function?.arguments;
+        if (args) {
+          item.arguments += args;
+          yield ev("response.function_call_arguments.delta", { item_id: item.id, output_index: item.index, delta: args });
+        }
       }
     }
 
-    if (!started) {
-      yield sse("response.created", { type: "response.created", sequence_number: seq++, response: { ...base, output: [] } });
-    }
-    yield sse("response.output_text.done", {
-      type: "response.output_text.done", sequence_number: seq++,
-      item_id: itemId, output_index: 0, content_index: 0, text
-    });
-    yield sse("response.completed", {
-      type: "response.completed", sequence_number: seq++,
+    for (const item of items) yield* closeItem(item);
+    const text = items.filter((i) => i.kind === "message").map((i) => i.text).join("");
+    const truncated = finish === "length";
+    yield ev(truncated ? "response.incomplete" : "response.completed", {
       response: {
-        ...base, status: "completed",
-        output: [{ type: "message", id: itemId, status: "completed", role: "assistant", content: [{ type: "output_text", text, annotations: [] }] }],
-        output_text: text
+        ...base,
+        status: truncated ? "incomplete" : "completed",
+        ...(truncated ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
+        output: items.map(finalItem),
+        output_text: text,
+        ...(usage ? { usage: { input_tokens: usage.prompt_tokens ?? 0, output_tokens: usage.completion_tokens ?? 0, total_tokens: usage.total_tokens ?? (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0) } } : {})
       }
     });
   } catch (err) {

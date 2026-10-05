@@ -38,6 +38,7 @@ USAGE
   tollpike agents list    the agent key register
   tollpike agents revoke  revoke an agent's key by id or name
   tollpike audit          audit coverage, gaps and rule modes
+  tollpike audit summary  counts by type, agent and rule as JSON (--from, --to)
   tollpike audit events   recent audit events (--flagged, --unreviewed, --agent, --type)
   tollpike audit verify   check the audit log's tamper-evident hash chain
   tollpike audit review   sign off a flagged event (--by <name> --note <text>)
@@ -52,6 +53,7 @@ USAGE
   tollpike endpoint sysmon   ship Sysmon events (Windows) to the gateway
   tollpike endpoint tail F --format auditd|osquery|falco  follow a sensor log
   tollpike endpoint snapshot send the current process list
+  tollpike endpoint send --format F [file]  ship one batch (stdin when no file)
   tollpike endpoint connections  flag agents reaching providers directly (Windows, no Sysmon)
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
@@ -103,6 +105,10 @@ if (!process.env.TOLLPIKE_DATA_DIR) {
 // by the gateway into its logs.
 if (cmd === "key" || cmd === "panel") {
   const settings = await import(pathToFileURL(path.join(root, "src", "storage", "settings.js")).href);
+  // Loaded for its settings listener: creating or rotating the operator key
+  // here is an admin change like any other, and without it the CLI changed the
+  // key with nothing on the record.
+  await import(pathToFileURL(path.join(root, "src", "audit", "index.js")).href);
   const sub = argv[argv.indexOf(cmd) + 1];
   const made = settings.ensureOperatorKey();
   if (made.unreadable) {
@@ -110,7 +116,8 @@ if (cmd === "key" || cmd === "panel") {
     process.exit(1);
   }
   const port = process.env.PORT || 20128;
-  const host = process.env.BIND_HOST && process.env.BIND_HOST !== "0.0.0.0" ? process.env.BIND_HOST : "127.0.0.1";
+  // A wildcard bind (0.0.0.0, ::) is not an address a browser can open.
+  const host = process.env.BIND_HOST && !["0.0.0.0", "::", "[::]"].includes(process.env.BIND_HOST) ? process.env.BIND_HOST : "127.0.0.1";
   const base = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
 
   if (cmd === "key" && sub === "rotate") {
@@ -136,6 +143,15 @@ if (cmd === "key" || cmd === "panel") {
       headers: { authorization: `Bearer ${settings.getSettings().gatewayApiKey}`, "content-type": "application/json" },
       body: "{}"
     });
+    if (res.status === 401) {
+      // Reachable, but this CLI holds a different operator key: it reads one
+      // data directory and the running gateway another (a checkout started
+      // with npm start keeps its state in ./data, the CLI in ~/.tollpike).
+      console.error(`The gateway at ${base} did not accept this CLI's operator key.
+This CLI reads ${process.env.TOLLPIKE_DATA_DIR}. A gateway started another way may use a different
+data directory: run this with TOLLPIKE_DATA_DIR set to the gateway's, or start the gateway with: tollpike`);
+      process.exit(1);
+    }
     if (!res.ok) throw new Error(`the gateway answered ${res.status}`);
     code = (await res.json()).code;
   } catch (err) {
@@ -160,7 +176,7 @@ if (cmd === "where") {
   console.log(`version       ${pkg.version}
 install       ${root}
 data dir      ${process.env.TOLLPIKE_DATA_DIR}
-env file      ${process.env.TOLLPIKE_ENV_FILE || path.join(HOME, ".env") + "  then  " + path.resolve(process.cwd(), ".env")}
+env file      ${process.env.TOLLPIKE_ENV_FILE || path.join(HOME, ".env") + "  then  " + path.join(root, ".env")}
 control panel http://${host}:${port}/panel
 api base      http://${host}:${port}/v1`);
   process.exit(0);

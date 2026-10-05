@@ -14,7 +14,8 @@ import { pathToFileURL } from "node:url";
 import crypto from "node:crypto";
 
 const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-audit-"));
-const PORT = 20791;
+const { freePort } = await import("./fixtures/free-port.mjs");
+const PORT = await freePort();
 const BASE = `http://127.0.0.1:${PORT}`;
 process.env.TOLLPIKE_DATA_DIR = DATA_DIR;
 process.env.TOLLPIKE_ENV_FILE = path.join(DATA_DIR, "no-such.env");
@@ -240,6 +241,35 @@ describe("rules", () => {
     rules.evaluate("tool_call", "rm " + "-r ".repeat(50_000));
     assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0}ms`);
   });
+
+  // Tool arguments arrive as JSON, where a Windows path has doubled
+  // backslashes and a command sits inside quotes. Rules see the unescaped
+  // values one per line, so the JSON spelling cannot hide a match.
+  test("rules fire on JSON tool arguments, Windows paths included", () => {
+    const fired = (tool, input) => rules.evaluate("tool_call", `${tool}\n${audit.ruleText(input)}`, {}).map((f) => f.rule);
+    assert.ok(fired("Read", { file_path: "C:\\Users\\me\\.ssh\\id_ed25519" }).includes("path.sensitive"));
+    assert.ok(fired("Read", { file_path: "C:\\Users\\me\\.aws\\credentials" }).includes("path.sensitive"));
+    assert.ok(fired("Read", { file_path: "C:\\Windows\\System32\\config\\SAM" }).includes("path.sensitive"));
+    assert.ok(fired("Bash", { command: "reg save HKLM\\SAM sam.hiv" }).includes("path.sensitive"));
+    assert.ok(fired("Bash", { command: 'psql -c "DELETE FROM users"' }).includes("shell.destructive"));
+    assert.ok(fired("Bash", JSON.stringify({ command: "rm -rf /" })).includes("shell.destructive"), "a JSON string is parsed first");
+  });
+
+  test("secrets in JSON shape, GitHub tokens and bearer headers are redacted", () => {
+    const out = rules.redactForStorage('{"env":{"password":"CorrectHorseBattery9"}} ghp_abcdefghijklmnopqrstuvwxyz0123456789 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9abcdef');
+    assert.ok(!out.includes("CorrectHorseBattery9"));
+    assert.ok(!out.includes("ghp_abcdefghij"));
+    assert.ok(!out.includes("eyJhbGciOiJIUzI1NiJ9abcdef"));
+  });
+
+  test("a vendor event with a card-like number is kept, its strings redacted by value and by key", () => {
+    const ev = audit.recordVendorEvent({ vendor: "test-vendor", vendorId: `luhn-${Date.now()}`, action: "x",
+      details: { at: 4111111111111111, note: "card 4111 1111 1111 1111", auth: { password: "CorrectHorseBattery9" } } });
+    assert.ok(ev, "the event was dropped");
+    assert.equal(ev.details.at, 4111111111111111, "numbers stay numbers");
+    assert.ok(!ev.details.note.includes("4111 1111"));
+    assert.equal(ev.details.auth.password, "[REDACTED]");
+  });
 });
 
 describe("hash-chained log", () => {
@@ -296,6 +326,42 @@ describe("hash-chained log", () => {
     assert.equal(v.intact, true, JSON.stringify(v));
     assert.deepEqual(events().slice(-2).map((e) => e.type), ["test.other-process", "test.after-other-process"]);
   });
+
+  test("processes appending at the same moment do not fork the chain", async () => {
+    const before = log.verifyAudit().total;
+    const script = `const l = await import(${JSON.stringify(pathToFileURL(path.join(root, "src/audit/log.js")).href)}); for (let i = 0; i < 40; i++) l.appendEvent({ type: "test.race", i });`;
+    const { spawn } = await import("node:child_process");
+    const runs = Array.from({ length: 4 }, () => new Promise((resolve) => {
+      const p = spawn(process.execPath, ["--input-type=module", "-e", script], { env: process.env, stdio: ["ignore", "ignore", "pipe"] });
+      let err = "";
+      p.stderr.on("data", (d) => (err += d));
+      p.on("close", (code) => resolve({ code, err }));
+    }));
+    for (let i = 0; i < 40; i++) log.appendEvent({ type: "test.race", i, parent: true });
+    for (const r of await Promise.all(runs)) assert.equal(r.code, 0, r.err);
+    log.appendEvent({ type: "test.after-race" });
+    const v = log.verifyAudit();
+    assert.equal(v.intact, true, JSON.stringify(v));
+    assert.equal(v.total, before + 5 * 40 + 1);
+  });
+
+  test("a torn last line from a crash does not swallow the next event", () => {
+    const head = log.logPath.replace("audit.jsonl", "audit.head");
+    const saved = [fs.readFileSync(log.logPath), fs.readFileSync(head)];
+    try {
+      fs.appendFileSync(log.logPath, '{"v":1,"id":"evt_torn","ty');
+      log.appendEvent({ type: "test.after-torn" });
+      assert.equal(lastOf("test.after-torn")?.type, "test.after-torn", "the new row parsed on its own line");
+      const v = log.verifyAudit();
+      assert.equal(v.intact, false, "the torn row itself is still reported");
+      assert.equal(v.brokenAt.length, 1);
+      assert.equal(v.truncated, false, "the anchor counted the torn row");
+    } finally {
+      fs.writeFileSync(log.logPath, saved[0]);
+      fs.writeFileSync(head, saved[1]);
+      log._resetAuditState();
+    }
+  });
 });
 
 describe("agent keys", () => {
@@ -329,6 +395,24 @@ describe("agent keys", () => {
     const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { env: process.env, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     assert.equal(agents.matchAgentKey(r.stdout.trim())?.agent?.name, "from-cli");
+  });
+
+  test("an unreadable agents file fails closed and is never overwritten", () => {
+    const file = path.join(DATA_DIR, "agents.json");
+    const saved = fs.readFileSync(file);
+    const k = agents.createAgent("before-corrupt").key;
+    const good = fs.readFileSync(file);
+    try {
+      fs.writeFileSync(file, good.toString().slice(0, 40));
+      agents._resetAgentsCache();
+      assert.equal(agents.hasAgentKeys(), true, "keys stay required");
+      assert.equal(agents.matchAgentKey(k), null);
+      assert.equal(agents.createAgent("after-corrupt").ok, false);
+      assert.equal(fs.readFileSync(file, "utf8"), good.toString().slice(0, 40), "the damaged file was overwritten");
+    } finally {
+      fs.writeFileSync(file, saved);
+      agents._resetAgentsCache();
+    }
   });
 
   after(() => {
@@ -425,6 +509,18 @@ describe("recording model calls", () => {
     assert.equal(audit.reviewQueue().length, queued - 1);
     assert.equal(audit.reviewEvent({ eventId: r.review.id, reviewer: "Faisal", decision: "acknowledged" }).ok, false);
     assert.equal(log.verifyAudit().intact, true, "reviews are appended, never edits");
+  });
+
+  test("an escalated event stays queued until it is resolved, and only flagged events take a review", () => {
+    const ev = audit.reviewQueue()[0];
+    assert.ok(ev, "there is something to review");
+    const queued = audit.reviewQueue().length;
+    assert.equal(audit.reviewEvent({ eventId: ev.id, reviewer: "Faisal", decision: "escalated" }).ok, true);
+    assert.equal(audit.reviewQueue().length, queued, "escalating closed the event");
+    assert.equal(audit.reviewEvent({ eventId: ev.id, reviewer: "Security", decision: "resolved" }).ok, true);
+    assert.equal(audit.reviewQueue().length, queued - 1);
+    const quiet = events().find((e) => !e.flagged && e.type !== "review");
+    assert.equal(audit.reviewEvent({ eventId: quiet.id, reviewer: "Faisal", decision: "acknowledged" }).ok, false);
   });
 
   test("the evidence pack carries verification, controls and its own limitations", () => {
@@ -644,7 +740,8 @@ describe("over HTTP", () => {
     const text = await r.text();
     const payload = JSON.parse(text.includes("data:") ? text.split("\n").find((l) => l.startsWith("data:")).slice(5) : text);
     const names = payload.result.tools.map((t) => t.name);
-    assert.ok(names.includes("audit_status"));
+    assert.ok(!names.some((n) => n.startsWith("audit_")), "the audit scope is operator only: an agent must not read the record watching it");
+    assert.ok(names.includes("settings_get"));
     assert.ok(!names.includes("settings_patch"), "no mutating tool for an agent");
     assert.ok(!names.includes("audit_review"), "an agent cannot sign off its own findings");
   });

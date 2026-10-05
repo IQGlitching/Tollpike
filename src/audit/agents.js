@@ -44,17 +44,29 @@ function stamp() {
 function read() {
   const now = stamp();
   if (cache && now === cacheStamp) return cache;
-  try {
-    const raw = JSON.parse(fs.readFileSync(agentsPath, "utf8"));
-    cache = Array.isArray(raw.agents) ? raw : { agents: [] };
-  } catch {
-    cache = { agents: [] };
+  // A file that exists but cannot be read is not "no agents". Reading it as
+  // empty would drop the key requirement on the model endpoints and let the
+  // next issued key overwrite every other agent. Instead it fails closed: no
+  // key matches, keys stay required, and nothing writes over it.
+  if (now === "none") cache = { agents: [] };
+  else {
+    try {
+      const raw = JSON.parse(fs.readFileSync(agentsPath, "utf8"));
+      if (!Array.isArray(raw.agents)) throw new Error("no agents list");
+      cache = raw;
+    } catch (err) {
+      if (!cache?.corrupt) console.error(`[audit] ${agentsPath} could not be read (${err.message}); agent keys are refused until it is fixed or moved away`);
+      cache = { agents: [], corrupt: true };
+    }
   }
   cacheStamp = now;
   return cache;
 }
 
+export class AgentsFileUnreadable extends Error {}
+
 function write(state) {
+  if (read().corrupt) throw new AgentsFileUnreadable(`${agentsPath} could not be read, so it was not overwritten. Fix it or move it away first.`);
   fs.mkdirSync(dataDir, { recursive: true });
   const tmp = `${agentsPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
@@ -90,11 +102,13 @@ export function listAgents({ includeRevoked = true } = {}) {
 
 /** True once any active agent key exists: model endpoints then require a key. */
 export function hasAgentKeys() {
+  if (read().corrupt) return true;
   return read().agents.some((a) => !a.revokedAt && (a.kind || "agent") === "agent");
 }
 
 /** True once any active sensor key exists: endpoint ingest then requires a key. */
 export function hasSensorKeys() {
+  if (read().corrupt) return true;
   return read().agents.some((a) => !a.revokedAt && a.kind === "sensor");
 }
 
@@ -113,6 +127,7 @@ export function validateAgentName(name) {
  */
 export function createAgent(name, { note, kind = "agent" } = {}) {
   if (!KINDS.includes(kind)) return { ok: false, error: `kind must be one of: ${KINDS.join(", ")}` };
+  if (read().corrupt) return { ok: false, error: `${agentsPath} could not be read, so no key was issued. Fix it or move it away first.` };
   const v = validateAgentName(name);
   if (!v.ok) return v;
   const state = read();
@@ -132,6 +147,7 @@ export function createAgent(name, { note, kind = "agent" } = {}) {
 
 export function revokeAgent(idOrName) {
   const state = read();
+  if (state.corrupt) return { ok: false, error: `${agentsPath} could not be read, so nothing was revoked; until it is fixed no agent key is accepted.` };
   const target = state.agents.find((a) => !a.revokedAt && (a.id === idOrName || a.name.toLowerCase() === String(idOrName).toLowerCase()));
   if (!target) return { ok: false, error: `No active agent "${idOrName}".` };
   const agents = state.agents.map((a) => (a === target ? { ...a, revokedAt: new Date().toISOString() } : a));

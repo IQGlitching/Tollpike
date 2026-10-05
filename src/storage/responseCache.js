@@ -44,6 +44,10 @@ export function cacheKey(request, callerId = "anonymous") {
     tools: request.tools,
     tool_choice: request.tool_choice,
     max_tokens: request.max_tokens,
+    // Unset and 0 are different requests: unset is the provider's default,
+    // usually 1. They shared a key, so a deterministic caller could be served
+    // a sampled answer, or the reverse.
+    temperature: request.temperature ?? null,
     sampling: pickSampling(request)
   });
   return crypto.createHash("sha256").update(payload).digest("hex");

@@ -33,11 +33,16 @@ import { rtk, RTK_DEFAULTS, trimTrailingHorizontal } from "./rtk.js";
 import { caveman } from "./caveman.js";
 import { estimateTokens } from "../providers/normalize.js";
 
+// Safe by default. History truncation (historyWindow > 0) and caveman both
+// change what the model is told, so they are opt-in: a window of 12 used to be
+// on for everyone, and an agent loop longer than that silently lost its
+// original task. The structural layers that stay on never touch fenced code
+// and never drop information without saying so.
 export const COMPRESSION_DEFAULTS = {
   enabled: true,
-  historyWindow: 12,
+  historyWindow: 0, // 0 keeps every message
   rtk: { enabled: true, ...RTK_DEFAULTS },
-  caveman: { enabled: true, level: "light", scope: "tools+history" }
+  caveman: { enabled: false, level: "light", scope: "tools+history" }
 };
 
 export const CAVEMAN_LEVELS = ["off", "light", "aggressive"];
@@ -76,12 +81,34 @@ function basePass(text) {
     }
 
     blankRun = 0;
-    // Consecutive identical non-blank lines collapse to one.
-    if (line === deduped[deduped.length - 1]) continue;
+    // Repeated lines are kept. Collapsing them silently changed meaning
+    // (`count += 1` twice is not once), and RTK's runs pass already folds
+    // repeats while keeping their count when it is on.
     deduped.push(line);
   }
 
   return deduped.join("\n");
+}
+
+// Fenced code is protected byte-exact by every layer, not only caveman: the
+// structural passes used to collapse repeated lines inside a fence too. An
+// unterminated fence protects everything after it.
+const FENCE = /```[\s\S]*?```|~~~[\s\S]*?~~~|```[\s\S]*$|~~~[\s\S]*$/g;
+function outsideFences(text, fn) {
+  if (!text.includes("```") && !text.includes("~~~")) return fn(text);
+  let out = "";
+  let last = 0;
+  FENCE.lastIndex = 0;
+  for (let m; (m = FENCE.exec(text)) !== null; ) {
+    // Spaces that run straight into the fence are mid-line, not trailing,
+    // so they are kept as they are.
+    const before = text.slice(last, m.index);
+    const tail = before.match(/[ \t]*$/)[0];
+    out += fn(before.slice(0, before.length - tail.length)) + tail + m[0];
+    last = m.index + m[0].length;
+    if (m[0].length === 0) FENCE.lastIndex++;
+  }
+  return out + fn(text.slice(last));
 }
 
 /**
@@ -98,10 +125,10 @@ export function compressText(text, options = {}) {
   if (!text || typeof text !== "string") return text;
 
   let out = text;
-  // RTK's `runs` pass supersedes the base dedupe — it keeps the repeat count
-  // instead of discarding it — so the two are alternatives, not a stack.
-  if (options.rtk) out = rtk(out, options.rtk === true ? {} : options.rtk);
-  else out = basePass(out);
+  // RTK's `runs` pass supersedes the base pass (it folds repeats and keeps the
+  // count), so the two are alternatives, not a stack.
+  if (options.rtk) out = outsideFences(out, (t) => rtk(t, options.rtk === true ? {} : options.rtk));
+  else out = outsideFences(out, basePass);
 
   const level = options.caveman === true ? "light" : options.caveman;
   if (level && level !== "off") out = caveman(out, { level });
@@ -139,6 +166,14 @@ function contentLength(content) {
 // business crashing on shapes it can simply measure as zero.
 function totalChars(messages) {
   return messages.reduce((n, m) => n + contentLength(m?.content), 0);
+}
+
+// A tool result in either dialect: OpenAI's role "tool"/"function", or
+// Anthropic's user message carrying tool_result blocks.
+function isToolResult(m) {
+  if (!m || typeof m !== "object") return false;
+  if (m.role === "tool" || m.role === "function") return true;
+  return m.role === "user" && Array.isArray(m.content) && m.content.some((p) => p?.type === "tool_result");
 }
 
 // Which layers apply to this message, given its role and how recent it is.
@@ -189,10 +224,21 @@ export function compressMessagesWithStats(messages, options = {}) {
   const input = Array.isArray(messages) ? messages : [];
   const beforeChars = totalChars(input);
 
-  // 1. Forget old turns. System messages are exempt and always survive.
+  // 1. Forget old turns, only when a window is set (0 keeps everything).
+  // System messages always survive, and so does the first user message: it is
+  // usually the task itself, and an agent that loses it keeps working on
+  // nothing. The cut never starts on a tool result whose call was dropped,
+  // because providers reject a tool message with no preceding tool call.
   const systemMsgs = input.filter((m) => m?.role === "system");
   const nonSystem = input.filter((m) => m?.role !== "system");
-  const kept = nonSystem.length > historyWindow ? nonSystem.slice(-historyWindow) : nonSystem;
+  let kept = nonSystem;
+  if (historyWindow > 0 && nonSystem.length > historyWindow) {
+    let start = nonSystem.length - historyWindow;
+    while (start < nonSystem.length && isToolResult(nonSystem[start])) start++;
+    kept = nonSystem.slice(start);
+    const task = nonSystem.find((m) => m?.role === "user" && !isToolResult(m));
+    if (task && !kept.includes(task)) kept = [task, ...kept];
+  }
   const droppedMessages = nonSystem.length - kept.length;
   const truncated = [...systemMsgs, ...kept];
   const afterTruncateChars = totalChars(truncated);

@@ -6,9 +6,9 @@ services:
     restart: unless-stopped
     ports:
       # Published on loopback only. `"${PORT}:20128"` binds 0.0.0.0 on the
-      # host, which puts the control panel API on the LAN — and it is
-      # unauthenticated until a gateway key is set. Override BIND_ADDR
-      # deliberately if you actually want it reachable from elsewhere.
+      # host, which puts the gateway on the LAN. The control panel API always
+      # needs the operator key, but keep it off the network unless you mean
+      # it. Override BIND_ADDR deliberately if you want it reachable.
       - "${BIND_ADDR:-127.0.0.1}:${PORT:-20128}:20128"
     # The PROJECT .env, which after the credential move holds only non-secret
     # local settings. Real keys now live in ~/.tollpike/.env on the host, which
@@ -23,8 +23,16 @@ services:
     #
     # Putting the keys back into this .env would work and would undo the point
     # of moving them, since the build context and the repo both include it.
+    # Optional: compose used to refuse to start without one.
     env_file:
-      - .env
+      - path: .env
+        required: false
+    # Set here so they beat the .env: a PORT or BIND_HOST=127.0.0.1 meant for
+    # running on the host would otherwise bind the container's own loopback,
+    # where the published port cannot reach it.
+    environment:
+      PORT: "20128"
+      BIND_HOST: 0.0.0.0
     volumes:
       # Persists usage.jsonl + settings.json (provider toggles, budget
       # caps, gateway key) across container restarts/recreates.

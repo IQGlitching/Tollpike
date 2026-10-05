@@ -225,8 +225,8 @@ describe("compression pipeline", () => {
     assert.ok(out[0].content[0].text.length < multimodal[0].content[0].text.length);
   });
 
-  test("compressText with no options is still the original base pass", () => {
-    assert.equal(compressText("x\nx\nx\ny"), "x\ny");
+  test("compressText with no options normalises whitespace and keeps every line", () => {
+    assert.equal(compressText("x\nx\nx\ny"), "x\nx\nx\ny");
     assert.equal(compressText("a\n\n\n\n\nb"), "a\n\nb");
   });
 });

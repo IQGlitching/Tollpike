@@ -1,6 +1,7 @@
 import { providers, resolveExplicit, priceFor } from "../providers/registry.js";
 import { callOpenAICompatible, streamOpenAICompatible } from "../providers/openaiCompatible.js";
 import { ProviderError, readWithStallTimeout } from "../providers/http.js";
+import { clientGone } from "../audit/context.js";
 import { callAnthropic, streamAnthropic } from "../providers/anthropic.js";
 import { callGemini, streamGemini } from "../providers/gemini.js";
 import * as resilience from "./resilience.js";
@@ -176,6 +177,24 @@ export function publicAttempts(attempts = []) {
   return attempts.map(publicAttempt);
 }
 
+// When every provider that was tried refused the request itself (400, 413,
+// 422), the request is what is wrong, and a 502 "all providers failed" told
+// the caller to retry something that can never succeed. Their status is
+// returned instead. Upstream bodies still stay out of the response.
+const REQUEST_ERRORS = new Set([400, 413, 422]);
+function allProvidersFailed(attempts, stream) {
+  const tried = attempts.filter((a) => !a.skipped && !a.ok);
+  const statuses = tried.map((a) => a.upstreamStatus);
+  const error = new Error(`All candidate providers failed or were unavailable${stream ? " for streaming" : ""}`);
+  error.status = 502;
+  if (tried.length && statuses.every((st) => REQUEST_ERRORS.has(st))) {
+    error.status = statuses[0];
+    error.message = `Every provider tried rejected the request as invalid (HTTP ${statuses[0]}). Check the request: its parameters, size or model name.`;
+  }
+  error.attempts = attempts;
+  return error;
+}
+
 function summarizeError(err) {
   if (err instanceof ProviderError) return `provider returned HTTP ${err.status}`;
   return err?.name === "AbortError" ? "request aborted" : "upstream request failed";
@@ -263,6 +282,10 @@ export async function routeChatCompletion(request) {
           recordModelCall(request, response, { attempts: finalAttempts, provider: provider.id, model });
           return { response, attempts: finalAttempts };
         } catch (err) {
+          // The client hung up: stop here. Moving on would bill another
+          // provider for an answer nobody reads, and recording it as a failure
+          // would mark a healthy provider down.
+          if (clientGone()) throw err;
           lastError = err;
           // A failed call still consumed the vendor's rate-limit budget —
           // at essentially every provider a 429 or 500 counts against it. Not
@@ -293,14 +316,13 @@ export async function routeChatCompletion(request) {
         error: lastError?.message,
         errorSummary: summarizeError(lastError),
         failureLayer: layer,
+        upstreamStatus: lastError instanceof ProviderError ? lastError.status : undefined,
         retryable: lastError instanceof ProviderError ? lastError.retryable : false
       });
     }
   }
 
-  const error = new Error("All candidate providers failed or were unavailable");
-  error.status = 502;
-  error.attempts = attempts;
+  const error = allProvidersFailed(attempts, false);
   recordModelFailure(request, error);
   throw error;
 }
@@ -353,6 +375,7 @@ export async function* routeChatCompletionStream(request) {
       // before moving on, or every failed candidate leaves its estimate held
       // against the cap for the rest of the month.
       release();
+      if (clientGone()) throw err;
       const layer = resilience.classifyAndRecord(provider.id, connection.id, model, err);
       recordFreeUsage(provider.id, { tokens: 0 }); // the attempt reached the vendor
       attempts.push({
@@ -362,7 +385,8 @@ export async function* routeChatCompletionStream(request) {
         strategy,
         error: err.message,
         errorSummary: summarizeError(err),
-        failureLayer: layer
+        failureLayer: layer,
+        upstreamStatus: err instanceof ProviderError ? err.status : undefined
       });
       continue; // try next candidate — connection never opened successfully
     }
@@ -397,7 +421,9 @@ export async function* routeChatCompletionStream(request) {
     const commitUsage = () => {
       const estimated = !reportedUsage;
       const promptTokens = reportedUsage?.prompt_tokens ?? estimateTokens(promptTextOf(request));
-      const completionTokens = reportedUsage?.completion_tokens ?? estimateTokens(completionText);
+      // Tool-call arguments are output too: an agent turn that is all tool call
+      // used to be estimated at zero output tokens.
+      const completionTokens = reportedUsage?.completion_tokens ?? estimateTokens(completionText + streamedCalls.filter(Boolean).map((c) => c.function.name + c.function.arguments).join(""));
       recordUsage({
         providerId: provider.id,
         model,
@@ -430,29 +456,42 @@ export async function* routeChatCompletionStream(request) {
         // for cost-tracking purposes, but forward the original frame as-is.
         const decoder = new TextDecoder();
         let buffer = "";
+        // The terminating [DONE] is not forwarded: the route writes exactly
+        // one itself, and passing the provider's through as well sent two.
+        const isDone = (line) => /^data:\s*\[DONE\]\s*$/.test(line.replace(/\r$/, ""));
+        const account = (line) => {
+          if (!line.startsWith("data: ") || isDone(line)) return;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            completionText += evt.choices?.[0]?.delta?.content || "";
+            collectDelta(evt.choices?.[0]);
+            // Providers that volunteer a usage frame give exact numbers.
+            if (evt.usage) {
+              reportedUsage = {
+                prompt_tokens: evt.usage.prompt_tokens,
+                completion_tokens: evt.usage.completion_tokens
+              };
+            }
+          } catch {
+            /* ignore malformed frame */
+          }
+        };
         for await (const value of readWithStallTimeout(upstream.body, provider.id, upstream.controller)) {
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop();
           for (const line of lines) {
-            if (line.startsWith("data: ") && line.slice(6).trim() !== "[DONE]") {
-              try {
-                const evt = JSON.parse(line.slice(6));
-                completionText += evt.choices?.[0]?.delta?.content || "";
-                collectDelta(evt.choices?.[0]);
-                // Providers that volunteer a usage frame give exact numbers.
-                if (evt.usage) {
-                  reportedUsage = {
-                    prompt_tokens: evt.usage.prompt_tokens,
-                    completion_tokens: evt.usage.completion_tokens
-                  };
-                }
-              } catch {
-                /* ignore malformed frame */
-              }
-            }
-            yield { type: "raw-line", line };
+            account(line);
+            if (!isDone(line)) yield { type: "raw-line", line };
           }
+        }
+        // A last frame with no newline after it was left in the buffer and
+        // lost, often the one carrying the finish reason or the usage.
+        buffer += decoder.decode();
+        if (buffer.trim() && !isDone(buffer)) {
+          account(buffer);
+          yield { type: "raw-line", line: buffer };
+          yield { type: "raw-line", line: "" };
         }
       } else {
         // Anthropic/Gemini adapters already yield normalized delta objects.
@@ -480,9 +519,7 @@ export async function* routeChatCompletionStream(request) {
     return; // stream complete, committed provider succeeded
   }
 
-  const error = new Error("All candidate providers failed or were unavailable for streaming");
-  error.status = 502;
-  error.attempts = attempts;
+  const error = allProvidersFailed(attempts, true);
   recordModelFailure(request, error, { stream: true });
   throw error;
 }

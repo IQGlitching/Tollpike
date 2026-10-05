@@ -182,6 +182,23 @@ describe("inbound: path-token aliases", () => {
   test("url-decodes the token", () => {
     assert.equal(rewritePathToken("/vscode/tpk%5Fabc/chat/completions").token, "tpk_abc");
   });
+
+  test("the key leaves originalUrl too, so auth sees a model surface and no log can hold it", async () => {
+    const { pathToken } = await import("../src/middleware/pathToken.js");
+    const { isModelSurface } = await import("../src/middleware/auth.js");
+    const was = process.env.ALLOW_PATH_TOKEN;
+    process.env.ALLOW_PATH_TOKEN = "true";
+    try {
+      const req = { url: "/key/tpa_secretvalue/v1/chat/completions", originalUrl: "/key/tpa_secretvalue/v1/chat/completions", headers: {} };
+      pathToken(req, {}, () => {});
+      assert.equal(req.originalUrl, "/v1/chat/completions");
+      assert.ok(!JSON.stringify({ url: req.url, originalUrl: req.originalUrl }).includes("tpa_secretvalue"));
+      assert.equal(isModelSurface(req), true);
+    } finally {
+      if (was === undefined) delete process.env.ALLOW_PATH_TOKEN;
+      else process.env.ALLOW_PATH_TOKEN = was;
+    }
+  });
 });
 
 // Each dialect spells the sampling parameters its own way. They were all being
@@ -246,5 +263,123 @@ describe("inbound: every dialect carries its sampling parameters", () => {
         []
       );
     }
+  });
+});
+
+describe("inbound: Anthropic stream blocks", () => {
+  const collect = async (events) => {
+    const { toAnthropicStream } = await import("../src/inbound/anthropicInbound.js");
+    async function* src() { for (const chunk of events) yield { type: "chunk", chunk }; }
+    const out = [];
+    for await (const frame of toAnthropicStream(src(), "m")) {
+      const data = frame.split("\n").find((l) => l.startsWith("data: "));
+      if (data) out.push(JSON.parse(data.slice(6)));
+    }
+    return out;
+  };
+  const delta = (d, finish = null) => ({ choices: [{ index: 0, delta: d, finish_reason: finish }] });
+
+  test("text then two tool calls make three blocks, each opened and closed once", async () => {
+    const out = await collect([
+      delta({ content: "Let me check." }),
+      delta({ tool_calls: [{ index: 0, id: "call_a", function: { name: "read", arguments: "" } }] }),
+      delta({ tool_calls: [{ index: 0, function: { arguments: '{"path":"a"}' } }] }),
+      delta({ tool_calls: [{ index: 1, id: "call_b", function: { name: "read", arguments: '{"path":"b"}' } }] }),
+      delta({}, "tool_calls")
+    ]);
+    const starts = out.filter((e) => e.type === "content_block_start").map((e) => e.index);
+    const stops = out.filter((e) => e.type === "content_block_stop").map((e) => e.index);
+    assert.deepEqual(starts, [0, 1, 2]);
+    assert.deepEqual(stops, [0, 1, 2]);
+    const b = out.filter((e) => e.type === "content_block_delta" && e.index === 2);
+    assert.equal(b[0].delta.partial_json, '{"path":"b"}');
+    for (const e of out.filter((x) => x.type === "content_block_delta")) {
+      assert.ok(stops.indexOf(e.index) === -1 || out.indexOf(e) < out.findIndex((x) => x.type === "content_block_stop" && x.index === e.index), "a delta after its block closed");
+    }
+    assert.equal(out.find((e) => e.type === "message_delta").delta.stop_reason, "tool_use");
+  });
+
+  test("a length stop is reported as max_tokens", async () => {
+    const out = await collect([delta({ content: "half" }), delta({}, "length")]);
+    assert.equal(out.find((e) => e.type === "message_delta").delta.stop_reason, "max_tokens");
+  });
+});
+
+describe("inbound: tool calls in the Responses and Ollama dialects", () => {
+  const delta = (d, finish = null) => ({ type: "chunk", chunk: { choices: [{ index: 0, delta: d, finish_reason: finish }] } });
+  async function* src(events) { for (const e of events) yield e; }
+  const toolEvents = [
+    delta({ content: "Checking." }),
+    delta({ tool_calls: [{ index: 0, id: "call_a", function: { name: "read", arguments: '{"pa' } }] }),
+    delta({ tool_calls: [{ index: 0, function: { arguments: 'th":"a"}' } }] }),
+    delta({ tool_calls: [{ index: 1, id: "call_b", function: { name: "read", arguments: '{"path":"b"}' } }] }),
+    delta({}, "tool_calls")
+  ];
+
+  test("a Responses stream carries every function call, each announced and closed", async () => {
+    const { toResponsesStream } = await import("../src/inbound/responsesInbound.js");
+    const out = [];
+    for await (const frame of toResponsesStream(src(toolEvents), "m")) out.push(JSON.parse(frame.split("\n").find((l) => l.startsWith("data: ")).slice(6)));
+    const done = out.filter((e) => e.type === "response.output_item.done").map((e) => e.item);
+    assert.deepEqual(done.map((i) => i.type), ["message", "function_call", "function_call"]);
+    assert.equal(done[1].arguments, '{"path":"a"}');
+    assert.equal(done[2].call_id, "call_b");
+    const completed = out.at(-1);
+    assert.equal(completed.type, "response.completed");
+    assert.equal(completed.response.output.length, 3);
+    const seqs = out.map((e) => e.sequence_number);
+    assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b));
+  });
+
+  test("a Responses stream cut off by the token limit ends incomplete", async () => {
+    const { toResponsesStream } = await import("../src/inbound/responsesInbound.js");
+    const frames = [];
+    for await (const frame of toResponsesStream(src([delta({ content: "half" }), delta({}, "length")]), "m")) frames.push(frame);
+    assert.match(frames.at(-1), /response\.incomplete/);
+  });
+
+  test("parallel function_call items become one assistant turn, and a flat tool_choice is nested", () => {
+    const r = fromResponsesRequest({
+      model: "m",
+      input: [
+        { role: "user", content: "read both" },
+        { type: "function_call", call_id: "c1", name: "read", arguments: '{"p":1}' },
+        { type: "function_call", call_id: "c2", name: "read", arguments: '{"p":2}' },
+        { type: "function_call_output", call_id: "c1", output: "one" },
+        { type: "function_call_output", call_id: "c2", output: "two" }
+      ],
+      tool_choice: { type: "function", name: "read" }
+    });
+    assert.deepEqual(r.messages.map((m) => m.role), ["user", "assistant", "tool", "tool"]);
+    assert.deepEqual(r.messages[1].tool_calls.map((c) => c.id), ["c1", "c2"]);
+    assert.deepEqual(r.tool_choice, { type: "function", function: { name: "read" } });
+  });
+
+  test("an Ollama stream sends tool calls whole, with object arguments", async () => {
+    const { toOllamaStream } = await import("../src/inbound/ollamaInbound.js");
+    const lines = [];
+    for await (const l of toOllamaStream(src(toolEvents), "m")) lines.push(JSON.parse(l));
+    const withCalls = lines.find((l) => l.message?.tool_calls);
+    assert.deepEqual(withCalls.message.tool_calls, [
+      { function: { name: "read", arguments: { path: "a" } } },
+      { function: { name: "read", arguments: { path: "b" } } }
+    ]);
+    assert.equal(lines.at(-1).done, true);
+  });
+
+  test("Ollama tool history keeps its calls and pairs each result with one", () => {
+    const r = fromOllamaRequest({
+      model: "m",
+      messages: [
+        { role: "user", content: "weather?" },
+        { role: "assistant", content: "", tool_calls: [{ function: { name: "get_weather", arguments: { city: "Ghent" } } }] },
+        { role: "tool", tool_name: "get_weather", content: "18C" }
+      ]
+    });
+    const call = r.messages[1].tool_calls[0];
+    assert.equal(call.function.arguments, '{"city":"Ghent"}');
+    assert.equal(r.messages[2].tool_call_id, call.id);
+    const buffered = toOllamaResponse({ choices: [{ message: { content: null, tool_calls: [{ id: "x", type: "function", function: { name: "f", arguments: '{"a":1}' } }] } }] }, "m");
+    assert.deepEqual(buffered.message.tool_calls, [{ function: { name: "f", arguments: { a: 1 } } }]);
   });
 });

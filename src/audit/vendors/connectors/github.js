@@ -38,6 +38,8 @@ export const githubCopilot = {
     { key: "enterprise", description: "Enterprise slug (set org or enterprise)" }
   ],
   defaultIntervalMinutes: 30,
+  // Read oldest first (order=asc), so a progress cursor never skips anything.
+  ascending: true,
 
   async *pages({ state, config }) {
     if (!config.org && !config.enterprise) throw new Error("Set audit.vendors.github-copilot.org or .enterprise.");

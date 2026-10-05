@@ -7,6 +7,8 @@
 //   5. tool_choice -> toolConfig.functionCallingConfig.mode (AUTO/ANY/NONE)
 // All pure functions so they can be tested without touching the network.
 
+import { SYSTEM_ROLES } from "./normalize.js";
+
 export function toGeminiTools(openAiTools) {
   if (!openAiTools || openAiTools.length === 0) return undefined;
   return [
@@ -55,7 +57,7 @@ export function toGeminiContents(messages) {
   const raw = [];
 
   for (const m of messages) {
-    if (m.role === "system") continue; // handled separately as systemInstruction
+    if (SYSTEM_ROLES.has(m.role)) continue; // handled separately as systemInstruction
 
     if (m.role === "tool") {
       const fnName = nameByToolCallId.get(m.tool_call_id) || "unknown_function";
@@ -135,6 +137,22 @@ export function fromGeminiParts(parts, finishReason) {
   return {
     content: textParts.join("\n") || null,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-    finishReason: toolCalls.length > 0 ? "tool_calls" : finishReason === "STOP" ? "stop" : "stop"
+    finishReason: finishFromGemini(finishReason, toolCalls.length > 0)
   };
+}
+
+// Output tokens as billed: a thinking model's thoughts are billed as output
+// but reported apart from candidatesTokenCount.
+export function geminiCompletionTokens(m) {
+  if (!m || (m.candidatesTokenCount == null && m.thoughtsTokenCount == null)) return null;
+  return (m.candidatesTokenCount || 0) + (m.thoughtsTokenCount || 0);
+}
+
+// Gemini's finishReason in OpenAI's vocabulary. MAX_TOKENS is "length" and the
+// safety stops are "content_filter"; all of them used to read as "stop".
+export function finishFromGemini(finishReason, hasToolCalls) {
+  if (hasToolCalls) return "tool_calls";
+  if (finishReason === "MAX_TOKENS") return "length";
+  if (["SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY"].includes(finishReason)) return "content_filter";
+  return "stop";
 }

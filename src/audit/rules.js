@@ -61,7 +61,7 @@ const DESTRUCTIVE = [
   /\bgit\s+push\b[^\n]{0,80}(?:--force\b|\s-f\b)/,
   /\bgit\s+(?:reset\s+--hard|clean\s+-[a-z]*f[a-z]*d)\b/,
   /\b(?:DROP\s+(?:TABLE|DATABASE|SCHEMA)|TRUNCATE\s+TABLE)\b/i,
-  /\bDELETE\s+FROM\s+\w+\s*(?:;|$)/i, // DELETE with no WHERE
+  /\bDELETE\s+FROM\s+[\w."`[\]]+\s*(?=;|$|["'`)])/im, // DELETE with no WHERE, also inside psql -c "..."
   /\b(?:shutdown|reboot|halt)\b(?:\s+(?:-[a-z]+|\/[a-z]+|now))/i
 ];
 
@@ -89,7 +89,8 @@ const SENSITIVE_PATHS = [
   /(?:^|[\s"'=:/\\])\.(?:git-credentials|netrc|npmrc|pypirc|docker[/\\]config\.json)\b/i,
   /(?:^|[\s"'=:/\\])\.env(?:\.[a-z]+)?(?=$|[\s"'])/i,
   /\/etc\/(?:shadow|sudoers|passwd)\b/,
-  /\b(?:SAM|SECURITY|SYSTEM)\b[^\n]{0,20}\\config\\/i,
+  /\\config\\(?:SAM|SECURITY|SYSTEM)\b/i, // C:\Windows\System32\config\SAM
+  /\breg(?:\.exe)?\s+save\s+HKLM\\(?:SAM|SECURITY|SYSTEM)\b/i,
   /\.kube[/\\]config\b/i,
   /\.tollpike[/\\](?:\.env|data)\b/i
 ];
@@ -101,7 +102,12 @@ const SECRET_EXTRA = [
   { name: "slack_webhook", pattern: /https:\/\/hooks\.slack\.com\/services\/[A-Z0-9/]{20,}/i },
   { name: "anthropic_key", pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/ },
   { name: "tollpike_key", pattern: /\bt(?:pk|pa)_[A-Za-z0-9_-]{24,}/ }, // operator and agent keys
-  { name: "password_assignment", pattern: /\b(?:password|passwd|pwd|secret|api[_-]?key|token)\s*[=:]\s*["']?[^\s"']{8,}/i }
+  { name: "github_token", pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/ },
+  { name: "bearer_token", pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/ },
+  // The optional quote before the separator is JSON: "password":"…" has a
+  // quote between the key and the colon, which the old pattern never matched,
+  // so passwords in tool arguments were stored in cleartext.
+  { name: "password_assignment", pattern: /\b(?:password|passwd|pwd|secret|client[_-]?secret|api[_-]?key|access[_-]?token|token)["']?\s*[=:]\s*["']?[^\s"',}]{8,}/i }
 ];
 
 // Actions in a vendor's own audit log that change who can do what, or what

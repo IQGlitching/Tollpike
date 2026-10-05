@@ -4,12 +4,14 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 // Boots the real server as a subprocess and exercises it over real HTTP.
 // This is the layer that catches wiring mistakes — a module can be perfect
 // and still be imported wrong, mounted on the wrong path, or shadowed by
 // middleware ordering.
-const PORT = 20777;
+const { freePort } = await import("./fixtures/free-port.mjs");
+const PORT = await freePort();
 const BASE = `http://localhost:${PORT}`;
 const root = path.join(import.meta.dirname, "..");
 
@@ -17,7 +19,9 @@ const root = path.join(import.meta.dirname, "..");
 // ./data. Wiping ./data mid-run also removed the encryption salt that the
 // concurrently-running crypto suite had already derived a key from, which
 // made a correct test fail for reasons that had nothing to do with it.
-const DATA_DIR = path.join(root, "data-e2e");
+// Its own temp dir per run: a fixed folder was wiped by any second copy of
+// this suite running at the same time, taking the other run's settings with it.
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "tollpike-e2e-"));
 let proc;
 
 // The control plane always needs the operator key, which the server creates
@@ -437,11 +441,13 @@ describe("gateway: resilience reset", () => {
 });
 
 describe("gateway: compression settings", () => {
-  test("rejects an out-of-range history window", async () => {
-    const r = await api("/api/panel/compression", {
-      method: "POST", body: JSON.stringify({ historyWindow: 0 })
-    });
-    assert.equal(r.status, 400);
+  test("rejects an out-of-range history window, and 0 means keep everything", async () => {
+    for (const bad of [-1, 501]) {
+      const r = await api("/api/panel/compression", { method: "POST", body: JSON.stringify({ historyWindow: bad }) });
+      assert.equal(r.status, 400, String(bad));
+    }
+    const ok = await api("/api/panel/compression", { method: "POST", body: JSON.stringify({ historyWindow: 0 }) });
+    assert.equal(ok.status, 200);
   });
 
   test("rejects a non-integer history window", async () => {
@@ -596,6 +602,39 @@ describe("gateway: security", () => {
     assert.ok(!anonymous.includes("settings_patch"), "but never get the mutating tools, now that a key always exists");
     const operator = await list({ authorization: `Bearer ${operatorKey()}` });
     assert.ok(operator.includes("settings_patch"), "the operator key unlocks them");
+  });
+
+  test("MCP settings_get never shows proxy passwords, and the audit scope is operator only", async () => {
+    const call = async (name, headers = {}) => {
+      const r = await fetch(BASE + "/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } })
+      });
+      const text = await r.text();
+      const payload = JSON.parse(text.includes("data:") ? text.split("\n").find((l) => l.startsWith("data:")).slice(5) : text);
+      return payload.result;
+    };
+    const set = await api("/api/panel/proxy", { method: "POST", body: JSON.stringify({ providerId: "*", url: "http://alice:S3cretProxyPass@10.0.0.5:3128" }) });
+    assert.equal(set.status, 200, set.text);
+    try {
+      const keyless = await call("settings_get");
+      const text = keyless.content[0].text;
+      assert.ok(!text.includes("S3cretProxyPass"), "the proxy password must never reach a tool caller");
+      assert.match(text, /alice:\*\*\*@10\.0\.0\.5/);
+      assert.ok(!("audit" in JSON.parse(text)), "rule modes and allowlists are the operator's");
+      const denied = await call("audit_status");
+      assert.equal(denied.isError, true);
+      assert.match(denied.content[0].text, /operator only/);
+      const op = await call("audit_status", { authorization: `Bearer ${operatorKey()}` });
+      assert.ok(!op.isError, op.content?.[0]?.text);
+      assert.ok(JSON.parse(op.content[0].text).rules, "the audit tools work for the operator");
+      const opSettings = JSON.parse((await call("settings_get", { authorization: `Bearer ${operatorKey()}` })).content[0].text);
+      assert.ok("audit" in opSettings);
+      assert.ok(!JSON.stringify(opSettings).includes("S3cretProxyPass"), "masked for the operator too");
+    } finally {
+      await api("/api/panel/proxy", { method: "POST", body: JSON.stringify({ providerId: "*", url: null }) });
+    }
   });
 
   test("a one-time panel code opens the panel once, and only once", async () => {
