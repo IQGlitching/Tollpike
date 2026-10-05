@@ -124,6 +124,41 @@ describe("parsers", () => {
   });
 });
 
+describe("provider connections without Sysmon", () => {
+  const PROVIDERS = ["api.openai.com", "api.anthropic.com", "openrouter.ai"];
+  test("a connection is matched to a provider through the DNS cache, and nothing else is sent", async () => {
+    const { matchProviderConnections } = await import("../src/audit/endpoint/collect.js");
+    const parsed = {
+      c: [
+        { RemoteAddress: "160.79.104.10", RemotePort: 443, OwningProcess: 4242 },
+        { RemoteAddress: "104.18.33.45", RemotePort: 443, OwningProcess: 4343 },
+        { RemoteAddress: "142.250.74.78", RemotePort: 443, OwningProcess: 5555 },
+        { RemoteAddress: "10.0.0.9", RemotePort: 22, OwningProcess: 6666 }
+      ],
+      d: [
+        { Entry: "api.anthropic.com", Data: "160.79.104.10" },
+        { Entry: "eu.openrouter.ai.", Data: "104.18.33.45" },
+        { Entry: "www.google.com", Data: "142.250.74.78" }
+      ]
+    };
+    const events = matchProviderConnections(parsed, PROVIDERS, { host: "dev-laptop", ts: "2026-10-05T12:00:00.000Z" });
+    assert.deepEqual(events.map((e) => [e.pid, e.destHost]), [[4242, "api.anthropic.com"], [4343, "eu.openrouter.ai."]]);
+    assert.ok(events.every((e) => e.kind === "network" && e.host === "dev-laptop" && e.destPort === 443));
+    assert.ok(!events.some((e) => /google/.test(e.destHost)), "traffic to other sites never leaves the machine");
+  });
+
+  test("a single connection or cache entry (PowerShell unwraps one-item arrays) still matches", async () => {
+    const { matchProviderConnections } = await import("../src/audit/endpoint/collect.js");
+    const events = matchProviderConnections(
+      { c: { RemoteAddress: "1.2.3.4", RemotePort: 443, OwningProcess: 7 }, d: { Entry: "api.openai.com", Data: "1.2.3.4" } },
+      PROVIDERS
+    );
+    assert.equal(events.length, 1);
+    assert.equal(events[0].destHost, "api.openai.com");
+    assert.deepEqual(matchProviderConnections({}, PROVIDERS), []);
+  });
+});
+
 describe("correlation", () => {
   const h = "dev-laptop";
   const ts = (s) => new Date(Date.parse("2026-10-03T08:00:00Z") + s * 1000).toISOString();

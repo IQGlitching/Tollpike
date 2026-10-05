@@ -114,6 +114,88 @@ export async function snapshotProcesses() {
   return { ok: true, events };
 }
 
+// Open connections to model providers, without Sysmon or admin rights
+// (Windows). Get-NetTCPConnection names the process that owns each
+// connection, and the DNS client cache maps its remote address back to the
+// hostname that was looked up. Only connections whose cached name is a
+// provider host leave the machine, so the rest of the user's traffic is never
+// shipped. Two limits, stated rather than hidden: a connection opened after
+// its DNS entry expired from the cache is missed, and a CDN address shared by
+// several sites is attributed to whichever provider name the cache holds.
+export async function readProviderConnections(providerHosts) {
+  if (process.platform !== "win32") {
+    return { ok: false, error: "Windows only. On Linux and macOS use auditd, osquery or Falco with tollpike endpoint tail." };
+  }
+  const script =
+    "$c = @(Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue | Select-Object RemoteAddress, RemotePort, OwningProcess); " +
+    "$d = @(Get-DnsClientCache -ErrorAction SilentlyContinue | Where-Object { $_.Type -eq 1 -or $_.Type -eq 28 } | Select-Object Entry, Data); " +
+    "[pscustomobject]@{ c = $c; d = $d } | ConvertTo-Json -Compress -Depth 3";
+  const r = await powershell(script);
+  if (!r.ok) return { ok: false, error: r.err.trim().slice(0, 300) || "PowerShell failed" };
+  let parsed;
+  try {
+    parsed = JSON.parse(r.out || "{}");
+  } catch {
+    return { ok: false, error: "could not read the connection table" };
+  }
+  return { ok: true, events: matchProviderConnections(parsed, providerHosts) };
+}
+
+/** Pure: the connection table and DNS cache in, provider connections out. */
+export function matchProviderConnections(parsed, providerHosts, { host = os.hostname(), ts = new Date().toISOString() } = {}) {
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  const providerOf = (name) => {
+    const h = String(name || "").toLowerCase().replace(/\.$/, "");
+    return providerHosts.find((p) => h === p || h.endsWith(`.${p}`)) || null;
+  };
+  const namesByIp = new Map();
+  for (const rec of list(parsed.d)) {
+    if (!providerOf(rec.Entry)) continue;
+    const ip = String(rec.Data || "");
+    if (ip && !namesByIp.has(ip)) namesByIp.set(ip, String(rec.Entry).toLowerCase());
+  }
+  const events = [];
+  for (const c of list(parsed.c)) {
+    const name = namesByIp.get(String(c.RemoteAddress));
+    if (!name) continue;
+    events.push({ kind: "network", host, ts, pid: Number(c.OwningProcess), destIp: String(c.RemoteAddress), destHost: name, destPort: Number(c.RemotePort) });
+  }
+  return events;
+}
+
+/**
+ * Watch provider connections: a process snapshot (so each connection can be
+ * tied to its program and agent tree) and then the matching connections,
+ * every `intervalMs`. The gateway records a given program and provider at
+ * most once an hour, so a client holding its connection open is one record.
+ */
+export async function watchConnections({ url, key, providerHosts, intervalMs = 60_000, log = console.error, once = false }) {
+  for (;;) {
+    const snap = await snapshotProcesses();
+    if (snap.ok) {
+      const s = await sendBatch({ url, key, format: "native", body: snap.events });
+      if (!s.ok) {
+        log(`snapshot refused: ${s.error}`);
+        if (once) return s;
+      }
+    } else log(`snapshot failed: ${snap.error}`);
+    const conn = await readProviderConnections(providerHosts);
+    if (!conn.ok) {
+      log(conn.error);
+      if (once) return conn;
+    } else if (conn.events.length) {
+      const r = await sendBatch({ url, key, format: "native", body: conn.events });
+      log(r.ok ? `${conn.events.length} provider connection(s) sent, ${r.recorded} recorded` : `connections refused: ${r.error}`);
+      if (once) return r;
+    } else if (once) {
+      log("no open connections to model providers");
+      return { ok: true, recorded: 0 };
+    }
+    if (once) return { ok: true };
+    await new Promise((res) => setTimeout(res, intervalMs));
+  }
+}
+
 /**
  * Read new Sysmon events after `afterRecordId`. Returns the XML and the
  * highest record id seen, or an error naming why (not installed, no access).

@@ -52,6 +52,7 @@ USAGE
   tollpike endpoint sysmon   ship Sysmon events (Windows) to the gateway
   tollpike endpoint tail F --format auditd|osquery|falco  follow a sensor log
   tollpike endpoint snapshot send the current process list
+  tollpike endpoint connections  flag agents reaching providers directly (Windows, no Sysmon)
   tollpike where          print the paths and URLs this install resolves to
   tollpike --version      print the version
   tollpike --help         this text
@@ -583,8 +584,21 @@ if (cmd === "endpoint") {
     process.exit(r?.ok === false ? 1 : 0);
   }
 
-  console.error("usage: tollpike endpoint snapshot | send --format F [file] | tail <file> --format F | sysmon   (key in TOLLPIKE_SENSOR_KEY)");
-  process.exit(1);
+  // Provider connections without Sysmon: built-in Windows commands, no admin
+  // rights, and only connections to the provider hosts are sent.
+  if (sub === "connections") {
+    const { providerHosts } = await import(pathToFileURL(path.join(root, "src", "audit", "egress.js")).href);
+    const hosts = providerHosts().map((p) => p.host);
+    say(`watching connections to ${hosts.length} provider hosts${flag("--once") ? " (once)" : `, every ${valueOf("--interval", "60")}s`}`);
+    const r = await collect.watchConnections({ url, key, providerHosts: hosts, intervalMs: Number(valueOf("--interval", "60")) * 1000, log: say, once: flag("--once") });
+    // Exit by letting the event loop drain, not process.exit: on Windows,
+    // exiting while fetch's keep-alive socket from the second request is
+    // still closing trips a libuv assertion and crashes the process.
+    process.exitCode = r?.ok === false ? 1 : 0;
+  } else {
+    console.error("usage: tollpike endpoint snapshot | send --format F [file] | tail <file> --format F | sysmon | connections   (key in TOLLPIKE_SENSOR_KEY)");
+    process.exit(1);
+  }
 }
 
 // Claude Code hook client and config. `tollpike hook claude-code` is what a
@@ -715,6 +729,9 @@ if (cmd === "mcp-proxy") {
     pathToFileURL(path.join(root, "src", "mcp", "server.js")).href
   );
   await startMcpServer();
+} else if (cmd === "endpoint") {
+  // `endpoint connections` ends on its own (see that block), so it reaches
+  // here instead of calling process.exit; nothing more to do.
 } else {
   if (cmd !== "start") {
     console.error(`tollpike: unknown command "${cmd}". Try \`tollpike --help\`.`);

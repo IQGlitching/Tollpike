@@ -65,6 +65,7 @@ tollpike agents add laptop-sensor --sensor
 | Machine | Sensor | Collector |
 |---|---|---|
 | Windows | [Sysmon](https://learn.microsoft.com/sysinternals/downloads/sysmon) with process (1), network (3), file create (11), DNS (22) and file delete (23, 26) events enabled | `tollpike endpoint sysmon`, from an elevated session (the Sysmon log needs administrator rights) |
+| Windows, without Sysmon | Built in: the TCP connection table and the DNS client cache | `tollpike endpoint connections`, no administrator rights. Detects provider connections only (see below) |
 | Linux | auditd with execve and file-watch rules | `tollpike endpoint tail /var/log/audit/audit.log --format auditd` (as root) |
 | Linux or macOS | osquery with `process_events`, `socket_events`, `file_events` | `tollpike endpoint tail /var/log/osquery/osqueryd.results.log --format osquery` |
 | Kubernetes or Linux | Falco (eBPF) with JSON output to a file | `tollpike endpoint tail /var/log/falco.json --format falco` |
@@ -73,6 +74,19 @@ Each collector sends a process snapshot when it starts, so agent sessions that
 were already running are recognised. It then ships new events as they arrive,
 remembering its position across restarts. Run it as a service so it survives
 reboots.
+
+**No Sysmon? Provider connections only.** On a Windows machine where
+installing Sysmon is not an option (a managed laptop, for example),
+`tollpike endpoint connections` polls the open TCP connections every 60
+seconds (`--interval` to change it), maps each remote address back to a
+hostname through the DNS client cache, and sends only the connections to the
+provider hosts from `tollpike audit egress-hosts`, together with a process
+snapshot so each one is tied to its program. The rest of the machine's
+traffic never leaves it. It feeds the same rule as Sysmon's network events:
+an agent process reaching a provider around the gateway is flagged
+`endpoint.direct_provider_access` (high), at most once an hour per program
+and provider. On the gateway's own host only agent process trees count, so a
+browser on that machine is not flagged. `--once` runs a single pass.
 
 **Already shipping logs elsewhere?** Point any shipper (Fluent Bit, Vector,
 Winlogbeat via an HTTP output) at
@@ -113,3 +127,8 @@ the time to within seconds. Keep NTP running on both.
   the behaviour you want to see flagged.
 - **Coverage is per machine.** A machine with no sensor contributes nothing to
   this layer, and the audit status says so.
+- **`endpoint connections` sees what is open when it polls.** A connection
+  that opens and closes between two polls is missed, as is one whose DNS entry
+  has already expired from the cache. An address a CDN shares between several
+  sites is attributed to whichever provider name the cache holds. It detects;
+  it does not block.

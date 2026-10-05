@@ -5,7 +5,7 @@ that routes across whichever providers you've configured, with tiered
 fallback, cost tracking, free-quota accounting, stacked compression,
 persistent memory, and the whole gateway exposed as tools an agent can drive.
 
-**46 providers** (6 local runtimes) · **773 tests** · **19 routing
+**46 providers** (6 local runtimes) · **775 tests** · **19 routing
 strategies** with tier-1/2/3 combos · full tool-calling on
 OpenAI/Anthropic/Gemini · streaming · 3-layer resilience · budget caps ·
 free-quota tracking · hybrid memory recall · RTK + Caveman compression ·
@@ -323,6 +323,7 @@ tollpike audit           # audit coverage, gaps and rule modes
 tollpike audit export    # evidence pack mapped to eight frameworks (--from, --to, --out)
 tollpike audit grc       # compliance tests; push them to Vanta or Drata (setup, push)
 tollpike hook config     # Claude Code hooks block, so its actions are audited before they run
+tollpike endpoint connections  # flag agents reaching providers directly (Windows, no Sysmon)
 tollpike mcp-proxy       # audited MCP proxy over stdio (--check to test the servers)
 tollpike where           # print resolved paths, ports and URLs
 tollpike --version
@@ -334,7 +335,7 @@ From a checkout, the npm scripts are the equivalent:
 ```bash
 npm start                # start
 npm run dev              # start with --watch
-npm test                 # 773 tests
+npm test                 # 775 tests
 npm run verify           # check provider endpoints against vendor docs
 npm run verify-pricing   # check price tables against published rates
 npm run docker:up        # build and start the container, detached

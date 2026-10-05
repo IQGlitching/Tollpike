@@ -78,8 +78,18 @@ with no operator key the panel is open to anyone who can reach the port.
 
 ## 3. Detection: prove nothing went around it
 
-Controls are tested, not assumed. Three checks, worth running on a schedule
-and keeping as evidence:
+Controls are tested, not assumed. Where blocking is not possible yet (a single
+laptop that runs both Tollpike and its agents, or a machine you do not
+administer), detection is the control: run an endpoint sensor so any agent
+that reaches a provider directly is flagged. On Windows without Sysmon:
+
+```bash
+tollpike agents add laptop-sensor --sensor   # key into TOLLPIKE_SENSOR_KEY
+tollpike endpoint connections                # polls every 60s, provider hosts only
+```
+
+See [audit-endpoint.md](audit-endpoint.md) for the other sensors. Then three
+checks, worth running on a schedule and keeping as evidence:
 
 1. **From an agent machine, a direct call must fail:**
 
