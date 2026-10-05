@@ -10,3 +10,4 @@ data-e2e/
 *.tgz
 _site/
 .vercel/
+site/

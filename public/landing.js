@@ -820,8 +820,11 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
      Desktop: mouse parallax plus scroll transformation.
      Touch: scroll is the camera. The copy lifts away, the network rises
      into view and grows. No pointer-tracking at all. */
+  // Each block below runs only when its section is on this page: the site
+  // splits the sections across pages, so a page may have none of them.
   const hero = $('#hero'), heroBg = $('#heroBgLayer'), heroSvgEl = $('#heroSvg');
   const heroCopy = $('.hero-copy'), heroIn = $('.hero-in'), teleHolder = $('.tele-holder');
+  if (hero && heroSvgEl) {
   let heroP = 0, heroOn = true;
   new IntersectionObserver(es => es.forEach(e => { heroOn = e.isIntersecting; })).observe(hero);
   function heroScroll() {
@@ -913,9 +916,11 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     }
   });
   if (TSPATIAL) heroSvgEl.addEventListener('click', clearFocus);
+  }
 
   /* ---------------- routing engine: pinned reveal ---------------- */
   const routing = $('#routing');
+  if (routing) {
   const gateEls = ['policy', 'quota', 'health', 'latency', 'cost'].map(g => $(`#gate-${g}`));
   const candEls = [$('#rn-1'), $('#rn-2'), $('#rn-3')];
   const streamP = $('.stream-panel');
@@ -929,9 +934,11 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
   addEventListener('scroll', routeScroll, { passive: true });
   routeScroll();
+  }
 
   /* ---------------- resilience: scroll drives the failure ---------------- */
   const res = $('#resilience');
+  if (res) {
   function resScroll() {
     if (!S.setResPhase) return;
     const r = res.getBoundingClientRect();
@@ -940,10 +947,12 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
   addEventListener('scroll', resScroll, { passive: true });
   resScroll();
+  }
 
   /* ---------------- dashboard: suspended, tilts toward the cursor -------- */
   const dwrap = $('.dash-wrap'), dframe = $('.dash-frame');
   const annos = $$('.dash-anno');
+  if (dwrap && dframe) {
   let cRx = 0, cRy = 0, tRx = 0, tRy = 0, dOn = false, dP = 0;
   new IntersectionObserver(es => es.forEach(e => { dOn = e.isIntersecting; }), { threshold: .02 }).observe(dwrap);
   function dashScroll() {
@@ -968,6 +977,7 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
       a.style.transform = `translate3d(${smx * f}px, ${smy * f * .6}px, 0)`;
     });
   });
+  }
 
   /* ---------------- provider topology: depth-aware hover or tap ---------- */
   const topoSvgEl = $('#topoSvg');

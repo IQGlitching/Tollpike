@@ -2,8 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "true",
-  "buildCommand": "rm -rf _site && mkdir -p _site && cp public/landing.html _site/index.html && cp public/landing.js public/favicon.svg deploy/vercel/404.html _site/",
-  "outputDirectory": "_site",
+  "buildCommand": "node scripts/build-site.mjs",
+  "outputDirectory": "site",
   "routes": [
     {
       "src": "/(.*)",

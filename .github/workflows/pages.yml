@@ -1,9 +1,9 @@
 name: Deploy landing page
 
-# Publishes public/landing.html to GitHub Pages, which is free and served from
-# a CDN. The page is written as a single self-contained file plus one script and
-# one icon, so there is nothing to build: the job just assembles the three files
-# and hands them to Pages.
+# Publishes the website to GitHub Pages, which is free and served from a CDN.
+# scripts/build-site.mjs assembles site/ (home, gateway, audit, docs, pricing
+# and guides) from public/landing.html and its own page content, using only
+# Node built-ins, so there is nothing to install.
 
 on:
   push:
@@ -12,6 +12,8 @@ on:
       - "public/landing.html"
       - "public/landing.js"
       - "public/favicon.svg"
+      - "scripts/build-site.mjs"
+      - "deploy/vercel/404.html"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -35,27 +37,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assemble the site
+      - name: Build the site
         run: |
-          mkdir -p _site
-          cp public/landing.html _site/index.html
-          cp public/landing.js  _site/landing.js
-          cp public/favicon.svg _site/favicon.svg
+          node scripts/build-site.mjs
+          rm -rf _site && cp -r site _site
           # Pages runs Jekyll unless told not to, and Jekyll ignores files it
           # does not recognise. This is a plain static site.
           touch _site/.nojekyll
-          echo "Assembled:"; ls -la _site
 
-      - name: Check nothing but the page shipped
+      - name: Check nothing but the site shipped
         run: |
           node -e '
-            const fs = require("fs");
-            const allowed = new Set(["index.html", "landing.js", "favicon.svg", ".nojekyll"]);
-            const extra = fs.readdirSync("_site").filter(f => !allowed.has(f));
-            if (extra.length) { console.error("Unexpected files in _site: " + extra.join(", ")); process.exit(1); }
-            const html = fs.readFileSync("_site/index.html", "utf8");
-            if (!html.includes("landing.js")) { console.error("index.html lost its script reference"); process.exit(1); }
-            console.log("Site is exactly the landing page.");
+            const fs = require("fs"), path = require("path");
+            const files = [];
+            (function walk(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : files.push(path.relative("_site", p).split(path.sep).join("/")); } })("_site");
+            const bad = files.filter((f) => f !== ".nojekyll" && !/\.(html|css|js|svg)$/.test(f));
+            if (bad.length) { console.error("Unexpected files in _site: " + bad.join(", ")); process.exit(1); }
+            for (const need of ["index.html", "routing.html", "audit.html", "pricing.html", "docs.html", "guides/index.html", "site.css", "landing.js"]) {
+              if (!files.includes(need)) { console.error("Missing " + need); process.exit(1); }
+            }
+            if (!fs.readFileSync("_site/index.html", "utf8").includes("landing.js")) { console.error("index.html lost its script reference"); process.exit(1); }
+            console.log("Site OK: " + files.length + " files.");
           '
 
       - uses: actions/configure-pages@v5
