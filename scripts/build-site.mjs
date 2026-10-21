@@ -162,10 +162,7 @@ ${SHOW_PRICING ? `        <a href="${prefix}pricing.html">Pricing</a>
       <span class="status"><span class="dot ok beat"></span>SELF-HOSTED · YOUR KEYS STAY WITH YOU</span>
     </div>
     <div class="signature">
-      <code class="sig-cmd" aria-label="Built by Faisal Alani">
-        <span class="sig-prompt" aria-hidden="true">$</span><span class="sig-type" data-text="built by faisal alani" aria-hidden="true"></span><span class="sig-caret" aria-hidden="true"></span>
-      </code>
-      <span class="sig-meta">Tollpike · 2026</span>
+      <span class="sig-line">&copy; 2026 Faisal Alani</span>
     </div>
   </div>
 </footer>

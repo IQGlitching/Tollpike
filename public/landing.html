@@ -737,30 +737,14 @@ footer { background: var(--bg-deep); }
   font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; color: var(--txt-4); text-transform: uppercase;
 }
 .foot-bottom .status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
-/* creator signature: the last node in the request's journey. Present and
-   legible, tied to the routing language by the node on the divider, without
-   turning into a portfolio badge. */
-/* creator signature: a command that types itself in, echoing the install
-   snippets above. Left-aligned and quiet, in the CLI register. */
+/* creator signature: a plain copyright line under the footer, quiet and
+   left-aligned. */
 .signature {
   margin-top: 42px; padding-top: 34px; border-top: 1px solid var(--line);
-  display: flex; flex-direction: column; align-items: flex-start; gap: 9px;
 }
-.sig-cmd {
-  font-family: var(--mono); font-size: 13.5px; letter-spacing: .01em;
-  color: var(--txt-2); display: inline-flex; align-items: center; white-space: nowrap;
+.sig-line {
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: .01em; color: var(--txt-3);
 }
-.sig-cmd .sig-prompt { color: var(--route); margin-right: 10px; }
-.sig-cmd .sig-caret {
-  display: inline-block; width: 7px; height: 15px; margin-left: 3px;
-  background: var(--route); animation: sigblink 1.05s steps(1) infinite;
-}
-@keyframes sigblink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
-.sig-meta {
-  font-family: var(--mono); font-size: 9px; letter-spacing: .22em;
-  color: var(--txt-4); text-transform: uppercase; padding-left: 27px;
-}
-@media (prefers-reduced-motion: reduce) { .sig-cmd .sig-caret { animation: none; } }
 
 /* ============================================================================
    SPATIAL EXPERIENCE LAYER
@@ -2630,10 +2614,7 @@ export OPENAI_API_KEY=unused</code>
       <span class="status"><span class="dot ok beat"></span>SYSTEM STATUS · OPERATIONAL</span>
     </div>
     <div class="signature">
-      <code class="sig-cmd" aria-label="Built by Faisal Alani">
-        <span class="sig-prompt" aria-hidden="true">$</span><span class="sig-type" data-text="built by faisal alani" aria-hidden="true"></span><span class="sig-caret" aria-hidden="true"></span>
-      </code>
-      <span class="sig-meta">Tollpike · 2026</span>
+      <span class="sig-line">&copy; 2026 Faisal Alani</span>
     </div>
   </div>
 </footer>

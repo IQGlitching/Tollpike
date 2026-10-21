@@ -150,42 +150,6 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   });
 })();
 
-/* -------------------------------------------------- SIGNATURE (types itself)
-   The creator credit is a command being entered: it types out when it scrolls
-   into view, with a blinking caret. Reduced motion gets the finished line at
-   once. The full text lives in aria-label, so screen readers never depend on
-   the animation. */
-(() => {
-  const el = $('.sig-type');
-  if (!el) return;
-  const text = el.getAttribute('data-text') || '';
-  if (RM) { el.textContent = text; return; }
-  // Trigger on the sized .signature block, NOT the empty span: an element with
-  // no text is a zero-area box the observer never reports as intersecting,
-  // which left the name blank (only the "$" prompt and caret showed). Belt and
-  // suspenders like the reveal system: an observer plus a plain scroll check,
-  // so the typing starts even if the observer is finicky.
-  const anchor = el.closest('.signature') || el;
-  let started = false;
-  const type = () => {
-    if (started) return;
-    started = true;
-    removeEventListener('scroll', check);
-    let i = 0;
-    (function step() {
-      el.textContent = text.slice(0, i);
-      if (i++ <= text.length) setTimeout(step, 58);
-    })();
-  };
-  function check() {
-    const r = anchor.getBoundingClientRect();
-    if (r.top < innerHeight && r.bottom > 0) type();
-  }
-  new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) type(); }), { threshold: 0 }).observe(anchor);
-  addEventListener('scroll', check, { passive: true });
-  check();
-})();
-
 /* ------------------------------------------------------------------ HERO */
 (() => {
   const svg = $('#heroSvg'); if (!svg) return;
