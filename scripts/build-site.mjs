@@ -201,6 +201,75 @@ function page({ file, title, description, body }) {
 const cmd = (id, text) => `<div class="cmdrow"><code class="cmd" id="${id}">${text}</code><button class="copybtn" type="button" data-copy="#${id}">Copy</button></div>`;
 
 // ---------------------------------------------------------------- home
+// The site's hero shows both jobs: a sample feed where requests get routed
+// and agent actions get recorded, held for a person or blocked, each sealed
+// into the hash chain below it. The gateway's own landing page keeps its
+// routing hero. These rows are the static first frame (no script, reduced
+// motion); landing.js "CHECKPOINT FEED" adds new ones in the same markup.
+function cpRoute(src, dest, sub, lat, cost, hash, failover) {
+  return `<li class="cp-row r-route${failover ? " r-fail" : ""}"><span class="cp-chip">ROUTE</span><span class="cp-main"><b>${src}</b> <i>&#8594;</i> ${dest}</span><span class="cp-res"><em class="c-lat">${lat}</em> · <em class="c-cost">${cost}</em></span><span class="cp-sub">${sub}</span><span class="cp-hash">#${hash}</span></li>`;
+}
+function cpAgent(agent, tool, cmd, verdict, tone, hash) {
+  return `<li class="cp-row r-agent d-${tone}"><span class="cp-chip">AGENT</span><span class="cp-main"><b>${agent}</b> <i>&#8594;</i> ${tool}</span><span class="cp-res"><em>${verdict}</em></span><span class="cp-sub"><code>${cmd}</code></span><span class="cp-hash">#${hash}</span></li>`;
+}
+const CP_ROWS = [
+  cpRoute("support-app", "anthropic", "claude-sonnet-4-6 · 1.2K tokens", "812ms", "$0.0142", "a41f"),
+  cpAgent("claude-code", "Bash", "git push --force origin main", "BLOCKED", "bad", "9c02"),
+  cpRoute("search-api", "gemini", "gemini-2.5-pro · 3.4K tokens", "640ms", "$0.0058", "17be"),
+  cpAgent("release-bot", "Bash", "npm publish", "ASKED A PERSON", "ask", "e3d8"),
+  cpRoute("checkout", "anthropic", "openai returned 429, failed over · claude-sonnet-4-6", "1.3s", "$0.0161", "5b70", true),
+  cpAgent("claude-code", "Edit", "src/billing/charge.ts", "RECORDED", "ok", "c21e")
+].join("\n            ");
+const CP_CHAIN = ["0d4a", "77e1", "a41f", "9c02", "17be", "e3d8", "5b70", "c21e"]
+  .map((h, i, all) => `<span class="cp-block${i === all.length - 1 ? " new" : ""}">${h}</span>`).join("");
+
+const SITE_HERO = `
+<section id="hero" class="gridpaper hero-cp">
+  <div class="hero-in">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <p class="kicker">AI GATEWAY · AGENT AUDIT</p>
+        <h1>Route every AI request. Audit every agent.</h1>
+        <p class="lede">One checkpoint between your apps, your AI agents and every major AI provider.
+          It sends each request to the best model, keeps a <b>tamper-evident record</b> of what
+          every agent did, and <b>stops risky actions</b> before they run.
+          Self-hosted, with your keys on your machine.</p>
+        <div class="cta-row">
+          <a class="btn primary" href="guides/getting-started.html">Get started</a>
+          <a class="btn" href="#jobs">See what it does</a>
+        </div>
+        <ul class="cp-proof">
+          <li><b>46</b> AI providers</li>
+          <li>Hash-chained audit trail</li>
+          <li>Self-hosted · MIT</li>
+        </ul>
+      </div>
+
+      <div class="hero-visual">
+        <div class="cp-frame" id="cpFrame" role="img"
+             aria-label="Sample checkpoint feed: app requests routed to providers such as anthropic and gemini with latency and cost, and AI agent actions recorded, sent to a person, or blocked, each sealed into a hash chain.">
+          <div class="cp-bar">
+            <span class="cp-id"><span class="dot ok beat"></span>tollpike · checkpoint</span>
+            <span class="cp-sample">SAMPLE TRAFFIC</span>
+          </div>
+          <div class="cp-feed" aria-hidden="true">
+            <ol class="cp-list" id="cpFeed">
+            ${CP_ROWS}
+            </ol>
+          </div>
+          <div class="cp-chain" aria-hidden="true">
+            <span class="cp-k">Hash chain</span>
+            <div class="cp-blocks" id="cpChain">${CP_CHAIN}</div>
+            <span class="cp-ok"><span class="dot ok"></span>INTACT</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="conduit" aria-hidden="true"></div>
+</section>
+`;
+
 const JOBS = `
 <section id="jobs" class="band">
   <div class="band-in">
@@ -253,33 +322,8 @@ page({
   file: "index.html",
   title: "Tollpike · the checkpoint for AI traffic",
   description: "Tollpike routes every AI request across 46 providers and keeps a tamper-evident record of what every AI agent did. Self-hosted, with your keys on your machine.",
-  body: heroForSite(section("hero")) + JOBS + section("how") + section("dashboard") + section("start") + section("cta")
+  body: SITE_HERO + JOBS + section("how") + section("dashboard") + section("start") + section("cta")
 });
-
-// The site's hero says both jobs; the gateway's own landing page keeps its copy.
-function heroForSite(html) {
-  const swaps = [
-    ['<p class="kicker">AI ROUTING INFRASTRUCTURE</p>', '<p class="kicker">AI GATEWAY · AGENT AUDIT</p>'],
-    ["<h1>Route every AI request with intelligence.</h1>", "<h1>Route every AI request. Audit every agent.</h1>"],
-    [
-      `<p class="lede">Tollpike sits between your application and every major AI provider.
-          It routes each request to the best lane in real time and keeps <b>cost</b>,
-          <b>latency</b>, <b>quotas</b>, and <b>health</b> in view. One endpoint in.
-          The entire model ecosystem out.</p>`,
-      `<p class="lede">Tollpike sits between your apps, your AI agents and every major AI provider.
-          It sends each request to the best provider, keeps <b>cost</b> and <b>latency</b> in
-          check, and keeps a <b>tamper-evident record</b> of everything your agents did.
-          Self-hosted, with your keys on your machine.</p>`
-    ],
-    ['<a class="btn primary" href="#developers">Get started</a>', '<a class="btn primary" href="guides/getting-started.html">Get started</a>'],
-    ['<a class="btn" href="#traffic">Explore the system</a>', '<a class="btn" href="#jobs">See what it does</a>']
-  ];
-  for (const [a, b] of swaps) {
-    if (!html.includes(a)) throw new Error(`hero copy changed in landing.html; update heroForSite: ${a.slice(0, 50)}`);
-    html = html.replace(a, b);
-  }
-  return html;
-}
 
 // ---------------------------------------------------------------- gateway
 page({
@@ -668,6 +712,105 @@ const EXTRA_CSS = `
 .guide-pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12px; }
 .guide-pager a { color: var(--txt-2); text-decoration: none; }
 .guide-pager a:hover { color: var(--txt); }
+/* ---------- home hero: the checkpoint feed ---------- */
+.hero-cp { padding-bottom: 104px; }
+.hero-cp h1 { color: #f0f3f6; }
+.hero-cp .lede { max-width: 540px; }
+.cp-proof {
+  list-style: none; margin: 34px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 0;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--txt-3);
+}
+.cp-proof li + li::before { content: '·'; margin: 0 12px; color: var(--txt-4); }
+.cp-proof b { color: var(--txt); font-weight: 600; }
+
+.cp-frame {
+  border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden;
+  background: radial-gradient(ellipse 70% 50% at 20% 0%, rgba(139,92,246,.08), transparent 60%), var(--bg-deep);
+  box-shadow: 0 30px 80px -40px rgba(0,0,0,.8);
+}
+.cp-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 18px; border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+}
+.cp-id { display: inline-flex; align-items: center; gap: 9px; color: var(--txt-2); }
+.cp-sample { color: var(--txt-4); font-size: 9.5px; border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 9px; }
+
+/* The list slides down one row as a new event lands at the top. It moves
+   inside a fixed-height clip, so the page itself never shifts. */
+.cp-feed { height: 324px; overflow: hidden; }
+.cp-list { list-style: none; margin: 0; padding: 0; }
+.cp-list.slide { transition: transform .55s var(--ease); }
+.cp-row {
+  position: relative; height: 54px; box-sizing: border-box; overflow: hidden;
+  display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; grid-template-rows: auto auto;
+  column-gap: 12px; row-gap: 4px; align-content: center; padding: 0 18px 0 20px;
+  font-family: var(--mono); white-space: nowrap;
+}
+.cp-row::before { content: ''; position: absolute; left: 0; top: 11px; bottom: 11px; width: 2px; border-radius: 2px; background: var(--route); }
+.cp-row + .cp-row { border-top: 1px solid rgba(255,255,255,.04); }
+.cp-chip {
+  grid-row: 1 / 3; align-self: center; justify-self: start;
+  font-size: 9px; letter-spacing: .16em; padding: 4px 7px; border-radius: 5px;
+  color: var(--route); border: 1px solid rgba(167,139,250,.35); background: rgba(139,92,246,.08);
+}
+.cp-main { font-size: 13px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; }
+.cp-main b { color: var(--txt); font-weight: 600; }
+.cp-main i { font-style: normal; color: var(--txt-4); margin: 0 3px; }
+.cp-res { font-size: 11.5px; letter-spacing: .06em; justify-self: end; color: var(--txt-4); }
+.cp-res em { font-style: normal; }
+.cp-res .c-lat { color: var(--model); }
+.cp-res .c-cost { color: var(--ok); }
+.cp-sub { grid-column: 2; font-size: 11px; color: var(--txt-3); overflow: hidden; text-overflow: ellipsis; }
+.cp-sub code { font-family: var(--mono); color: var(--txt-2); }
+.cp-hash { grid-column: 3; justify-self: end; font-size: 10px; color: var(--txt-4); letter-spacing: .06em; }
+
+.r-fail::before { background: var(--conn); }
+.r-fail .cp-res .c-lat { color: var(--conn); }
+.r-agent .cp-chip { color: var(--txt); border-color: var(--line-3); background: rgba(255,255,255,.04); }
+.r-agent .cp-res { font-weight: 600; letter-spacing: .12em; font-size: 10.5px; }
+.r-agent.d-ok::before { background: var(--ok); }
+.r-agent.d-ok .cp-res { color: var(--ok); }
+.r-agent.d-ask::before { background: var(--conn); }
+.r-agent.d-ask .cp-res { color: var(--conn); }
+.r-agent.d-bad::before { background: var(--bad); }
+.r-agent.d-bad .cp-res { color: var(--bad); }
+.r-agent.d-bad .cp-sub code { text-decoration: line-through; text-decoration-color: rgba(248,113,113,.6); }
+
+.cp-row.enter::after { content: ''; position: absolute; inset: 0; background: rgba(167,139,250,.07); animation: cpFlash 1.6s var(--ease) forwards; pointer-events: none; }
+@keyframes cpFlash { to { opacity: 0; } }
+
+.cp-chain {
+  display: flex; align-items: center; gap: 14px; padding: 13px 18px;
+  border-top: 1px solid var(--line); background: rgba(255,255,255,.015);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
+}
+.cp-k { color: var(--txt-4); flex: none; }
+.cp-ok { color: var(--ok); display: inline-flex; align-items: center; gap: 7px; flex: none; }
+.cp-blocks { flex: 1; min-width: 0; display: flex; justify-content: flex-end; gap: 14px; overflow: hidden; }
+.cp-block {
+  position: relative; flex: none; font-size: 10px; letter-spacing: .06em; text-transform: none;
+  color: var(--txt-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 4px 7px; background: var(--surface);
+}
+.cp-block + .cp-block::before { content: ''; position: absolute; right: 100%; top: 50%; width: 14px; height: 1px; background: var(--line-3); }
+.cp-block.new { color: var(--ok); border-color: rgba(126,231,135,.45); box-shadow: 0 0 10px rgba(126,231,135,.18); }
+.cp-block.enter { animation: cpBlock .5s var(--ease); }
+@keyframes cpBlock { from { opacity: 0; transform: translateX(10px); } }
+
+@media (max-width: 1080px) { .hero-cp .hero-visual { max-width: 720px; } }
+@media (max-width: 560px) {
+  .cp-row { grid-template-columns: 58px minmax(0, 1fr) auto; padding: 0 12px 0 14px; column-gap: 10px; }
+  .cp-main { font-size: 12px; grid-column: 2 / 4; }
+  .cp-hash { display: none; }
+  /* latency and cost drop to the second line so the provider name fits */
+  .cp-res { grid-row: 2; grid-column: 3; font-size: 10.5px; }
+  .cp-bar, .cp-chain { padding-left: 14px; padding-right: 14px; }
+  .cp-k { display: none; }
+  .cp-proof { gap: 6px 18px; }
+  .cp-proof li + li::before { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .cp-row.enter::after, .cp-block.enter { animation: none; } }
+
 `;
 
 fs.writeFileSync(path.join(out, "site.css"), css.trim() + "\n" + EXTRA_CSS);

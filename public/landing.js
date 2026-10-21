@@ -127,6 +127,97 @@ tickCounter($('#liveReq'), 141204, 1, 3, 620, v => Math.round(v).toLocaleString(
 tickCounter($('#obsCross'), 4218930, 1, 3, 560, v => Math.round(v).toLocaleString('en-US'));
 tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+/* -------------------------------------------------- CHECKPOINT FEED (site hero)
+   The website's home hero shows both jobs in one sample feed: app requests
+   routed to a provider, and agent actions recorded, sent to a person or
+   blocked. Each event gets a short hash and is sealed onto the chain under
+   the feed. The first frame is static HTML from build-site.mjs; this only
+   adds rows in the same markup while the frame is on screen. The feed has a
+   fixed height, so new rows never move the page. */
+(() => {
+  const feed = $('#cpFeed'), chain = $('#cpChain'), frame = $('#cpFrame');
+  if (!feed || !chain || !frame) return;
+  const ROUTES = [
+    ['support-app', 'anthropic', 'claude-sonnet-4-6 · 1.2K tokens', '812ms', '$0.0142'],
+    ['search-api', 'gemini', 'gemini-2.5-pro · 3.4K tokens', '640ms', '$0.0058'],
+    ['checkout', 'openai', 'gpt-4o · 2.3K tokens', '720ms', '$0.0234'],
+    ['batch-jobs', 'deepseek', 'deepseek-v4-pro · 8.1K tokens', '780ms', '$0.0028'],
+    ['analytics', 'xai', 'grok-4.5 · 1.9K tokens', '1042ms', '$0.0134'],
+    ['translate', 'mistral', 'mistral-large-latest · 2.7K tokens', '590ms', '$0.0061'],
+    ['docs-bot', 'openai', 'gpt-4o-mini · 1.1K tokens', '410ms', '$0.0004'],
+    ['search-api', 'gemini', 'gemini-2.5-flash · 2.2K tokens', '380ms', '$0.0009'],
+    ['checkout', 'anthropic', 'openai returned 429, failed over · claude-sonnet-4-6', '1.3s', '$0.0161', true]
+  ];
+  const AGENTS = [
+    ['claude-code', 'Bash', 'npm test', 'RECORDED', 'ok'],
+    ['claude-code', 'Edit', 'src/billing/charge.ts', 'RECORDED', 'ok'],
+    ['claude-code', 'Bash', 'git push --force origin main', 'BLOCKED', 'bad'],
+    ['release-bot', 'Bash', 'npm publish', 'ASKED A PERSON', 'ask'],
+    ['support-agent', 'WebFetch', 'pastebin.com/raw/x7Kq2', 'BLOCKED', 'bad'],
+    ['claude-code', 'Read', '.env', 'BLOCKED', 'bad'],
+    ['ci-agent', 'Bash', 'terraform apply', 'ASKED A PERSON', 'ask'],
+    ['claude-code', 'Write', 'tests/charge.test.ts', 'RECORDED', 'ok'],
+    ['claude-code', 'Bash', 'git commit -m "fix rounding"', 'RECORDED', 'ok']
+  ];
+  const hex = () => Math.floor(Math.random() * 65536).toString(16).padStart(4, '0');
+  // Never repeat an event that is still on screen.
+  const recent = [];
+  const pick = list => {
+    let x;
+    do { x = list[Math.floor(Math.random() * list.length)]; } while (recent.includes(x));
+    recent.push(x);
+    if (recent.length > 4) recent.shift();
+    return x;
+  };
+  let routeTurn = false;
+
+  function row() {
+    const h = hex();
+    // mostly alternate, sometimes two of a kind in a row
+    routeTurn = Math.random() < .2 ? routeTurn : !routeTurn;
+    const li = document.createElement('li');
+    if (routeTurn) {
+      const r = pick(ROUTES);
+      li.className = 'cp-row r-route' + (r[5] ? ' r-fail' : '');
+      li.innerHTML = `<span class="cp-chip">ROUTE</span><span class="cp-main"><b>${r[0]}</b> <i>&#8594;</i> ${r[1]}</span>` +
+        `<span class="cp-res"><em class="c-lat">${r[3]}</em> · <em class="c-cost">${r[4]}</em></span>` +
+        `<span class="cp-sub">${r[2]}</span><span class="cp-hash">#${h}</span>`;
+    } else {
+      const a = pick(AGENTS);
+      li.className = `cp-row r-agent d-${a[4]}`;
+      li.innerHTML = `<span class="cp-chip">AGENT</span><span class="cp-main"><b>${a[0]}</b> <i>&#8594;</i> ${a[1]}</span>` +
+        `<span class="cp-res"><em>${a[3]}</em></span><span class="cp-sub"><code></code></span><span class="cp-hash">#${h}</span>`;
+      li.querySelector('code').textContent = a[2];
+    }
+    return { li, h };
+  }
+
+  function push() {
+    const { li, h } = row();
+    li.classList.add('enter');
+    // Start one row higher, then slide down into place.
+    feed.classList.remove('slide');
+    feed.prepend(li);
+    feed.style.transform = 'translateY(-54px)';
+    void feed.offsetHeight;
+    feed.classList.add('slide');
+    feed.style.transform = '';
+    setTimeout(() => { while (feed.children.length > 6) feed.lastElementChild.remove(); }, 600);
+    const prev = chain.querySelector('.cp-block.new');
+    if (prev) prev.classList.remove('new');
+    const b = document.createElement('span');
+    b.className = 'cp-block new enter';
+    b.textContent = h;
+    chain.append(b);
+    while (chain.children.length > 10) chain.firstElementChild.remove();
+  }
+
+  loopWhileVisible(frame, async alive => {
+    await sleep(1700 + Math.random() * 600);
+    if (alive()) push();
+  });
+})();
+
 /* -------------------------------------------------- REQUEST JOURNEY (thread)
    One request travels the whole page. Each inter-section conduit is tagged
    with the routing stage the request is entering, so scrolling reads as the
