@@ -219,24 +219,45 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
 })();
 
 /* -------------------------------------------------- REQUEST JOURNEY (thread)
-   One request travels the whole page. Each inter-section conduit is tagged
-   with the routing stage the request is entering, so scrolling reads as the
-   request advancing APPLICATION -> ROUTER -> ... -> RESPONSE -> TELEMETRY,
-   not as moving between unrelated blocks. Reuses the existing .conduit pulse;
-   adds only a label. Order follows the sections top to bottom. */
+   Each conduit between two sections carries a small label naming what comes
+   next, so the gap reads as the request moving on rather than as empty
+   space. The label is chosen by the section the conduit leads INTO, not by
+   its position: the website splits these sections across several pages in
+   a different order, and counting conduits put wrong labels on every page.
+   A conduit that leads into the footer, or into a section with no label
+   here, is removed, because a line into nothing reads as a mistake. */
 (() => {
-  const STAGES = [
-    'REQUEST · <b>IN</b>', 'ONE · <b>ENDPOINT</b>', '<b>&#8594;</b> ROUTER',
-    'ROUTE · <b>SELECTED</b>', 'PROVIDER · <b>BOUND</b>', 'COST · <b>METERED</b>',
-    'LATENCY · <b>OBSERVED</b>', 'TRAFFIC · <b>LIVE</b>', 'FAILOVER · <b>READY</b>',
-    'RESPONSE · <b>OUT</b>', 'HEADERS · <b>X-TOLLPIKE-*</b>', 'TELEMETRY · <b>LOGGED</b>',
-    '<b>CONTROL</b> CENTER', '<b>GET STARTED</b>'
-  ];
-  $$('.conduit').forEach((c, i) => {
-    if (!STAGES[i]) return;
+  const INTO = {
+    jobs: 'TWO · <b>JOBS</b>',
+    product: 'ONE · <b>ENDPOINT</b>',
+    why: 'THE · <b>PROBLEM</b>',
+    routing: '<b>&#8594;</b> ROUTER',
+    providers: 'PROVIDER · <b>BOUND</b>',
+    cost: 'COST · <b>METERED</b>',
+    latency: 'LATENCY · <b>OBSERVED</b>',
+    traffic: 'TRAFFIC · <b>LIVE</b>',
+    resilience: 'FAILOVER · <b>READY</b>',
+    how: 'FOUR · <b>STAGES</b>',
+    developers: 'RESPONSE · <b>OUT</b>',
+    observability: 'TELEMETRY · <b>LOGGED</b>',
+    audit: 'ACTION · <b>SEALED</b>',
+    dashboard: '<b>CONTROL</b> CENTER',
+    diff: 'ONE · <b>SEAM</b>',
+    start: 'RUN IT · <b>LOCALLY</b>',
+    cta: '<b>GET STARTED</b>',
+    cli: 'EVERY · <b>COMMAND</b>'
+  };
+  $$('.conduit').forEach(c => {
+    const from = c.closest('section');
+    let next = from && from.nextElementSibling;
+    while (next && next.tagName !== 'SECTION' && next.tagName !== 'FOOTER') next = next.nextElementSibling;
+    // The request enters at the top of every page, whatever comes next.
+    const label = from && from.id === 'hero' ? 'REQUEST · <b>IN</b>'
+      : next && next.tagName === 'SECTION' ? INTO[next.id] : null;
+    if (!label) { c.remove(); return; }
     const tag = document.createElement('span');
     tag.className = 'conduit-tag';
-    tag.innerHTML = STAGES[i];
+    tag.innerHTML = label;
     c.appendChild(tag);
   });
 })();
@@ -1057,35 +1078,6 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
   }
 
   if (!SPATIAL) return; // everything below needs a fine pointer
-
-  /* ---------------- custom cursor: precision dot + inspection ring ------- */
-  const cur = document.createElement('div');
-  cur.id = 'cursor';
-  cur.innerHTML = '<i class="c-dot"></i><i class="c-ring"></i><span class="c-label">INSPECT</span>';
-  document.body.appendChild(cur);
-  const cDot = cur.querySelector('.c-dot'), cRing = cur.querySelector('.c-ring'), cLbl = cur.querySelector('.c-label');
-  let px = -100, py = -100, rxp = -100, ryp = -100;
-  addEventListener('pointermove', e => {
-    px = e.clientX; py = e.clientY;
-    document.documentElement.classList.add('curon');
-    cur.classList.add('on');
-    cDot.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
-  }, { passive: true });
-  addEventListener('pointerout', e => { if (!e.relatedTarget) cur.classList.remove('on'); });
-  anims.push(() => {
-    rxp += (px - rxp) * .16;
-    ryp += (py - ryp) * .16;
-    cRing.style.transform = `translate3d(${rxp}px, ${ryp}px, 0) translate(-50%, -50%)`;
-    cLbl.style.transform = `translate3d(${rxp + 16}px, ${ryp + 14}px, 0)`;
-  });
-  const HOT = 'a, button, .btn, .topo-btn, .mode-chip, .copybtn, .switch';
-  const INSP = '#heroSvg g[id^="hn-"], #topoSvg g[data-lane], .dash-frame';
-  addEventListener('pointerover', e => {
-    const t = e.target;
-    const has = sel => !!(t.closest && t.closest(sel));
-    cur.classList.toggle('insp', has(INSP));
-    cur.classList.toggle('hov', has(HOT));
-  }, { passive: true });
 
   /* ---------------- magnetic buttons ---------------- */
   $$('.btn').forEach(b => {
