@@ -780,9 +780,10 @@ section.band > .band-in { position: relative; z-index: 1; }
   will-change: transform;
 }
 .hero-in { position: relative; z-index: 1; }
-html.spatial #hero { height: 168vh; padding-top: 0; }
-html.spatial .hero-sticky { position: sticky; top: 0; padding-top: 58px; }
-.hero-copy, #heroSvg, .tele-holder { will-change: transform; }
+/* The hero is not pinned. A sticky hero held the first screen for most of a
+   viewport of scrolling while only the diagram zoomed, which read as an empty
+   page. It scrolls like any section, so the next one is in view at once. */
+.hero-visual, .tele-holder { will-change: transform; }
 .tele-holder { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 
 /* hero node inspection: information emerges from the node, not a tooltip */
@@ -838,9 +839,6 @@ html.spatial #resilience { height: 215vh; }
 html.spatial #resilience .band-in { position: sticky; top: 0; padding-top: 66px; padding-bottom: 40px; }
 
 /* ---- touch tier: same story, tuned for tap and touch scrolling ---- */
-html.spatial-t #hero { height: 132vh; height: 132svh; padding-top: 0; }
-html.spatial-t .hero-sticky { position: sticky; top: 0; padding-top: 58px; }
-html.spatial-t .hero-in { will-change: transform; }
 html.spatial-t #routing { height: 205vh; height: 205svh; }
 html.spatial-t #routing .band-in { position: sticky; top: 0; padding-top: 62px; padding-bottom: 24px; }
 html.spatial-t #resilience { height: 195vh; height: 195svh; }

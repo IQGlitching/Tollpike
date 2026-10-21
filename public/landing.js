@@ -780,20 +780,21 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
 
   if (!SPATIAL && !TSPATIAL) return;
 
-  /* ---------------- hero: sticky scene + depth ----------------
-     Desktop: mouse parallax plus scroll transformation.
-     Touch: scroll is the camera. The copy lifts away, the network rises
-     into view and grows. No pointer-tracking at all. */
+  /* ---------------- hero: depth ----------------
+     Desktop: the diagram frame and the background lean with the cursor.
+     The whole frame moves, never the drawing inside it, because the frame
+     clips and a moving drawing cut its edge labels off. Scroll only drifts
+     the background. Touch: no pointer tracking, background drift only. */
   // Each block below runs only when its section is on this page: the site
   // splits the sections across pages, so a page may have none of them.
   const hero = $('#hero'), heroBg = $('#heroBgLayer'), heroSvgEl = $('#heroSvg');
-  const heroCopy = $('.hero-copy'), heroIn = $('.hero-in'), teleHolder = $('.tele-holder');
+  const heroVisual = $('.hero-visual'), teleHolder = $('.tele-holder');
   if (hero && heroSvgEl) {
   let heroP = 0, heroOn = true;
   new IntersectionObserver(es => es.forEach(e => { heroOn = e.isIntersecting; })).observe(hero);
   function heroScroll() {
     const r = hero.getBoundingClientRect();
-    heroP = clamp01(-r.top / Math.max(1, r.height - innerHeight));
+    heroP = clamp01(-r.top / Math.max(1, r.height));
   }
   addEventListener('scroll', heroScroll, { passive: true });
   heroScroll();
@@ -801,16 +802,10 @@ tickCounter($('#obsSpend'), 48290.14, 0.005, 0.045, 900, v => '$' + v.toLocaleSt
     if (!heroOn) return;
     if (SPATIAL) {
       heroBg.style.transform = `translate3d(${smx * 4}px, ${smy * 4 + heroP * 46}px, 0)`;
-      heroSvgEl.style.transform = `translate3d(${smx * 9 - heroP * 26}px, ${smy * 7 - heroP * 16}px, 0) scale(${1 + heroP * .06})`;
-      heroCopy.style.transform = `translate3d(${smx * 2 - heroP * 30}px, ${smy * 2 - heroP * 24}px, 0)`;
-      heroCopy.style.opacity = String(1 - heroP * .28);
-      teleHolder.style.transform = `translate3d(${smx * 14}px, ${smy * 11}px, 0)`;
+      heroVisual.style.transform = `translate3d(${smx * 6}px, ${smy * 5}px, 0)`;
+      teleHolder.style.transform = `translate3d(${smx * 8}px, ${smy * 6}px, 0)`;
     } else {
-      const lift = -heroP * Math.min(260, innerHeight * .3);
       heroBg.style.transform = `translate3d(0, ${heroP * 36}px, 0)`;
-      heroIn.style.transform = `translate3d(0, ${lift}px, 0)`;
-      heroSvgEl.style.transform = `scale(${1 + heroP * .05})`;
-      heroCopy.style.opacity = String(1 - heroP * .4);
     }
   });
 
