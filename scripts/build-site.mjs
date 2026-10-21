@@ -713,7 +713,10 @@ const EXTRA_CSS = `
 .guide-pager a { color: var(--txt-2); text-decoration: none; }
 .guide-pager a:hover { color: var(--txt); }
 /* ---------- home hero: the checkpoint feed ---------- */
-.hero-cp { padding-bottom: 104px; }
+/* #hero clips its overflow for the gateway page's background layer. This hero
+   has no such layer, and the clip cut the conduit label on its bottom edge
+   in half, so it lets that label hang over into the next section. */
+#hero.hero-cp { padding-bottom: 104px; overflow: visible; }
 .hero-cp h1 { color: #f0f3f6; }
 .hero-cp .lede { max-width: 540px; }
 .cp-proof {
