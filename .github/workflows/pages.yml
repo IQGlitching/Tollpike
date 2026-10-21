@@ -1,7 +1,7 @@
 name: Deploy landing page
 
 # Publishes the website to GitHub Pages, which is free and served from a CDN.
-# scripts/build-site.mjs assembles site/ (home, gateway, audit, docs, pricing
+# scripts/build-site.mjs assembles site/ (home, gateway, audit, docs
 # and guides) from public/landing.html and its own page content, using only
 # Node built-ins, so there is nothing to install.
 
@@ -55,7 +55,7 @@ jobs:
             (function walk(d) { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); fs.statSync(p).isDirectory() ? walk(p) : files.push(path.relative("_site", p).split(path.sep).join("/")); } })("_site");
             const bad = files.filter((f) => f !== ".nojekyll" && !/\.(html|css|js|svg)$/.test(f));
             if (bad.length) { console.error("Unexpected files in _site: " + bad.join(", ")); process.exit(1); }
-            for (const need of ["index.html", "routing.html", "audit.html", "pricing.html", "docs.html", "guides/index.html", "site.css", "landing.js"]) {
+            for (const need of ["index.html", "routing.html", "audit.html", "docs.html", "guides/index.html", "site.css", "landing.js"]) {
               if (!files.includes(need)) { console.error("Missing " + need); process.exit(1); }
             }
             if (!fs.readFileSync("_site/index.html", "utf8").includes("landing.js")) { console.error("index.html lost its script reference"); process.exit(1); }

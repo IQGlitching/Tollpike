@@ -22,6 +22,9 @@ const src = fs.readFileSync(path.join(root, "public", "landing.html"), "utf8").r
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const V = `v${pkg.version}`;
 const GH = "https://github.com/IQGlitching/Tollpike";
+// The pricing page is offline for now. Flip to true to publish it again; its
+// content below is kept as it was.
+const SHOW_PRICING = false;
 
 // ---------------------------------------------------------------- pieces
 const css = src.slice(src.indexOf("<style>") + 7, src.indexOf("</style>"));
@@ -62,7 +65,7 @@ const NAV = [
   ["audit.html", "Audit"],
   ["guides/index.html", "Guides"],
   ["docs.html", "Docs"],
-  ["pricing.html", "Pricing"]
+  ...(SHOW_PRICING ? [["pricing.html", "Pricing"]] : [])
 ];
 
 function head({ title, description, prefix }) {
@@ -137,8 +140,8 @@ function footer({ prefix }) {
         <a href="${prefix}routing.html">Gateway</a>
         <a href="${prefix}routing.html#providers">Providers</a>
         <a href="${prefix}audit.html">Agent audit</a>
-        <a href="${prefix}pricing.html">Pricing</a>
-      </div>
+${SHOW_PRICING ? `        <a href="${prefix}pricing.html">Pricing</a>
+` : ""}      </div>
       <div class="foot-col">
         <h4>Learn</h4>
         <a href="${prefix}guides/getting-started.html">Get started</a>
@@ -392,7 +395,7 @@ const PRICING = `
   </div>
 </section>
 `;
-page({
+if (SHOW_PRICING) page({
   file: "pricing.html",
   title: "Pricing · Tollpike",
   description: "The Tollpike gateway is free and open source. Audit and compliance for AI agents is in early access.",
