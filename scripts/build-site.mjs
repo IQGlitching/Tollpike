@@ -623,8 +623,8 @@ page({
   body:
     pageHeader({
       kicker: "GUIDES",
-      title: "From install to audit, in plain&nbsp;English.",
-      lede: "Short, step-by-step guides. Start with the first one; each ends with a link to the next."
+      title: "Get Tollpike&nbsp;running.",
+      lede: "Eight short guides, from install to your first audit export."
     }) +
     `
 <section class="band">
