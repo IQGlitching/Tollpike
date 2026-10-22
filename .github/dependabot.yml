@@ -1,0 +1,27 @@
+version: 2
+
+# The workflows pin every action to a commit SHA, so a moved tag cannot change
+# what runs. Dependabot is what keeps those pins, and the npm dependencies,
+# current. The cooldown waits a week before proposing a new release, because a
+# hijacked package version is usually caught and pulled within days.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
